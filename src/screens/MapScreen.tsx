@@ -3,8 +3,9 @@ import {
   View,
   StyleSheet,
   Dimensions,
-  TouchableOpacity,
   StatusBar,
+  TouchableOpacity,
+  Text,
 } from 'react-native';
 import {
   GestureHandlerRootView,
@@ -15,14 +16,17 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
-import WelcomeScreen from '../components/WelcomeScreen';
 import SettingsModal from '../components/SettingsModal';
 import SettingsIcon from '../components/SettingsIcon';
 import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint';
 import MiddleEarthMapSvg from '../components/MiddleEarthMapSvg';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
-import checkpointsData from '../constants/checkpoints.json';
+import checkpointsDataRaw from '../constants/checkpoints.json';
 import { layerColors } from '../styles/svgLayerColors';
+import { typography } from '../styles/typography';
+import { Checkpoint } from '../types';
+
+const checkpointsData = checkpointsDataRaw as Checkpoint[];
 
 const { width, height } = Dimensions.get('window');
 
@@ -32,12 +36,16 @@ const SVG_HEIGHT = 2373.04;
 
 export default function MapScreen() {
   const theme = useTheme();
-  const [showWelcome, setShowWelcome] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const showWelcome = useSettingsStore(state => state.showWelcome);
   const showCheckpointLabels = useSettingsStore(
     state => state.showCheckpointLabels,
   );
+  const setShowCheckpointLabels = useSettingsStore(
+    state => state.setShowCheckpointLabels,
+  );
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
+  const showMapTitles = useSettingsStore(state => state.showMapTitles);
 
   // Calculate scale factors to convert SVG coordinates to rendered coordinates
   const svgScaleX = (width * 3) / SVG_WIDTH;
@@ -108,6 +116,7 @@ export default function MapScreen() {
               height={height}
               preserveAspectRatio="none"
               colorize={colorizeMap}
+              showTitles={showMapTitles}
               layerColors={{
                 ...layerColors,
                 mapBackground: theme.colors.mapBackground,
@@ -143,25 +152,50 @@ export default function MapScreen() {
 
       {/* Settings Button */}
       {!showWelcome && (
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={() => setShowSettings(true)}
-          activeOpacity={0.7}
-        >
-          <SettingsIcon size={24} color="#FFFFFF" />
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => setShowSettings(true)}
+            activeOpacity={0.7}
+          >
+            <SettingsIcon size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          {/* Labels Toggle */}
+          <TouchableOpacity
+            style={styles.labelsButton}
+            onPress={() => setShowCheckpointLabels(!showCheckpointLabels)}
+            activeOpacity={0.7}
+          >
+            <View
+              style={[
+                styles.labelContainer,
+                {
+                  backgroundColor: showCheckpointLabels
+                    ? theme.colors.checkpointTextBackground
+                    : theme.colors.checkpointLabelInactive,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  typography.label,
+                  {
+                    color: theme.colors.checkpointLabel,
+                  },
+                ]}
+              >
+                Labels
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </>
       )}
 
       {/* Settings Modal */}
       <SettingsModal
         visible={showSettings}
         onDismiss={() => setShowSettings(false)}
-      />
-
-      {/* Welcome Overlay */}
-      <WelcomeScreen
-        visible={showWelcome}
-        onDismiss={() => setShowWelcome(false)}
       />
     </GestureHandlerRootView>
   );
@@ -195,5 +229,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  labelsButton: {
+    position: 'absolute',
+    top: 120, // Below settings button with more spacing
+    right: 20,
+  },
+  labelContainer: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
 });

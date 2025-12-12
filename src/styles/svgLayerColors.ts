@@ -5,8 +5,8 @@
 export const layerColors = {
   legend: '#231f20', // Black for legend elements
   titles: '#2C1810', // Dark brown for place names
-  trees: '#4A7C4E', // Forest green for wooded areas
-  mountains: '#8B7355', // Brown/tan for mountains
+  trees: '#436e47ff', // Forest green for wooded areas
+  mountains: '#51402bff', // Brown/tan for mountains
   streets: '#B8956A', // Sandy tan for roads/paths
   water: '#5B8FA3', // Blue for rivers and lakes
   coastline: '#2F4858', // Darker blue for ocean/coast

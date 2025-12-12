@@ -12,7 +12,8 @@ export interface Theme {
     // Checkpoint markers
     checkpointLocked: string;
     checkpointUnlocked: string;
-    checkpointText: string;
+    checkpointLabel: string;
+    checkpointLabelInactive: string;
     checkpointTextBackground: string;
 
     // Trivia markers
@@ -40,6 +41,7 @@ export interface Theme {
 
     // Button colors
     buttonPrimary: string;
+    buttonInactive: string;
     buttonText: string;
 
     // SVG styles
@@ -70,7 +72,8 @@ export const classicTheme: Theme = {
     // Checkpoint markers
     checkpointLocked: '#A0826D',
     checkpointUnlocked: '#D4AF37',
-    checkpointText: '#2C1810',
+    checkpointLabel: '#2C1810',
+    checkpointLabelInactive: '#5C4033',
     checkpointTextBackground: 'rgba(237, 228, 211, 0.95)',
 
     // Trivia markers
@@ -98,6 +101,7 @@ export const classicTheme: Theme = {
 
     // Button colors
     buttonPrimary: '#8B4513',
+    buttonInactive: '#A0826D',
     buttonText: '#F5EFE0',
 
     // SVG styles
@@ -127,7 +131,8 @@ export const minimalistTheme: Theme = {
     // Checkpoint markers
     checkpointLocked: '#B0BEC5',
     checkpointUnlocked: '#D4AF37',
-    checkpointText: '#ffffff',
+    checkpointLabel: '#ffffff',
+    checkpointLabelInactive: '#757575',
     checkpointTextBackground: '#000000',
 
     // Trivia markers
@@ -138,9 +143,9 @@ export const minimalistTheme: Theme = {
     // UI colors
     background: '#FAFAFA',
     surface: '#FFFFFF',
-    primary: '#2C3E50',
+    primary: '#D4AF37',
     secondary: '#546E7A',
-    accent: '#D4AF37',
+    accent: '#2C3E50',
 
     // Text colors
     textPrimary: '#212121',
@@ -155,6 +160,7 @@ export const minimalistTheme: Theme = {
 
     // Button colors
     buttonPrimary: '#D4AF37',
+    buttonInactive: '#E0E0E0',
     buttonText: '#000000',
 
     // SVG styles

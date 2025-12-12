@@ -2,11 +2,13 @@ import { TextStyle } from 'react-native';
 
 export interface Typography {
   title: TextStyle;
+  modalTitle: TextStyle;
   subtitle: TextStyle;
   body: TextStyle;
   caption: TextStyle;
   button: TextStyle;
   label: TextStyle;
+  labelLarge: TextStyle;
 }
 
 export const typography: Typography = {
@@ -14,6 +16,11 @@ export const typography: Typography = {
     fontSize: 36,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'left',
   },
   subtitle: {
     fontSize: 20,
@@ -37,6 +44,11 @@ export const typography: Typography = {
   },
   label: {
     fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  labelLarge: {
+    fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
   },

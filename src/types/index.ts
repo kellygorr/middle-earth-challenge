@@ -5,8 +5,10 @@ export interface Checkpoint {
   description: string;
   isStart?: boolean;
   isEnd?: boolean;
+  isActive?: boolean;
   x: number;
   y: number;
+  labelPosition?: 'top' | 'right';
   cumulativeMiles: number;
 }
 
@@ -71,13 +73,16 @@ export interface TriviaUnlock {
 }
 
 // User settings types
+export type LabelSize = 'regular' | 'large';
+
 export interface UserSettings {
   id: string;
-  checkpointLabelSize: number; // 1-3 (small, medium, large)
+  labelSize: LabelSize;
   currentTheme: 'classic' | 'minimalist';
   showTriviaMarkers: boolean;
   showCheckpointLabels: boolean;
   colorizeMap: boolean;
+  showMapTitles: boolean;
 }
 
 // Journey segment definition (from distance.md)

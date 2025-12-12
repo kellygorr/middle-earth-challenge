@@ -5,13 +5,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { StyleSheet } from 'react-native';
 import Checkpoint from './Checkpoint';
+import { Checkpoint as CheckpointType } from '../../types';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface PositionedCheckpointProps {
-  checkpoint: {
-    id: number;
-    name: string;
-    isActive?: boolean;
-  };
+  checkpoint: CheckpointType;
   baseX: number;
   baseY: number;
   centerX: number;
@@ -35,6 +33,18 @@ export default function PositionedCheckpoint({
   showLabel,
   onPress,
 }: PositionedCheckpointProps) {
+  const labelSize = useSettingsStore(state => state.labelSize);
+  
+  // Adjust Y position when label is on top to compensate for label height
+  const LABEL_HEIGHT_REGULAR = 24; // Approximate height of regular label (font + padding + margin)
+  const LABEL_HEIGHT_LARGE = 28; // Approximate height of large label
+  const labelHeight = labelSize === 'large' ? LABEL_HEIGHT_LARGE : LABEL_HEIGHT_REGULAR;
+  
+  const adjustedBaseY =
+    showLabel && checkpoint.labelPosition === 'top'
+      ? baseY - labelHeight
+      : baseY;
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       {
@@ -43,7 +53,7 @@ export default function PositionedCheckpoint({
       },
       {
         translateY:
-          translateY.value + centerY + (baseY - centerY) * scale.value,
+          translateY.value + centerY + (adjustedBaseY - centerY) * scale.value,
       },
     ],
   }));
@@ -56,6 +66,7 @@ export default function PositionedCheckpoint({
         name={checkpoint.name}
         isActive={checkpoint.isActive || false}
         showLabel={showLabel}
+        labelPosition={checkpoint.labelPosition}
         onPress={onPress}
       />
     </Animated.View>

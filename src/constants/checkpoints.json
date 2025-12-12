@@ -7,6 +7,7 @@
     "isActive": true,
     "x": 787,
     "y": 648,
+    "labelPosition": "top",
     "cumulativeMiles": 0
   },
   {
@@ -39,6 +40,7 @@
     "description": "The green lawn beside the Falls of Rauros, where the Fellowship was broken. Here the Company made their fateful choice.",
     "x": 1900,
     "y": 1455,
+    "labelPosition": "top",
     "cumulativeMiles": 895
   },
   {

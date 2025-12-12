@@ -1,29 +1,33 @@
 import { create } from 'zustand';
-import { UserSettings } from '../types';
+import { UserSettings, LabelSize } from '../types';
 import { ThemeName, themes } from '../styles/themes';
 
 interface SettingsStore extends UserSettings {
+  showWelcome: boolean;
   // Actions
-  setCheckpointLabelSize: (size: number) => void;
+  setLabelSize: (size: LabelSize) => void;
   setTheme: (theme: ThemeName) => void;
   setShowTriviaMarkers: (show: boolean) => void;
   setShowCheckpointLabels: (show: boolean) => void;
   setColorizeMap: (colorize: boolean) => void;
+  setShowWelcome: (show: boolean) => void;
+  setShowMapTitles: (show: boolean) => void;
   loadSettings: (settings: UserSettings) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>(set => ({
   // Initial state
   id: 'default',
-  checkpointLabelSize: 2,
+  labelSize: 'regular',
   currentTheme: 'minimalist',
   showTriviaMarkers: true,
   showCheckpointLabels: true,
   colorizeMap: false,
+  showWelcome: true,
+  showMapTitles: true,
 
   // Actions
-  setCheckpointLabelSize: size =>
-    set({ checkpointLabelSize: Math.max(1, Math.min(3, size)) }),
+  setLabelSize: size => set({ labelSize: size }),
 
   setTheme: theme => set({ currentTheme: theme }),
 
@@ -32,6 +36,10 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   setShowCheckpointLabels: show => set({ showCheckpointLabels: show }),
 
   setColorizeMap: colorize => set({ colorizeMap: colorize }),
+
+  setShowWelcome: show => set({ showWelcome: show }),
+
+  setShowMapTitles: show => set({ showMapTitles: show }),
 
   loadSettings: settings => set(settings),
 }));

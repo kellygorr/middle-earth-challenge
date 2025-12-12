@@ -6,12 +6,15 @@ import {
   StyleSheet,
   Switch,
   ScrollView,
+  TouchableWithoutFeedback,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { typography } from '../styles/typography';
 import { spacing } from '../styles/global';
 import Button from './Button';
+import SettingsIcon from './SettingsIcon';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -25,18 +28,16 @@ export default function SettingsModal({
   const theme = useTheme();
   const currentTheme = useSettingsStore(state => state.currentTheme);
   const setTheme = useSettingsStore(state => state.setTheme);
-  const showCheckpointLabels = useSettingsStore(
-    state => state.showCheckpointLabels,
-  );
-  const setShowCheckpointLabels = useSettingsStore(
-    state => state.setShowCheckpointLabels,
-  );
+  const labelSize = useSettingsStore(state => state.labelSize);
+  const setLabelSize = useSettingsStore(state => state.setLabelSize);
   const showTriviaMarkers = useSettingsStore(state => state.showTriviaMarkers);
   const setShowTriviaMarkers = useSettingsStore(
     state => state.setShowTriviaMarkers,
   );
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const setColorizeMap = useSettingsStore(state => state.setColorizeMap);
+  const showMapTitles = useSettingsStore(state => state.showMapTitles);
+  const setShowMapTitles = useSettingsStore(state => state.setShowMapTitles);
 
   return (
     <Modal
@@ -46,148 +47,211 @@ export default function SettingsModal({
       onRequestClose={onDismiss}
       statusBarTranslucent={true}
     >
-      <SafeAreaView
-        style={[styles.overlay, { backgroundColor: theme.colors.modalOverlay }]}
-        edges={['top', 'bottom']}
-      >
-        <View
+      <TouchableWithoutFeedback onPress={onDismiss}>
+        <SafeAreaView
           style={[
-            styles.modalContainer,
-            { backgroundColor: theme.colors.modalBackground },
+            styles.overlay,
+            { backgroundColor: theme.colors.modalOverlay },
           ]}
+          edges={['top', 'bottom']}
         >
-          <ScrollView>
-            {/* Header */}
-            <View style={styles.header}>
-              <Text
-                style={[
-                  typography.title,
-                  styles.title,
-                  { color: theme.colors.textPrimary },
-                ]}
+          <TouchableWithoutFeedback>
+            <View
+              style={[
+                styles.modalContainer,
+                { backgroundColor: theme.colors.modalBackground },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={onDismiss}
+                activeOpacity={0.7}
               >
-                Settings
-              </Text>
-            </View>
-
-            {/* Theme Selection */}
-            <View style={styles.section}>
-              <Text
-                style={[
-                  typography.subtitle,
-                  styles.sectionTitle,
-                  { color: theme.colors.textPrimary },
-                ]}
-              >
-                Theme
-              </Text>
-              <View style={styles.themeButtons}>
-                <View style={styles.themeButtonWrapper}>
-                  <Button
-                    onPress={() => setTheme('minimalist')}
-                    variant={
-                      currentTheme === 'minimalist' ? 'primary' : 'secondary'
-                    }
+                <Text
+                  style={[
+                    typography.modalTitle,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  ×
+                </Text>
+              </TouchableOpacity>
+              <ScrollView>
+                {/* Header */}
+                <View style={styles.header}>
+                  <Text
+                    style={[
+                      typography.modalTitle,
+                      styles.title,
+                      { color: theme.colors.textPrimary },
+                    ]}
                   >
-                    Minimal
-                  </Button>
+                    Settings
+                  </Text>
                 </View>
-                <View style={styles.themeButtonWrapper}>
-                  <Button
-                    onPress={() => setTheme('classic')}
-                    variant={
-                      currentTheme === 'classic' ? 'primary' : 'secondary'
-                    }
+
+                {/* Theme Selection */}
+                <View style={styles.section}>
+                  <Text
+                    style={[
+                      typography.subtitle,
+                      styles.sectionTitle,
+                      { color: theme.colors.textPrimary },
+                    ]}
                   >
-                    Classic
-                  </Button>
+                    Theme
+                  </Text>
+                  <View style={styles.themeButtons}>
+                    <View style={styles.themeButtonWrapper}>
+                      <Button
+                        onPress={() => setTheme('minimalist')}
+                        variant={
+                          currentTheme === 'minimalist'
+                            ? 'primary'
+                            : 'secondary'
+                        }
+                      >
+                        Minimal
+                      </Button>
+                    </View>
+                    <View style={styles.themeButtonWrapper}>
+                      <Button
+                        onPress={() => setTheme('classic')}
+                        variant={
+                          currentTheme === 'classic' ? 'primary' : 'secondary'
+                        }
+                      >
+                        Classic
+                      </Button>
+                    </View>
+                  </View>
                 </View>
-              </View>
+
+                {/* Interface Options */}
+                <View style={styles.section}>
+                  <Text
+                    style={[
+                      typography.subtitle,
+                      styles.sectionTitle,
+                      { color: theme.colors.textPrimary },
+                    ]}
+                  >
+                    Interface
+                  </Text>
+
+                  {/* Label Size */}
+                  <View style={styles.settingRow}>
+                    <Text
+                      style={[
+                        typography.body,
+                        { color: theme.colors.textPrimary, flex: 1 },
+                      ]}
+                    >
+                      Large labels
+                    </Text>
+                    <Switch
+                      value={labelSize === 'large'}
+                      onValueChange={value =>
+                        setLabelSize(value ? 'large' : 'regular')
+                      }
+                      trackColor={{
+                        false: theme.colors.buttonInactive,
+                        true: theme.colors.buttonPrimary,
+                      }}
+                      thumbColor={theme.colors.surface}
+                    />
+                  </View>
+
+                  {/* Show Trivia Markers */}
+                  <View style={styles.settingRow}>
+                    <Text
+                      style={[
+                        typography.body,
+                        { color: theme.colors.textPrimary, flex: 1 },
+                      ]}
+                    >
+                      Trivia markers
+                    </Text>
+                    <Switch
+                      value={showTriviaMarkers}
+                      onValueChange={setShowTriviaMarkers}
+                      trackColor={{
+                        false: theme.colors.buttonInactive,
+                        true: theme.colors.buttonPrimary,
+                      }}
+                      thumbColor={theme.colors.surface}
+                    />
+                  </View>
+                </View>
+
+                {/* Map Options */}
+                <View style={styles.section}>
+                  <Text
+                    style={[
+                      typography.subtitle,
+                      styles.sectionTitle,
+                      { color: theme.colors.textPrimary },
+                    ]}
+                  >
+                    Map
+                  </Text>
+
+                  {/* Map Colors */}
+                  <View style={styles.settingRow}>
+                    <Text
+                      style={[
+                        typography.body,
+                        { color: theme.colors.textPrimary, flex: 1 },
+                      ]}
+                    >
+                      Map colors
+                    </Text>
+                    <Switch
+                      value={colorizeMap}
+                      onValueChange={setColorizeMap}
+                      trackColor={{
+                        false: theme.colors.buttonInactive,
+                        true: theme.colors.buttonPrimary,
+                      }}
+                      thumbColor={theme.colors.surface}
+                    />
+                  </View>
+
+                  {/* Map Titles */}
+                  <View style={styles.settingRow}>
+                    <Text
+                      style={[
+                        typography.body,
+                        { color: theme.colors.textPrimary, flex: 1 },
+                      ]}
+                    >
+                      Map titles
+                    </Text>
+                    <Switch
+                      value={showMapTitles}
+                      onValueChange={setShowMapTitles}
+                      trackColor={{
+                        false: theme.colors.buttonInactive,
+                        true: theme.colors.buttonPrimary,
+                      }}
+                      thumbColor={theme.colors.surface}
+                    />
+                  </View>
+                </View>
+              </ScrollView>
             </View>
+          </TouchableWithoutFeedback>
+        </SafeAreaView>
+      </TouchableWithoutFeedback>
 
-            {/* Map Display Options */}
-            <View style={styles.section}>
-              <Text
-                style={[
-                  typography.subtitle,
-                  styles.sectionTitle,
-                  { color: theme.colors.textPrimary },
-                ]}
-              >
-                Map Display
-              </Text>
-
-              {/* Show Checkpoint Labels */}
-              <View style={styles.settingRow}>
-                <Text
-                  style={[
-                    typography.body,
-                    { color: theme.colors.textPrimary, flex: 1 },
-                  ]}
-                >
-                  Labels
-                </Text>
-                <Switch
-                  value={showCheckpointLabels}
-                  onValueChange={setShowCheckpointLabels}
-                  trackColor={{
-                    false: theme.colors.secondary,
-                    true: theme.colors.accent,
-                  }}
-                  thumbColor={theme.colors.surface}
-                />
-              </View>
-
-              {/* Show Trivia Markers */}
-              <View style={styles.settingRow}>
-                <Text
-                  style={[
-                    typography.body,
-                    { color: theme.colors.textPrimary, flex: 1 },
-                  ]}
-                >
-                  Trivia Markers
-                </Text>
-                <Switch
-                  value={showTriviaMarkers}
-                  onValueChange={setShowTriviaMarkers}
-                  trackColor={{
-                    false: theme.colors.secondary,
-                    true: theme.colors.accent,
-                  }}
-                  thumbColor={theme.colors.surface}
-                />
-              </View>
-
-              {/* Map Colors */}
-              <View style={styles.settingRow}>
-                <Text
-                  style={[
-                    typography.body,
-                    { color: theme.colors.textPrimary, flex: 1 },
-                  ]}
-                >
-                  Map Colors
-                </Text>
-                <Switch
-                  value={colorizeMap}
-                  onValueChange={setColorizeMap}
-                  trackColor={{
-                    false: theme.colors.secondary,
-                    true: theme.colors.accent,
-                  }}
-                  thumbColor={theme.colors.surface}
-                />
-              </View>
-            </View>
-          </ScrollView>
-
-          {/* Close Button */}
-          <Button onPress={onDismiss} variant="primary">
-            Close
-          </Button>
-        </View>
-      </SafeAreaView>
+      {/* Settings Button - Rendered inside modal to be above overlay */}
+      <TouchableOpacity
+        style={styles.settingsButton}
+        onPress={onDismiss}
+        activeOpacity={0.7}
+      >
+        <SettingsIcon size={24} color="#FFFFFF" />
+      </TouchableOpacity>
     </Modal>
   );
 }
@@ -213,16 +277,22 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: spacing.xl,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
-  title: {
-    fontSize: 32,
+  title: {},
+  closeButton: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   section: {
     marginBottom: spacing.xl,
   },
   sectionTitle: {
-    fontSize: 20,
     marginBottom: spacing.md,
   },
   themeButtons: {
@@ -239,5 +309,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  settingsButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

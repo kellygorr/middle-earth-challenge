@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { useTheme } from '../../stores/settingsStore';
+import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 import { typography } from '../../styles/typography';
 
 interface CheckpointProps {
@@ -9,6 +9,7 @@ interface CheckpointProps {
   name: string;
   isActive: boolean;
   showLabel: boolean;
+  labelPosition?: 'top' | 'right';
   onPress?: () => void;
 }
 
@@ -18,51 +19,58 @@ export default function Checkpoint({
   name,
   isActive,
   showLabel,
+  labelPosition = 'right',
   onPress,
 }: CheckpointProps) {
   const theme = useTheme();
+  const labelSize = useSettingsStore(state => state.labelSize);
 
   const color = isActive
     ? theme.colors.checkpointUnlocked
     : theme.colors.checkpointLocked;
 
   return (
-    <TouchableOpacity
+    <View
       style={[
         styles.container,
-        {
-          left: x,
-          top: y,
-        },
+        labelPosition === 'top' ? styles.containerColumn : styles.containerRow,
       ]}
-      onPress={onPress}
-      activeOpacity={0.7}
     >
-      {/* Outer circle */}
-      <View
-        style={[
-          styles.outerCircle,
-          {
-            borderColor: color,
-          },
-        ]}
+      {/* Checkpoint circles - will be wrapped with animation later */}
+      <TouchableOpacity
+        style={styles.circleContainer}
+        onPress={onPress}
+        activeOpacity={0.7}
       >
-        {/* Inner circle */}
+        {/* Outer circle */}
         <View
           style={[
-            styles.innerCircle,
+            styles.outerCircle,
             {
-              backgroundColor: color,
+              borderColor: color,
             },
           ]}
-        />
-      </View>
+        >
+          {/* Inner circle */}
+          <View
+            style={[
+              styles.innerCircle,
+              {
+                backgroundColor: color,
+              },
+            ]}
+          />
+        </View>
+      </TouchableOpacity>
 
-      {/* Checkpoint name */}
+      {/* Checkpoint label */}
       {showLabel && (
         <View
           style={[
             styles.nameContainer,
+            labelPosition === 'top'
+              ? styles.nameContainerAbove
+              : styles.nameContainerRight,
             {
               backgroundColor: theme.colors.checkpointTextBackground,
             },
@@ -70,9 +78,9 @@ export default function Checkpoint({
         >
           <Text
             style={[
-              typography.label,
+              labelSize === 'large' ? typography.labelLarge : typography.label,
               {
-                color: theme.colors.checkpointText,
+                color: theme.colors.checkpointLabel,
               },
             ]}
           >
@@ -80,17 +88,27 @@ export default function Checkpoint({
           </Text>
         </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
     marginLeft: -12, // Center the bullseye on the coordinates
     marginTop: -12,
+  },
+  containerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  containerColumn: {
+    flexDirection: 'column-reverse', // Label above circle
+    alignItems: 'flex-start', // Align to left edge
+  },
+  circleContainer: {
+    // Container for circles that will be animated
+    width: 24,
+    height: 24,
   },
   outerCircle: {
     width: 24,
@@ -107,9 +125,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   nameContainer: {
-    marginLeft: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+  },
+  nameContainerRight: {
+    marginLeft: 6,
+  },
+  nameContainerAbove: {
+    marginBottom: 4,
   },
 });
