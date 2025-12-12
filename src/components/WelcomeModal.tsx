@@ -6,7 +6,6 @@ import {
   Modal,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../stores/settingsStore';
 import { typography } from '../styles/typography';
 import { spacing, shadows } from '../styles/global';
@@ -32,12 +31,11 @@ export default function WelcomeModal({
       statusBarTranslucent={true}
     >
       <TouchableWithoutFeedback onPress={onDismiss}>
-        <SafeAreaView
+        <View
           style={[
-            styles.overlay,
+            styles.container,
             { backgroundColor: theme.colors.modalOverlay },
           ]}
-          edges={['top', 'bottom']}
         >
           <TouchableWithoutFeedback>
             <View style={styles.welcomeContainer}>
@@ -62,14 +60,14 @@ export default function WelcomeModal({
               </Button>
             </View>
           </TouchableWithoutFeedback>
-        </SafeAreaView>
+        </View>
       </TouchableWithoutFeedback>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',

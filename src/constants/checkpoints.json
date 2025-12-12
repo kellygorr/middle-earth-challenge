@@ -5,7 +5,7 @@
     "description": "The peaceful homeland of hobbits, with its rolling green hills and cozy hobbit-holes. Here begins the greatest journey of the Third Age.",
     "isStart": true,
     "isActive": true,
-    "x": 787,
+    "x": 760,
     "y": 648,
     "labelPosition": "top",
     "cumulativeMiles": 0
@@ -14,7 +14,7 @@
     "id": 2,
     "name": "Bree",
     "description": "A bustling village where Men and Hobbits live side by side. The Prancing Pony inn stands at the crossroads of the ancient Great East Road.",
-    "x": 1015,
+    "x": 975,
     "y": 650,
     "cumulativeMiles": 120
   },
@@ -22,7 +22,7 @@
     "id": 3,
     "name": "Rivendell",
     "description": "The Last Homely House, hidden valley refuge of the Elves. Here the Fellowship was formed under Elrond's guidance.",
-    "x": 1542,
+    "x": 1485,
     "y": 610,
     "cumulativeMiles": 420
   },
@@ -30,7 +30,7 @@
     "id": 4,
     "name": "Lothlorien",
     "description": "The Golden Wood, realm of Galadriel and Celeborn. Ancient mallorn trees tower above, and time itself seems to move differently here.",
-    "x": 1674,
+    "x": 1634,
     "y": 1015,
     "cumulativeMiles": 595
   },
@@ -38,7 +38,7 @@
     "id": 5,
     "name": "Parth Galen",
     "description": "The green lawn beside the Falls of Rauros, where the Fellowship was broken. Here the Company made their fateful choice.",
-    "x": 1900,
+    "x": 1830,
     "y": 1455,
     "labelPosition": "top",
     "cumulativeMiles": 895
@@ -47,16 +47,16 @@
     "id": 6,
     "name": "The Black Gates",
     "description": "The Morannon, mighty fortress guarding the entrance to Mordor. Impassable to all but the most desperate or foolish.",
-    "x": 2181,
-    "y": 1452,
+    "x": 2100,
+    "y": 1435,
     "cumulativeMiles": 1055
   },
   {
     "id": 7,
     "name": "Minas Morgul",
     "description": "The Tower of Sorcery, once fair Minas Ithil. Now a place of dread, glowing with a corpse-light under the shadow of the mountains.",
-    "x": 2135,
-    "y": 1665,
+    "x": 2060,
+    "y": 1648,
     "cumulativeMiles": 1165
   },
   {
@@ -64,8 +64,8 @@
     "name": "Mount Doom",
     "description": "Orodruin, the Fire Mountain where the One Ring was forged and where it must be destroyed. The end of all things, or a new beginning.",
     "isEnd": true,
-    "x": 2281,
-    "y": 1585,
+    "x": 2197,
+    "y": 1565,
     "cumulativeMiles": 1235
   }
 ]

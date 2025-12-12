@@ -20,19 +20,22 @@ import SettingsModal from '../components/SettingsModal';
 import SettingsIcon from '../components/SettingsIcon';
 import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint';
 import MiddleEarthMapSvg from '../components/MiddleEarthMapSvg';
+
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
+// import { useSaveStore } from '../stores/saveStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
 import { layerColors } from '../styles/svgLayerColors';
 import { typography } from '../styles/typography';
 import { Checkpoint } from '../types';
+import { FRODO_PATH } from '../data/mapData';
 
 const checkpointsData = checkpointsDataRaw as Checkpoint[];
 
 const { width, height } = Dimensions.get('window');
 
-// SVG dimensions from viewBox
-const SVG_WIDTH = 3174.5;
-const SVG_HEIGHT = 2373.04;
+// SVG dimensions from viewBox (from middle-earth-map-full.svg)
+const SVG_WIDTH = 3059.47;
+const SVG_HEIGHT = 2350.67;
 
 export default function MapScreen() {
   const theme = useTheme();
@@ -46,6 +49,7 @@ export default function MapScreen() {
   );
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const showMapTitles = useSettingsStore(state => state.showMapTitles);
+  // const journeyProgress = useSaveStore(state => state.journeyProgress);
 
   // Calculate scale factors to convert SVG coordinates to rendered coordinates
   const svgScaleX = (width * 3) / SVG_WIDTH;
@@ -55,12 +59,25 @@ export default function MapScreen() {
   // SVG width is (width * 3), which is centered in the container
   const svgOffsetX = (width * 3 - width) / 2; // How much the SVG extends to the left of the visible area
 
+  // Calculate initial position for first checkpoint (Hobbiton)
+  const firstCheckpoint = checkpointsData[0];
+  const firstCheckpointX = firstCheckpoint.x * svgScaleX - svgOffsetX;
+  const firstCheckpointY = firstCheckpoint.y * svgScaleY;
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  // Position the first checkpoint near the left side to show the journey path ahead
+  const targetX = 50; // 50px from left edge
+  const targetY = 300; // 300px from top
+  const initialTranslateX = targetX - firstCheckpointX;
+  const initialTranslateY = targetY - firstCheckpointY;
+
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const savedTranslateX = useSharedValue(0);
-  const savedTranslateY = useSharedValue(0);
+  const translateX = useSharedValue(initialTranslateX);
+  const translateY = useSharedValue(initialTranslateY);
+  const savedTranslateX = useSharedValue(initialTranslateX);
+  const savedTranslateY = useSharedValue(initialTranslateY);
 
   const pinchGesture = Gesture.Pinch()
     .onUpdate(e => {
@@ -88,11 +105,14 @@ export default function MapScreen() {
     ],
   }));
 
-  // Calculate checkpoint base positions
-  const centerX = width / 2;
-  const centerY = height / 2;
-
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
+
+  // Use the actual Frodo path from the SVG
+  const gamePath = FRODO_PATH;
+
+  // TODO: Generate progress path based on current journey progress
+  // For now, no progress path until we implement path segmentation by distance
+  const progressPath = null;
 
   return (
     <GestureHandlerRootView
@@ -117,6 +137,11 @@ export default function MapScreen() {
               preserveAspectRatio="none"
               colorize={colorizeMap}
               showTitles={showMapTitles}
+              gamePathColor="red"
+              gamePathData={gamePath}
+              gamePathProgressData={progressPath || undefined}
+              gamePathProgressColor={theme.colors.checkpointUnlocked}
+              scale={scale.value}
               layerColors={{
                 ...layerColors,
                 mapBackground: theme.colors.mapBackground,

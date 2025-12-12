@@ -14,8 +14,6 @@ interface CheckpointProps {
 }
 
 export default function Checkpoint({
-  x,
-  y,
   name,
   isActive,
   showLabel,

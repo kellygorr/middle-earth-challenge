@@ -96,7 +96,7 @@ export const classicTheme: Theme = {
 
     // Modal/Celebration colors
     modalBackground: '#EDE4D3',
-    modalOverlay: 'rgba(44, 24, 16, 0.8)',
+    modalOverlay: 'rgba(44, 24, 16, 0.75)',
     celebrationAccent: '#D4AF37',
 
     // Button colors
@@ -155,7 +155,7 @@ export const minimalistTheme: Theme = {
 
     // Modal/Celebration colors
     modalBackground: '#FFFFFF',
-    modalOverlay: 'rgba(0, 0, 0, 0.5)',
+    modalOverlay: 'rgba(0, 0, 0, 0.75)',
     celebrationAccent: '#D4AF37',
 
     // Button colors

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { TouchableOpacity, StyleSheet } from 'react-native';
+
 import MapScreen from './src/screens/MapScreen';
 import WelcomeModal from './src/components/WelcomeModal';
 import { useSettingsStore } from './src/stores/settingsStore';
