@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
 import Svg, { G, Path, SvgProps } from 'react-native-svg';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  useAnimatedProps,
+  SharedValue,
+} from 'react-native-reanimated';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -11,7 +14,7 @@ interface MiddleEarthMapSvgProps extends SvgProps {
   gamePathData?: string;
   gamePathProgressData?: string;
   gamePathProgressColor?: string;
-  scale?: number;
+  zoomScale?: SharedValue<number>;
   layerColors?: {
     legend?: string;
     mountains?: string;
@@ -37,12 +40,18 @@ export default function MiddleEarthMapSvg({
   gamePathData = GAME_PATH,
   gamePathProgressData,
   gamePathProgressColor = '#00ff00',
-  scale = 1,
+  zoomScale,
   layerColors = {},
   ...props
 }: MiddleEarthMapSvgProps) {
-  // Calculate stroke width that stays visually constant across zoom levels
-  const adjustedStrokeWidth = 10 / scale;
+  // Create animated props for stroke width that stays visually constant across zoom levels
+  const animatedPathProps = useAnimatedProps(() => {
+    'worklet';
+    const scaleValue = zoomScale?.value ?? 1;
+    return {
+      strokeWidth: 10 / scaleValue,
+    };
+  }, [zoomScale]);
 
   // Compute colors for each layer
   const colors = useMemo(
@@ -128,20 +137,20 @@ export default function MiddleEarthMapSvg({
 
       <G id="gamePath">
         {/* Full path */}
-        <Path
+        <AnimatedPath
           d={gamePathData}
           stroke={gamePathColor}
-          strokeWidth={adjustedStrokeWidth}
+          animatedProps={animatedPathProps}
           fill="none"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         {/* Progress path overlay */}
         {gamePathProgressData && (
-          <Path
+          <AnimatedPath
             d={gamePathProgressData}
             stroke={gamePathProgressColor}
-            strokeWidth={adjustedStrokeWidth}
+            animatedProps={animatedPathProps}
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"

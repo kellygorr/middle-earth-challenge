@@ -42,9 +42,8 @@ export default function PositionedCheckpoint({
     labelSize === 'large' ? LABEL_HEIGHT_LARGE : LABEL_HEIGHT_REGULAR;
 
   const animatedStyle = useAnimatedStyle(() => {
-    // Calculate label offset that doesn't scale with zoom
-    const labelOffset =
-      showLabel && checkpoint.labelPosition === 'top' ? labelHeight : 0;
+    // Always apply label offset for top labels to keep position consistent
+    const labelOffset = checkpoint.labelPosition === 'top' ? labelHeight : 0;
 
     return {
       transform: [

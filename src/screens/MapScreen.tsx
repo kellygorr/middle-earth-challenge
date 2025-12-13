@@ -15,9 +15,12 @@ import {
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
+  withTiming,
+  useDerivedValue,
 } from 'react-native-reanimated';
 import SettingsModal from '../components/SettingsModal';
 import SettingsIcon from '../components/SettingsIcon';
+import RecenterIcon from '../components/RecenterIcon';
 import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint';
 import MiddleEarthMapSvg from '../components/MiddleEarthMapSvg';
 
@@ -57,7 +60,7 @@ export default function MapScreen() {
 
   // The SVG is centered, so calculate the left offset
   // SVG width is (width * 3), which is centered in the container
-  const svgOffsetX = (width * 3 - width) / 2; // How much the SVG extends to the left of the visible area
+  const svgOffsetX = (width * 3 - width) / 2;
 
   // Calculate initial position for first checkpoint (Hobbiton)
   const firstCheckpoint = checkpointsData[0];
@@ -69,28 +72,70 @@ export default function MapScreen() {
   // Position the first checkpoint near the left side to show the journey path ahead
   const targetX = 50; // 50px from left edge
   const targetY = 300; // 300px from top
-  const initialTranslateX = targetX - firstCheckpointX;
-  const initialTranslateY = targetY - firstCheckpointY;
+  const initialScrollX = targetX - firstCheckpointX;
+  const initialScrollY = targetY - firstCheckpointY;
 
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
-  const translateX = useSharedValue(initialTranslateX);
-  const translateY = useSharedValue(initialTranslateY);
-  const savedTranslateX = useSharedValue(initialTranslateX);
-  const savedTranslateY = useSharedValue(initialTranslateY);
+  const translateX = useSharedValue(initialScrollX);
+  const translateY = useSharedValue(initialScrollY);
+  const savedTranslateX = useSharedValue(initialScrollX);
+  const savedTranslateY = useSharedValue(initialScrollY);
+
+  const MIN_SCALE = 0.5;
+  const MAX_SCALE = 1.5;
+
+  const screenWidth = useSharedValue(width);
+  const screenHeight = useSharedValue(height);
 
   const pinchGesture = Gesture.Pinch()
     .onUpdate(e => {
-      scale.value = savedScale.value * e.scale;
+      const newScale = savedScale.value * e.scale;
+      scale.value = Math.min(Math.max(newScale, MIN_SCALE), MAX_SCALE);
+
+      // Calculate boundaries based on scaled content
+      const scaledMapWidth = screenWidth.value * 3 * scale.value;
+      const scaledMapHeight = screenHeight.value * scale.value;
+      const excessWidth = Math.max(0, (scaledMapWidth - screenWidth.value) / 2);
+      const excessHeight = Math.max(
+        0,
+        (scaledMapHeight - screenHeight.value) / 2,
+      );
+
+      const maxX = excessWidth + 50;
+      const minX = -excessWidth - 50;
+      const maxY = excessHeight + 50;
+      const minY = -excessHeight - 50;
+
+      translateX.value = Math.min(Math.max(translateX.value, minX), maxX);
+      translateY.value = Math.min(Math.max(translateY.value, minY), maxY);
     })
     .onEnd(() => {
       savedScale.value = scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
     });
 
   const panGesture = Gesture.Pan()
     .onUpdate(e => {
-      translateX.value = savedTranslateX.value + e.translationX;
-      translateY.value = savedTranslateY.value + e.translationY;
+      const newX = savedTranslateX.value + e.translationX;
+      const newY = savedTranslateY.value + e.translationY;
+
+      // Calculate boundaries based on scaled content
+      const scaledMapWidth = screenWidth.value * 3 * scale.value;
+      const scaledMapHeight = screenHeight.value * scale.value;
+      const excessWidth = Math.max(0, (scaledMapWidth - screenWidth.value) / 2);
+      const excessHeight = Math.max(
+        0,
+        (scaledMapHeight - screenHeight.value) / 2,
+      );
+      const padding = 80;
+      const maxX = excessWidth + padding;
+      const minX = -excessWidth - padding;
+      const maxY = excessHeight + padding;
+      const minY = -excessHeight - padding;
+      translateX.value = Math.min(Math.max(newX, minX), maxX);
+      translateY.value = Math.min(Math.max(newY, minY), maxY);
     })
     .onEnd(() => {
       savedTranslateX.value = translateX.value;
@@ -106,6 +151,26 @@ export default function MapScreen() {
   }));
 
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
+
+  const isAtOriginalPosition = useDerivedValue(() => {
+    const scaleMatch = Math.abs(scale.value - 1) < 0.01;
+    const xMatch = Math.abs(translateX.value - initialScrollX) < 5;
+    const yMatch = Math.abs(translateY.value - initialScrollY) < 5;
+    return scaleMatch && xMatch && yMatch;
+  });
+
+  const recenterButtonStyle = useAnimatedStyle(() => ({
+    backgroundColor: isAtOriginalPosition.value ? '#666666' : '#000000',
+  }));
+
+  const handleRecenter = () => {
+    scale.value = withTiming(1, { duration: 300 });
+    savedScale.value = 1;
+    translateX.value = withTiming(initialScrollX, { duration: 300 });
+    translateY.value = withTiming(initialScrollY, { duration: 300 });
+    savedTranslateX.value = initialScrollX;
+    savedTranslateY.value = initialScrollY;
+  };
 
   // Use the actual Frodo path from the SVG
   const gamePath = FRODO_PATH;
@@ -123,13 +188,13 @@ export default function MapScreen() {
     >
       <StatusBar barStyle="dark-content" />
       {/* Map - Using simplified SVG */}
-      <View
-        style={[
-          styles.mapContainer,
-          { backgroundColor: theme.colors.mapBackground },
-        ]}
-      >
-        <GestureDetector gesture={composedGesture}>
+      <GestureDetector gesture={composedGesture}>
+        <View
+          style={[
+            styles.mapContainer,
+            { backgroundColor: theme.colors.mapBackground },
+          ]}
+        >
           <Animated.View style={[styles.svgWrapper, animatedStyle]}>
             <MiddleEarthMapSvg
               width={width * 3}
@@ -141,39 +206,39 @@ export default function MapScreen() {
               gamePathData={gamePath}
               gamePathProgressData={progressPath || undefined}
               gamePathProgressColor={theme.colors.checkpointUnlocked}
-              scale={scale.value}
+              zoomScale={scale}
               layerColors={{
                 ...layerColors,
                 mapBackground: theme.colors.mapBackground,
               }}
             />
           </Animated.View>
-        </GestureDetector>
 
-        {/* Checkpoints - rendered outside the animated view so they don't scale */}
-        {checkpointsData.map(checkpoint => {
-          const baseX = checkpoint.x * svgScaleX - svgOffsetX;
-          const baseY = checkpoint.y * svgScaleY;
+          {/* Checkpoints - rendered outside the animated view so they don't scale */}
+          {checkpointsData.map(checkpoint => {
+            const baseX = checkpoint.x * svgScaleX - svgOffsetX;
+            const baseY = checkpoint.y * svgScaleY;
 
-          return (
-            <PositionedCheckpoint
-              key={checkpoint.id}
-              checkpoint={checkpoint}
-              baseX={baseX}
-              baseY={baseY}
-              centerX={centerX}
-              centerY={centerY}
-              translateX={translateX}
-              translateY={translateY}
-              scale={scale}
-              showLabel={showCheckpointLabels}
-              onPress={() =>
-                console.log(`${checkpoint.name} checkpoint pressed`)
-              }
-            />
-          );
-        })}
-      </View>
+            return (
+              <PositionedCheckpoint
+                key={checkpoint.id}
+                checkpoint={checkpoint}
+                baseX={baseX}
+                baseY={baseY}
+                centerX={centerX}
+                centerY={centerY}
+                translateX={translateX}
+                translateY={translateY}
+                scale={scale}
+                showLabel={showCheckpointLabels}
+                onPress={() =>
+                  console.log(`${checkpoint.name} checkpoint pressed`)
+                }
+              />
+            );
+          })}
+        </View>
+      </GestureDetector>
 
       {/* Settings Button */}
       {!showWelcome && (
@@ -214,6 +279,17 @@ export default function MapScreen() {
               </Text>
             </View>
           </TouchableOpacity>
+
+          {/* Recenter Button */}
+          <Animated.View style={[styles.recenterButton, recenterButtonStyle]}>
+            <TouchableOpacity
+              style={styles.recenterButtonTouch}
+              onPress={handleRecenter}
+              activeOpacity={0.7}
+            >
+              <RecenterIcon size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </Animated.View>
         </>
       )}
 
@@ -264,5 +340,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+  },
+  recenterButton: {
+    position: 'absolute',
+    bottom: 50,
+    right: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recenterButtonTouch: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

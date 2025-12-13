@@ -1,5 +1,9 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import Animated, {
+  withTiming,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 import { typography } from '../../styles/typography';
 
@@ -26,6 +30,10 @@ export default function Checkpoint({
   const color = isActive
     ? theme.colors.checkpointUnlocked
     : theme.colors.checkpointLocked;
+
+  const labelAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(showLabel ? 1 : 0, { duration: 200 }),
+  }));
 
   return (
     <View
@@ -62,30 +70,29 @@ export default function Checkpoint({
       </TouchableOpacity>
 
       {/* Checkpoint label */}
-      {showLabel && (
-        <View
+      <Animated.View
+        style={[
+          styles.nameContainer,
+          labelPosition === 'top'
+            ? styles.nameContainerAbove
+            : styles.nameContainerRight,
+          {
+            backgroundColor: theme.colors.checkpointTextBackground,
+          },
+          labelAnimatedStyle,
+        ]}
+      >
+        <Text
           style={[
-            styles.nameContainer,
-            labelPosition === 'top'
-              ? styles.nameContainerAbove
-              : styles.nameContainerRight,
+            labelSize === 'large' ? typography.labelLarge : typography.label,
             {
-              backgroundColor: theme.colors.checkpointTextBackground,
+              color: theme.colors.checkpointLabel,
             },
           ]}
         >
-          <Text
-            style={[
-              labelSize === 'large' ? typography.labelLarge : typography.label,
-              {
-                color: theme.colors.checkpointLabel,
-              },
-            ]}
-          >
-            {name}
-          </Text>
-        </View>
-      )}
+          {name}
+        </Text>
+      </Animated.View>
     </View>
   );
 }
