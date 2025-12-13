@@ -12,9 +12,10 @@ interface MiddleEarthMapSvgProps extends SvgProps {
   showTitles?: boolean;
   gamePathColor?: string;
   gamePathData?: string;
-  gamePathProgressData?: string;
-  gamePathProgressColor?: string;
+  gamePathInactiveColor?: string;
   zoomScale?: SharedValue<number>;
+  journeyProgress?: SharedValue<number>; // 0 to 1, representing 0% to 100% of journey
+  initialPathProgress?: SharedValue<number>; // 0 to 1 for initial reveal animation
   layerColors?: {
     legend?: string;
     mountains?: string;
@@ -33,25 +34,45 @@ const DEFAULT_COLOR = '#231f20';
 const GAME_PATH =
   'M759.27,647.04c13.15,65.44,11.59,53.46,65.92,26.83,10.49-3.26,25.14-21.41,34.41-7.58,2.05,6.29,32.88,11.83,40.25,13.42,18.24,1.16,35.4-7.28,55.42,1.17,13.11-40.41,51.49-60.75,88.08-50.16,25.11,7.69,24.36,15.59,51.92,5.83,8.14-2.8,23.57-.3,30.33,4.08,12.68,12.89,31.88,25.96,50.75,20.42,42.11-9.91,94.69-17.57,135.91-30.92,7.94,2.55,21.79-9.93,27.42-14,30.12-7.18,64.17-3.96,93.91,3.5,11.26,3.29,27.94,8.39,30.33,22.17-.25,3.1,4.73,2.26,6.42,2.33,11.1,3.75,16.04-24.37,15.25-32.2-28.67,113.93,26.83,71.97-67.75,193.2,0,0-1.17,21-1.17,21,26.25,2.73,52.11-16.53,74.08-28-19.29,16.83-50.38,25.29-74.08,33.83-22.08,27.08-22.68,64.85-15.17,97.41,12.98-5.21,32.25-22.07,46.08-12.25,13.52,3.95,19.54-6.45,25.66,9.33,23.92-5.92,40.71,2.13,49,25.67,10.34,8.01,26.99,16.32,26.25,31.5,4.2,3.92,12.17,11.28,16.33,15.16,6.13,5.02,35.41,6.09,43.2,7.66,13.99,4.21,32.02,12.38,46.08,16.33,5.26,4.88,2.14,20.74,16.91,27.01,25.57,10.85,37.76,22.25,43.76,29.03,11.22,21.27,50.1,19.24,54.18,29.48,1.29,14.15-11.28,27.24-14.97,40.21-3.65,13.24,5.84,24.42,17.94,26.85,29.49,3.86,38.71-35.91,51.12,6.99-1.27,29.41-68.84,35.61-9.2,59.13,13.74,5.42,14.84,26.5,14.25,40.19-6.18,20.46-24.93,27.21-18.61,66.42,2.45,37.21,28.51,60.09,25.41,98.6,0,0-5.83-5.83-5.83-5.83.89.84,16.59-12.33,17.37-13.03,4.84-4.38,9.99-8.43,14.09-13.55,3.82-4.78,2.48-3.89,7.97-7.09,15.55-7.28,32.19,1.74,47.25,6.3,10.43,3.27,15.7,16.68,26.35,19.18,10.68,2.51,27.13-2.64,37.99-1.3,12.13,1.5,24.13,5,36.27,6.37,5.51.62,26.72-5.02,32.16-5,18.07.8,37.31-1.45,54.19,6.3-15.05,1.75-31.79.64-45.15,8.75-25.92,22.05-18.77,60.7-16.35,90.78.99,6.94.34,13.84-.24,20.73,7.14,26.97-17.29,114.09,4.82,107.28,4.8-6,21.99-31.87,28.99-31.37,19.25-.37,15.86-18.07,39.58-20.33-7.07-22-3.95-44.18-7.78-66.58-3.34-13.05-16.87-20.44-27.48-27.43,16.98-3.73,24.31,9.93,34.55,7.81,18.05-17.73,33.44-12.94,55.87-10.15,15.5-1.83,33.53-8.56,22.94,15.46.68,18.83.67,14.04,4.97,32.4';
 
+// Approximate path length for stroke-dasharray animation (in SVG units)
+const PATH_LENGTH = 3500;
+
 export default function MiddleEarthMapSvg({
   colorize = false,
   showTitles = true,
   gamePathColor = 'red',
+  gamePathInactiveColor = '#C4B5A0',
   gamePathData = GAME_PATH,
-  gamePathProgressData,
-  gamePathProgressColor = '#00ff00',
   zoomScale,
+  journeyProgress,
+  initialPathProgress,
   layerColors = {},
   ...props
 }: MiddleEarthMapSvgProps) {
-  // Create animated props for stroke width that stays visually constant across zoom levels
-  const animatedPathProps = useAnimatedProps(() => {
+  // Base path initial reveal animation
+  const basePathAnimatedProps = useAnimatedProps(() => {
     'worklet';
+    const initialProgress = initialPathProgress?.value ?? 1; // Default to fully visible
     const scaleValue = zoomScale?.value ?? 1;
+    const dashOffset = PATH_LENGTH * (1 - initialProgress);
     return {
       strokeWidth: 10 / scaleValue,
+      strokeDashoffset: dashOffset,
     };
-  }, [zoomScale]);
+  }, [zoomScale, initialPathProgress]);
+
+  // Progress path - only shows user's actual progress
+  const pathProgressAnimatedProps = useAnimatedProps(() => {
+    'worklet';
+    const progress = journeyProgress?.value ?? 0;
+    const scaleValue = zoomScale?.value ?? 1;
+    // strokeDashoffset starts at PATH_LENGTH (nothing visible) and decreases to 0 (fully visible)
+    const dashOffset = PATH_LENGTH * (1 - progress);
+    return {
+      strokeWidth: 10 / scaleValue,
+      strokeDashoffset: dashOffset,
+    };
+  }, [zoomScale, journeyProgress]);
 
   // Compute colors for each layer
   const colors = useMemo(
@@ -136,26 +157,26 @@ export default function MiddleEarthMapSvg({
       {/* Game Path */}
 
       <G id="gamePath">
-        {/* Full path */}
+        {/* Base path - animates in on first view (inactive/grey color) */}
         <AnimatedPath
           d={gamePathData}
-          stroke={gamePathColor}
-          animatedProps={animatedPathProps}
+          stroke={gamePathInactiveColor}
+          animatedProps={basePathAnimatedProps}
           fill="none"
           strokeLinecap="round"
           strokeLinejoin="round"
+          strokeDasharray={PATH_LENGTH}
         />
-        {/* Progress path overlay */}
-        {gamePathProgressData && (
-          <AnimatedPath
-            d={gamePathProgressData}
-            stroke={gamePathProgressColor}
-            animatedProps={animatedPathProps}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )}
+        {/* Progress overlay - yellow path showing user progress */}
+        <AnimatedPath
+          d={gamePathData}
+          stroke={gamePathColor}
+          animatedProps={pathProgressAnimatedProps}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray={PATH_LENGTH}
+        />
       </G>
     </Svg>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,6 +6,7 @@ import {
   StatusBar,
   TouchableOpacity,
   Text,
+  TextInput,
 } from 'react-native';
 import {
   GestureHandlerRootView,
@@ -25,8 +26,8 @@ import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint'
 import MiddleEarthMapSvg from '../components/MiddleEarthMapSvg';
 
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
-// import { useSaveStore } from '../stores/saveStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
+import { TOTAL_JOURNEY_MILES } from '../constants/journey';
 import { layerColors } from '../styles/svgLayerColors';
 import { typography } from '../styles/typography';
 import { Checkpoint } from '../types';
@@ -43,6 +44,7 @@ const SVG_HEIGHT = 2350.67;
 export default function MapScreen() {
   const theme = useTheme();
   const [showSettings, setShowSettings] = useState(false);
+  const [testMiles, setTestMiles] = useState('0');
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const showCheckpointLabels = useSettingsStore(
     state => state.showCheckpointLabels,
@@ -52,7 +54,6 @@ export default function MapScreen() {
   );
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const showMapTitles = useSettingsStore(state => state.showMapTitles);
-  // const journeyProgress = useSaveStore(state => state.journeyProgress);
 
   // Calculate scale factors to convert SVG coordinates to rendered coordinates
   const svgScaleX = (width * 3) / SVG_WIDTH;
@@ -87,6 +88,27 @@ export default function MapScreen() {
 
   const screenWidth = useSharedValue(width);
   const screenHeight = useSharedValue(height);
+
+  // Initial path reveal animation (0 to 1)
+  const initialPathProgress = useSharedValue(showWelcome ? 0 : 1);
+
+  // Watch for welcome modal dismissal to trigger animation
+  useEffect(() => {
+    if (!showWelcome) {
+      initialPathProgress.value = withTiming(1, { duration: 2000 });
+    }
+  }, [showWelcome, initialPathProgress]);
+
+  // Convert journey miles to 0-1 progress for path animation
+  const journeyProgressValue = useSharedValue(
+    testMiles ? Math.min(parseFloat(testMiles) / TOTAL_JOURNEY_MILES, 1) : 0,
+  );
+
+  // Update progress when test miles changes
+  useEffect(() => {
+    const miles = parseFloat(testMiles) || 0;
+    journeyProgressValue.value = Math.min(miles / TOTAL_JOURNEY_MILES, 1);
+  }, [testMiles, journeyProgressValue]);
 
   const pinchGesture = Gesture.Pinch()
     .onUpdate(e => {
@@ -175,10 +197,6 @@ export default function MapScreen() {
   // Use the actual Frodo path from the SVG
   const gamePath = FRODO_PATH;
 
-  // TODO: Generate progress path based on current journey progress
-  // For now, no progress path until we implement path segmentation by distance
-  const progressPath = null;
-
   return (
     <GestureHandlerRootView
       style={[
@@ -202,11 +220,12 @@ export default function MapScreen() {
               preserveAspectRatio="none"
               colorize={colorizeMap}
               showTitles={showMapTitles}
-              gamePathColor="red"
+              gamePathColor={theme.colors.checkpointUnlocked}
+              gamePathInactiveColor={theme.colors.pathGrey}
               gamePathData={gamePath}
-              gamePathProgressData={progressPath || undefined}
-              gamePathProgressColor={theme.colors.checkpointUnlocked}
               zoomScale={scale}
+              journeyProgress={journeyProgressValue}
+              initialPathProgress={initialPathProgress}
               layerColors={{
                 ...layerColors,
                 mapBackground: theme.colors.mapBackground,
@@ -298,6 +317,22 @@ export default function MapScreen() {
         visible={showSettings}
         onDismiss={() => setShowSettings(false)}
       />
+
+      {/* Test Input for Progress */}
+      {!showWelcome && (
+        <View style={styles.testInputContainer}>
+          <Text style={styles.testInputLabel}>Test Miles:</Text>
+          <TextInput
+            style={styles.testInput}
+            value={testMiles}
+            onChangeText={setTestMiles}
+            keyboardType="numeric"
+            placeholder="0"
+            placeholderTextColor="#999"
+          />
+          <Text style={styles.testInputLabel}>/ {TOTAL_JOURNEY_MILES}</Text>
+        </View>
+      )}
     </GestureHandlerRootView>
   );
 }
@@ -356,5 +391,32 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  testInputContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  testInputLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    marginHorizontal: 8,
+  },
+  testInput: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    minWidth: 80,
+    fontSize: 16,
+    textAlign: 'center',
+    color: '#000000',
   },
 });
