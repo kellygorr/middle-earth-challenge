@@ -18,10 +18,14 @@ import Animated, {
   useSharedValue,
   withTiming,
   useDerivedValue,
+  withDelay,
+  cancelAnimation,
+  Easing,
 } from 'react-native-reanimated';
 import SettingsModal from '../components/SettingsModal';
-import SettingsIcon from '../components/SettingsIcon';
-import RecenterIcon from '../components/RecenterIcon';
+import SettingsIcon from '../components/Icons/SettingsIcon';
+import RecenterIcon from '../components/Icons/RecenterIcon';
+import { iconSizes } from '../styles/global';
 import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint';
 import MiddleEarthMapSvg from '../components/MiddleEarthMapSvg';
 
@@ -82,6 +86,15 @@ export default function MapScreen() {
   const translateY = useSharedValue(initialScrollY);
   const savedTranslateX = useSharedValue(initialScrollX);
   const savedTranslateY = useSharedValue(initialScrollY);
+  // Suppress recenter button flicker while recentering animation runs
+  const isRecentering = useSharedValue(false);
+
+  // Recenter button opacity (starts hidden at origin; shown when monitor detects leaving)
+  const recenterOpacity = useSharedValue(0);
+  const recenterButtonStyle = useAnimatedStyle(() => ({
+    opacity: recenterOpacity.value,
+    backgroundColor: '#000000',
+  }));
 
   const MIN_SCALE = 0.5;
   const MAX_SCALE = 1.5;
@@ -89,15 +102,87 @@ export default function MapScreen() {
   const screenWidth = useSharedValue(width);
   const screenHeight = useSharedValue(height);
 
+  // Shared animation timings
+  const BUTTON_ENTER_DURATION = 220;
+  const BUTTON_EXIT_DURATION = 50;
+  const BUTTON_ENTER_DELAY_LABELS = 120;
+  // Opacity animations use linear timing (no easing)
+
+  // Origin monitoring: start enabled on load, disable once we leave origin,
+  // and re-enable after recenter completes.
+  const originMonitorEnabled = useSharedValue(true);
+
   // Initial path reveal animation (0 to 1)
   const initialPathProgress = useSharedValue(showWelcome ? 0 : 1);
+  // UI button opacities (all stay mounted; fade via opacity)
+  const settingsOpacity = useSharedValue(showWelcome ? 0 : 1);
+  const labelsOpacity = useSharedValue(showWelcome ? 0 : 1);
+  const settingsEnterStyle = useAnimatedStyle(() => ({
+    opacity: settingsOpacity.value,
+  }));
+  const labelsEnterStyle = useAnimatedStyle(() => ({
+    opacity: labelsOpacity.value,
+  }));
 
   // Watch for welcome modal dismissal to trigger animation
   useEffect(() => {
     if (!showWelcome) {
-      initialPathProgress.value = withTiming(1, { duration: 2000 });
+      // Fade in UI first (settings immediate, labels staggered)
+      settingsOpacity.value = 0;
+      labelsOpacity.value = 0;
+      settingsOpacity.value = withTiming(1, {
+        duration: BUTTON_ENTER_DURATION,
+      });
+      labelsOpacity.value = withDelay(
+        BUTTON_ENTER_DELAY_LABELS,
+        withTiming(1, {
+          duration: BUTTON_ENTER_DURATION,
+        }),
+      );
+
+      // Then start path animation
+      initialPathProgress.value = withDelay(
+        1000,
+        withTiming(1, { duration: 2000 }),
+      );
+    } else {
+      // Reset opacities when welcome shows
+      cancelAnimation(settingsOpacity);
+      cancelAnimation(labelsOpacity);
+      settingsOpacity.value = withTiming(0, {
+        duration: BUTTON_EXIT_DURATION,
+      });
+      labelsOpacity.value = withTiming(0, {
+        duration: BUTTON_EXIT_DURATION,
+      });
+      // Hide recenter button and reset origin monitoring
+      cancelAnimation(recenterOpacity);
+      recenterOpacity.value = withTiming(0, { duration: BUTTON_EXIT_DURATION });
+      originMonitorEnabled.value = true;
+      // Force map back to original position so recenter stays hidden
+      scale.value = 1;
+      savedScale.value = 1;
+      translateX.value = initialScrollX;
+      translateY.value = initialScrollY;
+      savedTranslateX.value = initialScrollX;
+      savedTranslateY.value = initialScrollY;
+      // Hide path so it can re-run on next dismissal
+      initialPathProgress.value = 0;
     }
-  }, [showWelcome, initialPathProgress]);
+  }, [
+    showWelcome,
+    initialPathProgress,
+    settingsOpacity,
+    labelsOpacity,
+    scale,
+    savedScale,
+    translateX,
+    translateY,
+    savedTranslateX,
+    savedTranslateY,
+    initialScrollX,
+    initialScrollY,
+  ]);
 
   // Convert journey miles to 0-1 progress for path animation
   const journeyProgressValue = useSharedValue(
@@ -174,24 +259,54 @@ export default function MapScreen() {
 
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
 
-  const isAtOriginalPosition = useDerivedValue(() => {
-    const scaleMatch = Math.abs(scale.value - 1) < 0.01;
-    const xMatch = Math.abs(translateX.value - initialScrollX) < 5;
-    const yMatch = Math.abs(translateY.value - initialScrollY) < 5;
-    return scaleMatch && xMatch && yMatch;
+  // Centralized origin watcher: compares current values to initial origin.
+  // When values differ, show the recenter button and stop watching.
+  useDerivedValue(() => {
+    if (!originMonitorEnabled.value) return;
+    // Exact comparison after explicit snap-to-origin
+    const movedScale = scale.value !== 1;
+    const movedX = translateX.value !== initialScrollX;
+    const movedY = translateY.value !== initialScrollY;
+    if (movedScale || movedX || movedY) {
+      recenterOpacity.value = withTiming(1, { duration: BUTTON_ENTER_DURATION });
+      originMonitorEnabled.value = false;
+    }
   });
 
-  const recenterButtonStyle = useAnimatedStyle(() => ({
-    backgroundColor: isAtOriginalPosition.value ? '#666666' : '#000000',
-  }));
-
   const handleRecenter = () => {
-    scale.value = withTiming(1, { duration: 300 });
-    savedScale.value = 1;
-    translateX.value = withTiming(initialScrollX, { duration: 300 });
-    translateY.value = withTiming(initialScrollY, { duration: 300 });
-    savedTranslateX.value = initialScrollX;
-    savedTranslateY.value = initialScrollY;
+    isRecentering.value = true;
+    // Immediate feedback: hide button right away
+    recenterOpacity.value = withTiming(0, { duration: BUTTON_EXIT_DURATION });
+    scale.value = withTiming(
+      1,
+      { duration: 280, easing: Easing.out(Easing.cubic) },
+      finished => {
+        if (finished) {
+          savedScale.value = 1;
+        }
+      },
+    );
+    translateX.value = withTiming(
+      initialScrollX,
+      { duration: 280, easing: Easing.out(Easing.cubic) },
+      finished => {
+        if (finished) {
+          savedTranslateX.value = initialScrollX;
+        }
+      },
+    );
+    translateY.value = withTiming(
+      initialScrollY,
+      { duration: 280, easing: Easing.out(Easing.cubic) },
+      finished => {
+        if (finished) {
+          savedTranslateY.value = initialScrollY;
+          isRecentering.value = false;
+          // Re-enable monitoring after recenter completes to confirm origin.
+          originMonitorEnabled.value = true;
+        }
+      },
+    );
   };
 
   // Use the actual Frodo path from the SVG
@@ -259,58 +374,55 @@ export default function MapScreen() {
         </View>
       </GestureDetector>
 
-      {/* Settings Button */}
-      {!showWelcome && (
-        <>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => setShowSettings(true)}
-            activeOpacity={0.7}
-          >
-            <SettingsIcon size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+      {/* Settings Button (always mounted; opacity-driven) */}
+      <Animated.View style={[styles.settingsButton, settingsEnterStyle]}>
+        <TouchableOpacity
+          style={styles.recenterButtonTouch}
+          onPress={() => setShowSettings(true)}
+          activeOpacity={0.7}
+        >
+          <SettingsIcon size={iconSizes.medium} color="#FFFFFF" />
+        </TouchableOpacity>
+      </Animated.View>
 
-          {/* Labels Toggle */}
-          <TouchableOpacity
-            style={styles.labelsButton}
-            onPress={() => setShowCheckpointLabels(!showCheckpointLabels)}
-            activeOpacity={0.7}
+      {/* Labels Toggle (always mounted; opacity-driven with stagger) */}
+      <Animated.View style={[styles.labelsButton, labelsEnterStyle]}>
+        <TouchableOpacity
+          onPress={() => setShowCheckpointLabels(!showCheckpointLabels)}
+          activeOpacity={0.7}
+        >
+          <View
+            style={[
+              styles.labelContainer,
+              {
+                backgroundColor: showCheckpointLabels
+                  ? theme.colors.checkpointTextBackground
+                  : theme.colors.checkpointLabelInactive,
+              },
+            ]}
           >
-            <View
+            <Text
               style={[
-                styles.labelContainer,
-                {
-                  backgroundColor: showCheckpointLabels
-                    ? theme.colors.checkpointTextBackground
-                    : theme.colors.checkpointLabelInactive,
-                },
+                typography.label,
+                { color: theme.colors.checkpointLabel },
               ]}
             >
-              <Text
-                style={[
-                  typography.label,
-                  {
-                    color: theme.colors.checkpointLabel,
-                  },
-                ]}
-              >
-                Labels
-              </Text>
-            </View>
-          </TouchableOpacity>
+              Labels
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
 
-          {/* Recenter Button */}
-          <Animated.View style={[styles.recenterButton, recenterButtonStyle]}>
-            <TouchableOpacity
-              style={styles.recenterButtonTouch}
-              onPress={handleRecenter}
-              activeOpacity={0.7}
-            >
-              <RecenterIcon size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-          </Animated.View>
-        </>
-      )}
+      {/* Recenter Button (always mounted; opacity-driven based on center state) */}
+      <Animated.View style={[styles.recenterButton, recenterButtonStyle]}>
+        <TouchableOpacity
+          style={styles.recenterButtonTouch}
+          onPress={handleRecenter}
+          activeOpacity={0.7}
+        >
+          <RecenterIcon size={iconSizes.medium} color="#FFFFFF" />
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* Settings Modal */}
       <SettingsModal
@@ -318,7 +430,7 @@ export default function MapScreen() {
         onDismiss={() => setShowSettings(false)}
       />
 
-      {/* Test Input for Progress */}
+      {/* Test Input for Progress (conditional render) */}
       {!showWelcome && (
         <View style={styles.testInputContainer}>
           <Text style={styles.testInputLabel}>Test Miles:</Text>

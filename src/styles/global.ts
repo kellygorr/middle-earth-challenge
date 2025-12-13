@@ -48,3 +48,11 @@ export const shadows = {
     textShadowRadius: 4,
   },
 } as const;
+
+// Standardized icon sizes
+export const iconSizes = {
+  small: 20,
+  medium: 24,
+  large: 32,
+  xlarge: 40,
+} as const;

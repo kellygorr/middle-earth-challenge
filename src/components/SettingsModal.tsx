@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   Modal,
   View,
@@ -13,16 +13,15 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withDelay,
-  Easing,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { typography } from '../styles/typography';
-import { spacing, shadows } from '../styles/global';
+import { spacing, shadows, iconSizes } from '../styles/global';
+import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import Button from './Button';
-import SettingsIcon from './SettingsIcon';
-import HomeIcon from './HomeIcon';
+import SettingsIcon from './Icons/SettingsIcon';
+import HomeIcon from './Icons/HomeIcon';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -48,59 +47,35 @@ export default function SettingsModal({
   const setShowMapTitles = useSettingsStore(state => state.setShowMapTitles);
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
 
+  const { internalVisible, animatedBackgroundStyle, animatedContentStyle } =
+    useAnimatedModal(visible, {
+      entranceDelay: 200,
+      entranceDuration: 300,
+      exitDuration: 150,
+      translateDistance: -spacing.lg,
+    });
+
+  // Independent fade for the floating settings button (opacity-only)
+  const buttonOpacity = useSharedValue(visible ? 1 : 0);
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    opacity: buttonOpacity.value,
+  }));
+  React.useEffect(() => {
+    const BUTTON_ENTER_DURATION = 220;
+    const BUTTON_EXIT_DURATION = 50;
+    buttonOpacity.value = withTiming(visible ? 1 : 0, {
+      duration: visible ? BUTTON_ENTER_DURATION : BUTTON_EXIT_DURATION,
+    });
+  }, [visible, buttonOpacity]);
+
   const handleHomePress = () => {
     setShowWelcome(true);
     onDismiss();
   };
 
-  // Animation values
-  const backgroundOpacity = useSharedValue(0);
-  const contentOpacity = useSharedValue(0);
-  const contentTranslateY = useSharedValue(-spacing.lg);
-
-  // Trigger animations when visible changes
-  useEffect(() => {
-    if (visible) {
-      // Entrance: background fades in, then content slides down
-      backgroundOpacity.value = withTiming(1, { duration: 200 });
-      contentOpacity.value = withDelay(
-        200,
-        withTiming(1, {
-          duration: 300,
-          easing: Easing.out(Easing.cubic),
-        }),
-      );
-      contentTranslateY.value = withDelay(
-        200,
-        withTiming(0, {
-          duration: 300,
-          easing: Easing.out(Easing.cubic),
-        }),
-      );
-    } else {
-      // Exit: content slides up, then background fades out
-      contentOpacity.value = withTiming(0, { duration: 200 });
-      contentTranslateY.value = withTiming(-spacing.lg, { duration: 200 });
-      backgroundOpacity.value = withDelay(
-        200,
-        withTiming(0, { duration: 150 }),
-      );
-    }
-  }, [visible, backgroundOpacity, contentOpacity, contentTranslateY]);
-
-  // Animated styles
-  const animatedBackgroundStyle = useAnimatedStyle(() => ({
-    opacity: backgroundOpacity.value,
-  }));
-
-  const animatedContentStyle = useAnimatedStyle(() => ({
-    opacity: contentOpacity.value,
-    transform: [{ translateY: contentTranslateY.value }],
-  }));
-
   return (
     <Modal
-      visible={visible}
+      visible={internalVisible}
       transparent
       animationType="none"
       onRequestClose={onDismiss}
@@ -113,11 +88,9 @@ export default function SettingsModal({
           animatedBackgroundStyle,
         ]}
       >
-        {/* Background overlay - dismisses modal when tapped */}
         <TouchableWithoutFeedback onPress={onDismiss}>
           <View style={StyleSheet.absoluteFill} />
         </TouchableWithoutFeedback>
-
         <SafeAreaView
           style={{
             flex: 1,
@@ -126,6 +99,7 @@ export default function SettingsModal({
             justifyContent: 'center',
           }}
           edges={['top', 'bottom']}
+          pointerEvents="box-none"
         >
           <Animated.View style={[styles.contentWrapper, animatedContentStyle]}>
             {/* Settings Title - Outside modal */}
@@ -150,7 +124,10 @@ export default function SettingsModal({
                 onPress={handleHomePress}
                 activeOpacity={0.7}
               >
-                <HomeIcon size={20} color={theme.colors.textPrimary} />
+                <HomeIcon
+                  size={iconSizes.large}
+                  color={theme.colors.textPrimary}
+                />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.closeButton}
@@ -160,7 +137,7 @@ export default function SettingsModal({
                 <Text
                   style={[
                     typography.modalTitle,
-                    { color: theme.colors.textPrimary },
+                    { color: theme.colors.textPrimary, fontSize: 40 },
                   ]}
                 >
                   ×
@@ -169,7 +146,7 @@ export default function SettingsModal({
               <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={true}
+                showsVerticalScrollIndicator={false}
                 bounces={true}
                 scrollEventThrottle={16}
                 keyboardShouldPersistTaps="handled"
@@ -326,126 +303,30 @@ export default function SettingsModal({
                     />
                   </View>
                 </View>
-
-                {/* Test Section 1 */}
-                <View style={styles.section}>
-                  <Text
-                    style={[
-                      typography.subtitle,
-                      styles.sectionTitle,
-                      { color: theme.colors.textPrimary },
-                    ]}
-                  >
-                    Test Section 1
-                  </Text>
-                  <View
-                    style={[styles.settingRow, styles.settingRowWithBorder]}
-                  >
-                    <Text
-                      style={[
-                        typography.body,
-                        { color: theme.colors.textPrimary, flex: 1 },
-                      ]}
-                    >
-                      Test option 1
-                    </Text>
-                    <Switch
-                      value={false}
-                      onValueChange={() => {}}
-                      trackColor={{
-                        false: theme.colors.buttonInactive,
-                        true: theme.colors.buttonPrimary,
-                      }}
-                      thumbColor={theme.colors.surface}
-                    />
-                  </View>
-                  <View style={styles.settingRow}>
-                    <Text
-                      style={[
-                        typography.body,
-                        { color: theme.colors.textPrimary, flex: 1 },
-                      ]}
-                    >
-                      Test option 2
-                    </Text>
-                    <Switch
-                      value={false}
-                      onValueChange={() => {}}
-                      trackColor={{
-                        false: theme.colors.buttonInactive,
-                        true: theme.colors.buttonPrimary,
-                      }}
-                      thumbColor={theme.colors.surface}
-                    />
-                  </View>
-                </View>
-
-                {/* Test Section 2 */}
-                <View style={styles.section}>
-                  <Text
-                    style={[
-                      typography.subtitle,
-                      styles.sectionTitle,
-                      { color: theme.colors.textPrimary },
-                    ]}
-                  >
-                    Test Section 2
-                  </Text>
-                  <View
-                    style={[styles.settingRow, styles.settingRowWithBorder]}
-                  >
-                    <Text
-                      style={[
-                        typography.body,
-                        { color: theme.colors.textPrimary, flex: 1 },
-                      ]}
-                    >
-                      Test option 3
-                    </Text>
-                    <Switch
-                      value={false}
-                      onValueChange={() => {}}
-                      trackColor={{
-                        false: theme.colors.buttonInactive,
-                        true: theme.colors.buttonPrimary,
-                      }}
-                      thumbColor={theme.colors.surface}
-                    />
-                  </View>
-                  <View style={styles.settingRow}>
-                    <Text
-                      style={[
-                        typography.body,
-                        { color: theme.colors.textPrimary, flex: 1 },
-                      ]}
-                    >
-                      Test option 4
-                    </Text>
-                    <Switch
-                      value={false}
-                      onValueChange={() => {}}
-                      trackColor={{
-                        false: theme.colors.buttonInactive,
-                        true: theme.colors.buttonPrimary,
-                      }}
-                      thumbColor={theme.colors.surface}
-                    />
-                  </View>
-                </View>
               </ScrollView>
             </View>
           </Animated.View>
         </SafeAreaView>
       </Animated.View>
 
-      {/* Settings Button - Rendered inside modal to be above overlay */}
-      <TouchableOpacity
-        style={styles.settingsButton}
-        onPress={onDismiss}
-        activeOpacity={0.7}
+      {/* Settings Button - Independent fade-only animation (no translate) */}
+      <Animated.View
+        style={[styles.settingsButton, animatedButtonStyle]}
+        pointerEvents="box-none"
       >
-        <SettingsIcon size={24} color="#FFFFFF" />
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={{
+            width: '100%',
+            height: '100%',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onPress={onDismiss}
+          activeOpacity={0.7}
+        >
+          <SettingsIcon size={iconSizes.medium} color="#FFFFFF" />
+        </TouchableOpacity>
+      </Animated.View>
     </Modal>
   );
 }
@@ -461,11 +342,11 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 500,
     flex: 1,
-    maxHeight: '85%',
+    maxHeight: '80%',
     alignItems: 'flex-start',
   },
   title: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   modalContainer: {
     width: '100%',
@@ -477,20 +358,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+    paddingTop: 64, // Space for larger home/close buttons
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: spacing.xl,
-    paddingTop: 56, // Space for home/close buttons
+    padding: spacing.lg,
+    paddingTop: 0,
   },
   homeButton: {
     position: 'absolute',
     top: 0,
     left: 0,
-    width: 56,
-    height: 56,
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -498,8 +380,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     right: 0,
-    width: 56,
-    height: 56,
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
   },
