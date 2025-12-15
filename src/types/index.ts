@@ -1,3 +1,5 @@
+import type { ThemeName } from '../styles/themes';
+
 // Checkpoint types
 export interface Checkpoint {
   id: number;
@@ -78,11 +80,11 @@ export type LabelSize = 'regular' | 'large';
 export interface UserSettings {
   id: string;
   labelSize: LabelSize;
-  currentTheme: 'classic' | 'minimalist';
+  currentTheme: ThemeName;
   showTriviaMarkers: boolean;
   showCheckpointLabels: boolean;
   colorizeMap: boolean;
-  showMapTitles: boolean;
+  reducedMapTitles: boolean;
 }
 
 // Journey segment definition (from distance.md)
@@ -93,30 +95,6 @@ export interface JourneySegment {
   miles: number;
   startMiles: number; // Cumulative start
   endMiles: number; // Cumulative end
-}
-
-// Checkpoint statistics
-export interface CheckpointStats {
-  checkpointNumber: number;
-  checkpointName: string;
-  miles: number;
-  daysToComplete: number;
-  avgMilesPerDay: number;
-  completedDate?: string;
-}
-
-// Journey statistics (for all saves)
-export interface JourneyStats {
-  saveId: string;
-  saveName: string;
-  totalMiles: number;
-  totalDays: number;
-  avgMilesPerDay: number;
-  status: 'in_progress' | 'completed';
-  startDate: string;
-  endDate?: string;
-  checkpoints: CheckpointStats[];
-  triviaUnlocked: number;
 }
 
 // Health data types

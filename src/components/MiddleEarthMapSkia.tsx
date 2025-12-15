@@ -9,7 +9,7 @@ import {
   COASTLINE_PATH,
   WATER_PATH,
   STREETS_PATH,
-  TITLES_PATH,
+  BACKGROUND_WHITE_PATH,
   GAME_PATH,
   SVG_WIDTH,
   SVG_HEIGHT,
@@ -19,11 +19,14 @@ import { TITLES_FILL_PATH } from '../data/titlesFillPath';
 // Render at 3x resolution for crisp display at max zoom
 const RENDER_SCALE = 3;
 
+const DEFAULT_COLOR = '#231f20';
+
 interface MiddleEarthMapSkiaProps {
   width: number;
   height: number;
   colorize?: boolean;
-  showTitles?: boolean;
+  reducedTitles?: boolean;
+  defaultColor?: string;
   gamePathColor?: string;
   gamePathData?: string;
   gamePathInactiveColor?: string;
@@ -32,23 +35,23 @@ interface MiddleEarthMapSkiaProps {
   initialPathProgress?: SharedValue<number>;
   layerColors?: {
     legend?: string;
-    mountains?: string;
-    trees?: string;
-    water?: string;
-    streets?: string;
-    coastline?: string;
     titles?: string;
+    titlesReduced?: string;
+    trees?: string;
+    mountains?: string;
+    streets?: string;
+    water?: string;
+    coastline?: string;
     mapBackground?: string;
   };
 }
-
-const DEFAULT_COLOR = '#231f20';
 
 export default function MiddleEarthMapSkia({
   width,
   height,
   colorize = false,
-  showTitles = true,
+  reducedTitles = true,
+  defaultColor = DEFAULT_COLOR,
   gamePathColor = 'red',
   gamePathInactiveColor = '#C4B5A0',
   gamePathData = GAME_PATH,
@@ -61,23 +64,37 @@ export default function MiddleEarthMapSkia({
   const canvasWidth = width * RENDER_SCALE;
   const canvasHeight = height * RENDER_SCALE;
 
+  // Determine titles color based on reducedTitles setting
+  const titlesColor = useMemo(() => {
+    if (reducedTitles) {
+      return layerColors.titlesReduced || 'rgba(0, 0, 0, 0.3)';
+    }
+    return colorize ? layerColors.titles || defaultColor : defaultColor;
+  }, [
+    reducedTitles,
+    colorize,
+    layerColors.titles,
+    layerColors.titlesReduced,
+    defaultColor,
+  ]);
+
   // Compute colors for each layer
   const colors = useMemo(
     () => ({
-      legend: colorize ? layerColors.legend || DEFAULT_COLOR : DEFAULT_COLOR,
+      legend: colorize ? layerColors.legend || defaultColor : defaultColor,
       mountains: colorize
-        ? layerColors.mountains || DEFAULT_COLOR
-        : DEFAULT_COLOR,
-      trees: colorize ? layerColors.trees || DEFAULT_COLOR : DEFAULT_COLOR,
-      water: colorize ? layerColors.water || DEFAULT_COLOR : DEFAULT_COLOR,
-      streets: colorize ? layerColors.streets || DEFAULT_COLOR : DEFAULT_COLOR,
+        ? layerColors.mountains || defaultColor
+        : defaultColor,
+      trees: colorize ? layerColors.trees || defaultColor : defaultColor,
+      water: colorize ? layerColors.water || defaultColor : defaultColor,
+      streets: colorize ? layerColors.streets || defaultColor : defaultColor,
       coastline: colorize
-        ? layerColors.coastline || DEFAULT_COLOR
-        : DEFAULT_COLOR,
-      titles: colorize ? layerColors.titles || DEFAULT_COLOR : DEFAULT_COLOR,
-      mapBackground: layerColors.mapBackground || DEFAULT_COLOR,
+        ? layerColors.coastline || defaultColor
+        : defaultColor,
+      titles: titlesColor,
+      mapBackground: layerColors.mapBackground || defaultColor,
     }),
-    [colorize, layerColors],
+    [colorize, layerColors, defaultColor, titlesColor],
   );
 
   // Create Skia path objects (memoized)
@@ -100,22 +117,15 @@ export default function MiddleEarthMapSkia({
     [],
   );
   // Stroke path for title outlines (background)
-  const titlesStrokePath = useMemo(() => {
-    const path = Skia.Path.MakeFromSVGString(TITLES_PATH);
-    console.log('Skia titlesStrokePath created:', !!path);
-    return path;
-  }, []);
+  const titlesBackgroundPath = useMemo(
+    () => Skia.Path.MakeFromSVGString(BACKGROUND_WHITE_PATH),
+    [],
+  );
   // Fill path for actual titles (much larger path data)
-  const titlesFillPath = useMemo(() => {
-    const path = Skia.Path.MakeFromSVGString(TITLES_FILL_PATH);
-    console.log(
-      'Skia titlesFillPath created:',
-      !!path,
-      'showTitles:',
-      showTitles,
-    );
-    return path;
-  }, [showTitles]);
+  const titlesFillPath = useMemo(
+    () => Skia.Path.MakeFromSVGString(TITLES_FILL_PATH),
+    [],
+  );
   const gamePath = useMemo(
     () => Skia.Path.MakeFromSVGString(gamePathData),
     [gamePathData],
@@ -174,16 +184,15 @@ export default function MiddleEarthMapSkia({
           <Path path={streetsPath} color={colors.streets} style="fill" />
         )}
 
-        {/* Titles layer - stroke background first, then fill on top */}
-        {showTitles && titlesStrokePath && (
+        {/* Titles layer - background fill first, then title fill on top */}
+        {titlesBackgroundPath && (
           <Path
-            path={titlesStrokePath}
+            path={titlesBackgroundPath}
             color={colors.mapBackground}
-            style="stroke"
-            strokeWidth={10}
+            style="fill"
           />
         )}
-        {showTitles && titlesFillPath && (
+        {titlesFillPath && (
           <Path path={titlesFillPath} color={colors.titles} style="fill" />
         )}
 

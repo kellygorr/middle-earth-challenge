@@ -1,5 +1,11 @@
-import React from 'react';
-import { TouchableOpacity, Text, StyleSheet } from 'react-native';
+import React, { useEffect } from 'react';
+import { Text, StyleSheet, Pressable } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  interpolateColor,
+} from 'react-native-reanimated';
 import { useTheme } from '../stores/settingsStore';
 import { typography } from '../styles/typography';
 import { spacing, borderRadius } from '../styles/global';
@@ -11,6 +17,8 @@ interface ButtonProps {
   disabled?: boolean;
 }
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 export default function Button({
   onPress,
   children,
@@ -18,24 +26,45 @@ export default function Button({
   disabled = false,
 }: ButtonProps) {
   const theme = useTheme();
-
   const isPrimary = variant === 'primary';
 
+  // Animated value: 0 = secondary (transparent), 1 = primary (filled)
+  const progress = useSharedValue(isPrimary ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(isPrimary ? 1 : 0, { duration: 200 });
+  }, [isPrimary, progress]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const backgroundColor = interpolateColor(
+      progress.value,
+      [0, 1],
+      ['transparent', theme.colors.buttonPrimary],
+    );
+
+    const borderColor = interpolateColor(
+      progress.value,
+      [0, 1],
+      [theme.colors.buttonPrimary, 'transparent'],
+    );
+
+    return {
+      backgroundColor,
+      borderColor,
+    };
+  });
+
   return (
-    <TouchableOpacity
+    <AnimatedPressable
       style={[
         styles.button,
+        animatedStyle,
         {
-          backgroundColor: isPrimary
-            ? theme.colors.buttonPrimary
-            : theme.colors.surface,
-          borderColor: theme.colors.buttonPrimary,
-          borderWidth: isPrimary ? 0 : 2,
+          borderWidth: 2,
           opacity: disabled ? 0.5 : 1,
         },
       ]}
       onPress={onPress}
-      activeOpacity={0.8}
       disabled={disabled}
     >
       <Text
@@ -50,7 +79,7 @@ export default function Button({
       >
         {children}
       </Text>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 }
 

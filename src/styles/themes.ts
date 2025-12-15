@@ -3,6 +3,7 @@ export interface Theme {
   colors: {
     // Map styling
     mapBackground: string;
+    mapDefaultColor: string;
 
     // Path colors
     pathGrey: string;
@@ -44,8 +45,15 @@ export interface Theme {
     buttonInactive: string;
     buttonText: string;
 
-    // SVG styles
+    // SVG layer colors (for colorized map mode)
+    svgLegend: string;
+    svgTitles: string;
+    svgTitlesReduced: string;
+    svgTrees: string;
     svgMountains: string;
+    svgStreets: string;
+    svgWater: string;
+    svgCoastline: string;
   };
 
   // Typography
@@ -57,24 +65,37 @@ export interface Theme {
   };
 }
 
+// Shared SVG layer colors (used by all themes, can be overridden per-theme)
+const svgLayerColors = {
+  svgLegend: '#231f20',
+  svgTitles: '#2C1810',
+  svgTitlesReduced: 'rgba(0, 0, 0, 0.3)',
+  svgTrees: '#436e47ff',
+  svgMountains: '#51402bff',
+  svgStreets: '#B8956A',
+  svgWater: '#5B8FA3',
+  svgCoastline: '#2F4858',
+};
+
 // Classic Theme - Warm, parchment-inspired, Middle-earth aesthetic
 export const classicTheme: Theme = {
   name: 'classic',
   colors: {
     // Map styling
-    mapBackground: '#F4E8D0',
+    mapBackground: '#e6e2daff',
+    mapDefaultColor: '#231f20',
 
     // Path colors
-    pathGrey: '#C4B5A0',
+    pathGrey: '#A0826D',
     pathProgress: '#8B4513',
     pathGlow: 'rgba(139, 69, 19, 0.3)',
 
     // Checkpoint markers
     checkpointLocked: '#A0826D',
     checkpointUnlocked: '#D4AF37',
-    checkpointLabel: '#2C1810',
-    checkpointLabelInactive: '#5C4033',
-    checkpointTextBackground: 'rgba(237, 228, 211, 0.95)',
+    checkpointLabel: '#ffffff',
+    checkpointLabelInactive: '#757575',
+    checkpointTextBackground: '#000000',
 
     // Trivia markers
     triviaLocked: '#8B7355',
@@ -95,17 +116,17 @@ export const classicTheme: Theme = {
     textOnSurface: '#2C1810',
 
     // Modal/Celebration colors
-    modalBackground: '#EDE4D3',
-    modalOverlay: 'rgba(44, 24, 16, 0.75)',
+    modalBackground: '#e6e2daff',
+    modalOverlay: 'rgba(53, 41, 28, 0.75)',
     celebrationAccent: '#D4AF37',
 
     // Button colors
-    buttonPrimary: '#8B4513',
+    buttonPrimary: '#543f30ff',
     buttonInactive: '#A0826D',
     buttonText: '#F5EFE0',
 
-    // SVG styles
-    svgMountains: '#4A3728',
+    // SVG layer colors
+    ...svgLayerColors,
   },
 
   fonts: {
@@ -122,9 +143,10 @@ export const minimalistTheme: Theme = {
   colors: {
     // Map styling
     mapBackground: '#FFFFFF',
+    mapDefaultColor: '#231f20',
 
     // Path colors
-    pathGrey: '#E0E0E0',
+    pathGrey: '#B0BEC5',
     pathProgress: '#2C3E50',
     pathGlow: 'rgba(44, 62, 80, 0.2)',
 
@@ -163,8 +185,8 @@ export const minimalistTheme: Theme = {
     buttonInactive: '#E0E0E0',
     buttonText: '#000000',
 
-    // SVG styles
-    svgMountains: '#4A3728',
+    // SVG layer colors
+    ...svgLayerColors,
   },
 
   fonts: {

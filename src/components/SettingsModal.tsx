@@ -43,8 +43,10 @@ export default function SettingsModal({
   );
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const setColorizeMap = useSettingsStore(state => state.setColorizeMap);
-  const showMapTitles = useSettingsStore(state => state.showMapTitles);
-  const setShowMapTitles = useSettingsStore(state => state.setShowMapTitles);
+  const reducedMapTitles = useSettingsStore(state => state.reducedMapTitles);
+  const setReducedMapTitles = useSettingsStore(
+    state => state.setReducedMapTitles,
+  );
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
 
   const { internalVisible, animatedBackgroundStyle, animatedContentStyle } =
@@ -282,7 +284,7 @@ export default function SettingsModal({
                     />
                   </View>
 
-                  {/* Map Titles */}
+                  {/* Reduced Map Titles */}
                   <View style={styles.settingRow}>
                     <Text
                       style={[
@@ -290,11 +292,11 @@ export default function SettingsModal({
                         { color: theme.colors.textPrimary, flex: 1 },
                       ]}
                     >
-                      Map titles
+                      Reduced map titles
                     </Text>
                     <Switch
-                      value={showMapTitles}
-                      onValueChange={setShowMapTitles}
+                      value={reducedMapTitles}
+                      onValueChange={setReducedMapTitles}
                       trackColor={{
                         false: theme.colors.buttonInactive,
                         true: theme.colors.buttonPrimary,
@@ -324,7 +326,10 @@ export default function SettingsModal({
           onPress={onDismiss}
           activeOpacity={0.7}
         >
-          <SettingsIcon size={iconSizes.medium} color="#FFFFFF" />
+          <SettingsIcon
+            size={iconSizes.medium}
+            color={theme.colors.mapBackground}
+          />
         </TouchableOpacity>
       </Animated.View>
     </Modal>
