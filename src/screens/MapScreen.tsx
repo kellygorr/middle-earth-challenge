@@ -27,7 +27,7 @@ import SettingsIcon from '../components/Icons/SettingsIcon';
 import RecenterIcon from '../components/Icons/RecenterIcon';
 import { iconSizes } from '../styles/global';
 import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint';
-import MiddleEarthMapSvg from '../components/MiddleEarthMapSvg';
+import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
@@ -97,7 +97,7 @@ export default function MapScreen() {
   }));
 
   const MIN_SCALE = 0.5;
-  const MAX_SCALE = 1.5;
+  const MAX_SCALE = 3;
 
   const screenWidth = useSharedValue(width);
   const screenHeight = useSharedValue(height);
@@ -182,6 +182,8 @@ export default function MapScreen() {
     savedTranslateY,
     initialScrollX,
     initialScrollY,
+    originMonitorEnabled,
+    recenterOpacity,
   ]);
 
   // Convert journey miles to 0-1 progress for path animation
@@ -249,13 +251,22 @@ export default function MapScreen() {
       savedTranslateY.value = translateY.value;
     });
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-  }));
+  // RENDER_SCALE matches the scale used in MiddleEarthMapSkia
+  const RENDER_SCALE = 3;
+
+  const animatedStyle = useAnimatedStyle(() => {
+    // Compensate for the 3x pre-rendered canvas
+    // At zoom=1, we want to display at 1/3 size (effectiveScale = 1/3)
+    // At zoom=3, we want 1:1 pixels (effectiveScale = 1)
+    const effectiveScale = scale.value / RENDER_SCALE;
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { scale: effectiveScale },
+      ],
+    };
+  });
 
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
 
@@ -268,7 +279,9 @@ export default function MapScreen() {
     const movedX = translateX.value !== initialScrollX;
     const movedY = translateY.value !== initialScrollY;
     if (movedScale || movedX || movedY) {
-      recenterOpacity.value = withTiming(1, { duration: BUTTON_ENTER_DURATION });
+      recenterOpacity.value = withTiming(1, {
+        duration: BUTTON_ENTER_DURATION,
+      });
       originMonitorEnabled.value = false;
     }
   });
@@ -329,10 +342,9 @@ export default function MapScreen() {
           ]}
         >
           <Animated.View style={[styles.svgWrapper, animatedStyle]}>
-            <MiddleEarthMapSvg
+            <MiddleEarthMapSkia
               width={width * 3}
               height={height}
-              preserveAspectRatio="none"
               colorize={colorizeMap}
               showTitles={showMapTitles}
               gamePathColor={theme.colors.checkpointUnlocked}
