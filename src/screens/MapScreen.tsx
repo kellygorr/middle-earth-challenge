@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  Dimensions,
   StatusBar,
   TouchableOpacity,
   Text,
@@ -27,10 +26,9 @@ import { Checkpoint } from '../types';
 import { GAME_PATH } from '../data/mapPathData';
 import { useMapGestures } from '../hooks/useMapGestures';
 import { useInitialAnimation } from '../hooks/useInitialAnimation';
+import { useReactiveDimensions } from '../hooks/useReactiveDimensions';
 
 const checkpointsData = checkpointsDataRaw as Checkpoint[];
-
-const { width, height } = Dimensions.get('window');
 
 // SVG dimensions from viewBox (from middle-earth-map-full.svg)
 const SVG_WIDTH = 3059.47;
@@ -38,6 +36,7 @@ const SVG_HEIGHT = 2350.67;
 
 export default function MapScreen() {
   const theme = useTheme();
+  const { width, height } = useReactiveDimensions(); // reactive
   const [showSettings, setShowSettings] = useState(false);
   const [testMiles, setTestMiles] = useState('0');
   const showWelcome = useSettingsStore(state => state.showWelcome);
@@ -50,28 +49,21 @@ export default function MapScreen() {
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const reducedMapTitles = useSettingsStore(state => state.reducedMapTitles);
 
-  // Calculate scale factors to convert SVG coordinates to rendered coordinates
+  // Calculate scale factors to convert SVG coordinates to screen
   const svgScaleX = (width * 3) / SVG_WIDTH;
   const svgScaleY = height / SVG_HEIGHT;
-
-  // The SVG is centered, so calculate the left offset
-  // SVG width is (width * 3), which is centered in the container
   const svgOffsetX = (width * 3 - width) / 2;
 
-  // Calculate initial position for first checkpoint (Hobbiton)
   const firstCheckpoint = checkpointsData[0];
   const firstCheckpointX = firstCheckpoint.x * svgScaleX - svgOffsetX;
   const firstCheckpointY = firstCheckpoint.y * svgScaleY;
-  const centerX = width / 2;
-  const centerY = height / 2;
 
-  // Position the first checkpoint near the left side to show the journey path ahead
-  const targetX = 50; // 50px from left edge
-  const targetY = 300; // 300px from top
+  const targetX = 50;
+  const targetY = 300;
   const initialScrollX = targetX - firstCheckpointX;
   const initialScrollY = targetY - firstCheckpointY;
 
-  // Map gestures (pinch/pan, recenter)
+  // Map gestures
   const {
     scale,
     translateX,
@@ -83,9 +75,16 @@ export default function MapScreen() {
     recenterButtonStyle,
     handleRecenter,
     resetToOrigin,
-  } = useMapGestures({ initialScrollX, initialScrollY });
+  } = useMapGestures({
+    initialScrollX,
+    initialScrollY,
+    mapWidth: width * 3, // because your map is 3x the screen width
+    mapHeight: height, // full screen height
+    screenWidth: width,
+    screenHeight: height,
+  });
 
-  // Initial animation (path reveal, button opacities)
+  // Initial animation
   const { initialPathProgress, settingsEnterStyle, labelsEnterStyle } =
     useInitialAnimation({
       showWelcome,
@@ -94,19 +93,15 @@ export default function MapScreen() {
       resetToOrigin,
     });
 
-  // Convert journey miles to 0-1 progress for path animation
+  // Journey progress
   const journeyProgressValue = useSharedValue(
     testMiles ? Math.min(parseFloat(testMiles) / TOTAL_JOURNEY_MILES, 1) : 0,
   );
 
-  // Update progress when test miles changes
   useEffect(() => {
     const miles = parseFloat(testMiles) || 0;
     journeyProgressValue.value = Math.min(miles / TOTAL_JOURNEY_MILES, 1);
   }, [testMiles, journeyProgressValue]);
-
-  // Use the journey path from the SVG
-  const gamePath = GAME_PATH;
 
   return (
     <GestureHandlerRootView
@@ -116,7 +111,6 @@ export default function MapScreen() {
       ]}
     >
       <StatusBar barStyle="dark-content" />
-      {/* Map - Using simplified SVG */}
       <GestureDetector gesture={composedGesture}>
         <View
           style={[
@@ -133,7 +127,7 @@ export default function MapScreen() {
               defaultColor={theme.colors.mapDefaultColor}
               gamePathColor={theme.colors.checkpointUnlocked}
               gamePathInactiveColor={theme.colors.pathGrey}
-              gamePathData={gamePath}
+              gamePathData={GAME_PATH}
               zoomScale={scale}
               journeyProgress={journeyProgressValue}
               initialPathProgress={initialPathProgress}
@@ -151,33 +145,30 @@ export default function MapScreen() {
             />
           </Animated.View>
 
-          {/* Checkpoints - rendered outside the animated view so they don't scale */}
-          {checkpointsData.map(checkpoint => {
-            const baseX = checkpoint.x * svgScaleX - svgOffsetX;
-            const baseY = checkpoint.y * svgScaleY;
-
+          {/* Checkpoints outside zoom */}
+          {checkpointsData.map(cp => {
+            const baseX = cp.x * svgScaleX - svgOffsetX;
+            const baseY = cp.y * svgScaleY;
             return (
               <PositionedCheckpoint
-                key={checkpoint.id}
-                checkpoint={checkpoint}
+                key={cp.id}
+                checkpoint={cp}
                 baseX={baseX}
                 baseY={baseY}
-                centerX={centerX}
-                centerY={centerY}
+                centerX={width / 2}
+                centerY={height / 2}
                 translateX={translateX}
                 translateY={translateY}
-                scale={scale}
+                scale={scale} // now used to keep checkpoints fixed while zooming
                 showLabel={showCheckpointLabels}
-                onPress={() => {
-                  // TODO: Handle checkpoint press
-                }}
+                onPress={() => {}}
               />
             );
           })}
         </View>
       </GestureDetector>
 
-      {/* Settings Button (always mounted; opacity-driven) */}
+      {/* Settings Button */}
       <Animated.View style={[styles.settingsButton, settingsEnterStyle]}>
         <TouchableOpacity
           style={styles.recenterButtonTouch}
@@ -191,7 +182,7 @@ export default function MapScreen() {
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Labels Toggle (always mounted; opacity-driven with stagger) */}
+      {/* Labels Toggle */}
       <Animated.View style={[styles.labelsButton, labelsEnterStyle]}>
         <TouchableOpacity
           onPress={() => setShowCheckpointLabels(!showCheckpointLabels)}
@@ -219,7 +210,7 @@ export default function MapScreen() {
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Recenter Button (always mounted; opacity-driven based on center state) */}
+      {/* Recenter Button */}
       <Animated.View style={[styles.recenterButton, recenterButtonStyle]}>
         <TouchableOpacity
           style={styles.recenterButtonTouch}
@@ -239,7 +230,7 @@ export default function MapScreen() {
         onDismiss={() => setShowSettings(false)}
       />
 
-      {/* Test Input for Progress (conditional render) */}
+      {/* Test Input */}
       {!showWelcome && (
         <View style={styles.testInputContainer}>
           <Text style={styles.testInputLabel}>Test Miles:</Text>
@@ -258,10 +249,8 @@ export default function MapScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+export const styles = StyleSheet.create({
+  container: { flex: 1 },
   mapContainer: {
     position: 'absolute',
     top: 0,
@@ -289,7 +278,7 @@ const styles = StyleSheet.create({
   },
   labelsButton: {
     position: 'absolute',
-    top: 120, // Below settings button with more spacing
+    top: 120,
     right: 20,
   },
   labelContainer: {
@@ -321,23 +310,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
-  testInputLabel: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    marginHorizontal: 8,
-  },
+  testInputLabel: { color: '#fff', fontSize: 14, marginHorizontal: 8 },
   testInput: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#fff',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 4,
     minWidth: 80,
     fontSize: 16,
     textAlign: 'center',
-    color: '#000000',
+    color: '#000',
   },
 });

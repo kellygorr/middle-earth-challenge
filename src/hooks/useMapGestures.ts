@@ -1,4 +1,3 @@
-import { Dimensions } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import {
   useAnimatedStyle,
@@ -8,18 +7,20 @@ import {
   Easing,
   SharedValue,
 } from 'react-native-reanimated';
+import { useEffect } from 'react';
 import { motion } from '../styles/motion';
-
-const { width, height } = Dimensions.get('window');
 
 // Constants
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3;
-const RENDER_SCALE = 3; // Matches MiddleEarthMapSkia
 
 interface UseMapGesturesOptions {
   initialScrollX: number;
   initialScrollY: number;
+  mapWidth: number;
+  mapHeight: number;
+  screenWidth: number;
+  screenHeight: number;
 }
 
 interface UseMapGesturesReturn {
@@ -48,6 +49,10 @@ interface UseMapGesturesReturn {
 export function useMapGestures({
   initialScrollX,
   initialScrollY,
+  mapWidth,
+  mapHeight,
+  screenWidth: screenW,
+  screenHeight: screenH,
 }: UseMapGesturesOptions): UseMapGesturesReturn {
   // Transform shared values
   const scale = useSharedValue(1);
@@ -57,9 +62,28 @@ export function useMapGestures({
   const savedTranslateX = useSharedValue(initialScrollX);
   const savedTranslateY = useSharedValue(initialScrollY);
 
-  // Screen dimensions for boundary calculations
-  const screenWidth = useSharedValue(width);
-  const screenHeight = useSharedValue(height);
+  // Dimensions for boundary calculations (reactive)
+  const mapW = useSharedValue(mapWidth);
+  const mapH = useSharedValue(mapHeight);
+  const screenWidth = useSharedValue(screenW);
+  const screenHeight = useSharedValue(screenH);
+
+  // Update shared values when dimensions change (orientation)
+  useEffect(() => {
+    mapW.value = mapWidth;
+    mapH.value = mapHeight;
+    screenWidth.value = screenW;
+    screenHeight.value = screenH;
+  }, [
+    mapWidth,
+    mapHeight,
+    screenW,
+    screenH,
+    mapW,
+    mapH,
+    screenWidth,
+    screenHeight,
+  ]);
 
   // Recenter button state
   const recenterOpacity = useSharedValue(0);
@@ -78,19 +102,23 @@ export function useMapGestures({
       const newScale = savedScale.value * e.scale;
       scale.value = Math.min(Math.max(newScale, MIN_SCALE), MAX_SCALE);
 
-      // Calculate boundaries based on scaled content
-      const scaledMapWidth = screenWidth.value * 3 * scale.value;
-      const scaledMapHeight = screenHeight.value * scale.value;
-      const excessWidth = Math.max(0, (scaledMapWidth - screenWidth.value) / 2);
+      // Calculate boundaries: how much the scaled map exceeds the screen
+      const displayedMapWidth = mapW.value * scale.value;
+      const displayedMapHeight = mapH.value * scale.value;
+      const excessWidth = Math.max(
+        0,
+        (displayedMapWidth - screenWidth.value) / 2,
+      );
       const excessHeight = Math.max(
         0,
-        (scaledMapHeight - screenHeight.value) / 2,
+        (displayedMapHeight - screenHeight.value) / 2,
       );
 
-      const maxX = excessWidth + 50;
-      const minX = -excessWidth - 50;
-      const maxY = excessHeight + 50;
-      const minY = -excessHeight - 50;
+      const padding = 50;
+      const maxX = excessWidth + padding;
+      const minX = -excessWidth - padding;
+      const maxY = excessHeight + padding;
+      const minY = -excessHeight - padding;
 
       translateX.value = Math.min(Math.max(translateX.value, minX), maxX);
       translateY.value = Math.min(Math.max(translateY.value, minY), maxY);
@@ -107,14 +135,18 @@ export function useMapGestures({
       const newX = savedTranslateX.value + e.translationX;
       const newY = savedTranslateY.value + e.translationY;
 
-      // Calculate boundaries based on scaled content
-      const scaledMapWidth = screenWidth.value * 3 * scale.value;
-      const scaledMapHeight = screenHeight.value * scale.value;
-      const excessWidth = Math.max(0, (scaledMapWidth - screenWidth.value) / 2);
+      // Calculate boundaries: how much the scaled map exceeds the screen
+      const displayedMapWidth = mapW.value * scale.value;
+      const displayedMapHeight = mapH.value * scale.value;
+      const excessWidth = Math.max(
+        0,
+        (displayedMapWidth - screenWidth.value) / 2,
+      );
       const excessHeight = Math.max(
         0,
-        (scaledMapHeight - screenHeight.value) / 2,
+        (displayedMapHeight - screenHeight.value) / 2,
       );
+
       const padding = 80;
       const maxX = excessWidth + padding;
       const minX = -excessWidth - padding;
@@ -131,17 +163,13 @@ export function useMapGestures({
   // Combined gesture
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
 
-  // Map wrapper animated style
+  // Map wrapper animated style - simple transform, no RENDER_SCALE division
   const animatedStyle = useAnimatedStyle(() => {
-    // Compensate for the 3x pre-rendered canvas
-    // At zoom=1, we want to display at 1/3 size (effectiveScale = 1/3)
-    // At zoom=3, we want 1:1 pixels (effectiveScale = 1)
-    const effectiveScale = scale.value / RENDER_SCALE;
     return {
       transform: [
         { translateX: translateX.value },
         { translateY: translateY.value },
-        { scale: effectiveScale },
+        { scale: scale.value },
       ],
     };
   });

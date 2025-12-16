@@ -10,13 +10,13 @@ import { useSettingsStore } from '../../stores/settingsStore';
 
 interface PositionedCheckpointProps {
   checkpoint: CheckpointType;
-  baseX: number;
+  baseX: number; // original position on the map in screen coordinates
   baseY: number;
-  centerX: number;
+  centerX: number; // center of the screen / map view
   centerY: number;
-  translateX: SharedValue<number>;
+  translateX: SharedValue<number>; // from useMapGestures
   translateY: SharedValue<number>;
-  scale: SharedValue<number>;
+  scale: SharedValue<number>; // from useMapGestures
   showLabel: boolean;
   onPress: () => void;
 }
@@ -35,30 +35,24 @@ export default function PositionedCheckpoint({
 }: PositionedCheckpointProps) {
   const labelSize = useSettingsStore(state => state.labelSize);
 
-  // Adjust Y position when label is on top to compensate for label height
-  const LABEL_HEIGHT_REGULAR = 24; // Approximate height of regular label (font + padding + margin)
-  const LABEL_HEIGHT_LARGE = 28; // Approximate height of large label
+  const LABEL_HEIGHT_REGULAR = 24;
+  const LABEL_HEIGHT_LARGE = 28;
   const labelHeight =
     labelSize === 'large' ? LABEL_HEIGHT_LARGE : LABEL_HEIGHT_REGULAR;
 
   const animatedStyle = useAnimatedStyle(() => {
-    // Always apply label offset for top labels to keep position consistent
     const labelOffset = checkpoint.labelPosition === 'top' ? labelHeight : 0;
 
+    // Correctly scale the checkpoint relative to the map center
+    const x = translateX.value + centerX + (baseX - centerX) * scale.value;
+    const y =
+      translateY.value +
+      centerY +
+      (baseY - centerY) * scale.value -
+      labelOffset;
+
     return {
-      transform: [
-        {
-          translateX:
-            translateX.value + centerX + (baseX - centerX) * scale.value,
-        },
-        {
-          translateY:
-            translateY.value +
-            centerY +
-            (baseY - centerY) * scale.value -
-            labelOffset,
-        },
-      ],
+      transform: [{ translateX: x }, { translateY: y }],
     };
   });
 

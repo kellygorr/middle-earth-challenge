@@ -16,9 +16,6 @@ import {
 } from '../data/mapPathData';
 import { TITLES_FILL_PATH } from '../data/titlesFillPath';
 
-// Render at 3x resolution for crisp display at max zoom
-const RENDER_SCALE = 3;
-
 const DEFAULT_COLOR = '#231f20';
 
 interface MiddleEarthMapSkiaProps {
@@ -60,9 +57,9 @@ export default function MiddleEarthMapSkia({
   initialPathProgress,
   layerColors = {},
 }: MiddleEarthMapSkiaProps) {
-  // Canvas dimensions at high resolution
-  const canvasWidth = width * RENDER_SCALE;
-  const canvasHeight = height * RENDER_SCALE;
+  // Canvas dimensions - use the size passed in directly
+  const canvasWidth = width;
+  const canvasHeight = height;
 
   // Determine titles color based on reducedTitles setting
   const titlesColor = useMemo(() => {
