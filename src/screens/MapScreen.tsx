@@ -49,14 +49,24 @@ export default function MapScreen() {
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const reducedMapTitles = useSettingsStore(state => state.reducedMapTitles);
 
-  // Calculate scale factors to convert SVG coordinates to screen
-  const svgScaleX = (width * 3) / SVG_WIDTH;
-  const svgScaleY = height / SVG_HEIGHT;
-  const svgOffsetX = (width * 3 - width) / 2;
+  // UNIFORM SCALING: Use consistent zoom feel across orientations
+  // Base minimum width on the shorter screen dimension for consistent scale
+  const minDimension = Math.min(width, height);
+  const minWidthScale = (minDimension * 3) / SVG_WIDTH;
+  const heightScale = height / SVG_HEIGHT;
+  const uniformScale = Math.max(minWidthScale, heightScale);
+
+  // Map dimensions with uniform scaling (no squishing)
+  const mapWidth = SVG_WIDTH * uniformScale;
+  const mapHeight = SVG_HEIGHT * uniformScale;
+
+  // Centering offsets (map may extend beyond screen in both directions)
+  const mapOffsetX = (mapWidth - width) / 2;
+  const mapOffsetY = (mapHeight - height) / 2;
 
   const firstCheckpoint = checkpointsData[0];
-  const firstCheckpointX = firstCheckpoint.x * svgScaleX - svgOffsetX;
-  const firstCheckpointY = firstCheckpoint.y * svgScaleY;
+  const firstCheckpointX = firstCheckpoint.x * uniformScale - mapOffsetX;
+  const firstCheckpointY = firstCheckpoint.y * uniformScale - mapOffsetY;
 
   const targetX = 50;
   const targetY = 300;
@@ -78,8 +88,8 @@ export default function MapScreen() {
   } = useMapGestures({
     initialScrollX,
     initialScrollY,
-    mapWidth: width * 3, // because your map is 3x the screen width
-    mapHeight: height, // full screen height
+    mapWidth, // uniformly scaled width
+    mapHeight, // uniformly scaled height (may exceed screen in landscape)
     screenWidth: width,
     screenHeight: height,
   });
@@ -120,8 +130,8 @@ export default function MapScreen() {
         >
           <Animated.View style={[styles.svgWrapper, animatedStyle]}>
             <MiddleEarthMapSkia
-              width={width * 3}
-              height={height}
+              width={mapWidth}
+              height={mapHeight}
               colorize={colorizeMap}
               reducedTitles={reducedMapTitles}
               defaultColor={theme.colors.mapDefaultColor}
@@ -147,8 +157,8 @@ export default function MapScreen() {
 
           {/* Checkpoints outside zoom */}
           {checkpointsData.map(cp => {
-            const baseX = cp.x * svgScaleX - svgOffsetX;
-            const baseY = cp.y * svgScaleY;
+            const baseX = cp.x * uniformScale - mapOffsetX;
+            const baseY = cp.y * uniformScale - mapOffsetY;
             return (
               <PositionedCheckpoint
                 key={cp.id}

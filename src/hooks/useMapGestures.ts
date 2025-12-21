@@ -69,11 +69,29 @@ export function useMapGestures({
   const screenHeight = useSharedValue(screenH);
 
   // Update shared values when dimensions change (orientation)
+  // Preserve zoom and position - just update dimension values for boundary calculations
   useEffect(() => {
     mapW.value = mapWidth;
     mapH.value = mapHeight;
     screenWidth.value = screenW;
     screenHeight.value = screenH;
+
+    // Clamp current position to new boundaries
+    const displayedMapWidth = mapWidth * scale.value;
+    const displayedMapHeight = mapHeight * scale.value;
+    const excessWidth = Math.max(0, (displayedMapWidth - screenW) / 2);
+    const excessHeight = Math.max(0, (displayedMapHeight - screenH) / 2);
+    const padding = 80;
+    const maxX = excessWidth + padding;
+    const minX = -excessWidth - padding;
+    const maxY = excessHeight + padding;
+    const minY = -excessHeight - padding;
+
+    // Adjust position if out of bounds
+    translateX.value = Math.min(Math.max(translateX.value, minX), maxX);
+    translateY.value = Math.min(Math.max(translateY.value, minY), maxY);
+    savedTranslateX.value = translateX.value;
+    savedTranslateY.value = translateY.value;
   }, [
     mapWidth,
     mapHeight,
@@ -83,6 +101,11 @@ export function useMapGestures({
     mapH,
     screenWidth,
     screenHeight,
+    scale,
+    translateX,
+    translateY,
+    savedTranslateX,
+    savedTranslateY,
   ]);
 
   // Recenter button state

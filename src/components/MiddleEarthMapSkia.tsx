@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { View } from 'react-native';
 import { Canvas, Path, Skia, Group } from '@shopify/react-native-skia';
 import { SharedValue, useDerivedValue } from 'react-native-reanimated';
 
@@ -12,9 +13,11 @@ import {
   BACKGROUND_WHITE_PATH,
   GAME_PATH,
   SVG_WIDTH,
-  SVG_HEIGHT,
 } from '../data/mapPathData';
 import { TITLES_FILL_PATH } from '../data/titlesFillPath';
+
+// Render at 2x resolution for crisp display when zoomed
+const RENDER_SCALE = 2;
 
 const DEFAULT_COLOR = '#231f20';
 
@@ -57,9 +60,9 @@ export default function MiddleEarthMapSkia({
   initialPathProgress,
   layerColors = {},
 }: MiddleEarthMapSkiaProps) {
-  // Canvas dimensions - use the size passed in directly
-  const canvasWidth = width;
-  const canvasHeight = height;
+  // Render canvas at higher resolution, display at original size
+  const canvasWidth = width * RENDER_SCALE;
+  const canvasHeight = height * RENDER_SCALE;
 
   // Determine titles color based on reducedTitles setting
   const titlesColor = useMemo(() => {
@@ -128,15 +131,15 @@ export default function MiddleEarthMapSkia({
     [gamePathData],
   );
 
-  // Calculate scale to fit the SVG into the high-res canvas
-  const scaleX = canvasWidth / SVG_WIDTH;
-  const scaleY = canvasHeight / SVG_HEIGHT;
+  // Calculate uniform scale to fit the SVG (caller passes uniformly-scaled dimensions)
+  const uniformScale = canvasWidth / SVG_WIDTH;
 
-  // Animated stroke width based on zoom (to keep consistent visual stroke)
+  // Animated stroke width based on zoom AND uniform scale (to keep consistent visual stroke)
+  // Multiply by RENDER_SCALE since canvas is larger but scaled down for display
   const strokeWidth = useDerivedValue(() => {
-    const scale = zoomScale?.value ?? 1;
-    return 10 / scale;
-  }, [zoomScale]);
+    const zoom = zoomScale?.value ?? 1;
+    return (5 * RENDER_SCALE) / (zoom * uniformScale);
+  }, [zoomScale, uniformScale]);
 
   // Base path progress (initial reveal animation) - 0 to 1
   const basePathEnd = useDerivedValue(() => {
@@ -149,78 +152,87 @@ export default function MiddleEarthMapSkia({
   }, [journeyProgress]);
 
   return (
-    <Canvas style={{ width: canvasWidth, height: canvasHeight }}>
-      <Group transform={[{ scaleX }, { scaleY }]}>
-        {/* Legend layer */}
-        {legendPath && (
-          <Path path={legendPath} color={colors.legend} style="fill" />
-        )}
+    <View style={{ width, height, overflow: 'hidden' }}>
+      <Canvas
+        style={{
+          width: canvasWidth,
+          height: canvasHeight,
+          transformOrigin: 'top left',
+          transform: [{ scale: 1 / RENDER_SCALE }],
+        }}
+      >
+        <Group transform={[{ scale: uniformScale }]}>
+          {/* Legend layer */}
+          {legendPath && (
+            <Path path={legendPath} color={colors.legend} style="fill" />
+          )}
 
-        {/* Trees layer */}
-        {treesPath && (
-          <Path path={treesPath} color={colors.trees} style="fill" />
-        )}
+          {/* Trees layer */}
+          {treesPath && (
+            <Path path={treesPath} color={colors.trees} style="fill" />
+          )}
 
-        {/* Mountains layer */}
-        {mountainsPath && (
-          <Path path={mountainsPath} color={colors.mountains} style="fill" />
-        )}
+          {/* Mountains layer */}
+          {mountainsPath && (
+            <Path path={mountainsPath} color={colors.mountains} style="fill" />
+          )}
 
-        {/* Coastline layer */}
-        {coastlinePath && (
-          <Path path={coastlinePath} color={colors.coastline} style="fill" />
-        )}
+          {/* Coastline layer */}
+          {coastlinePath && (
+            <Path path={coastlinePath} color={colors.coastline} style="fill" />
+          )}
 
-        {/* Water layer */}
-        {waterPath && (
-          <Path path={waterPath} color={colors.water} style="fill" />
-        )}
+          {/* Water layer */}
+          {waterPath && (
+            <Path path={waterPath} color={colors.water} style="fill" />
+          )}
 
-        {/* Streets layer */}
-        {streetsPath && (
-          <Path path={streetsPath} color={colors.streets} style="fill" />
-        )}
+          {/* Streets layer */}
+          {streetsPath && (
+            <Path path={streetsPath} color={colors.streets} style="fill" />
+          )}
 
-        {/* Titles layer - background fill first, then title fill on top */}
-        {titlesBackgroundPath && (
-          <Path
-            path={titlesBackgroundPath}
-            color={colors.mapBackground}
-            style="fill"
-          />
-        )}
-        {titlesFillPath && (
-          <Path path={titlesFillPath} color={colors.titles} style="fill" />
-        )}
+          {/* Titles layer - background fill first, then title fill on top */}
+          {titlesBackgroundPath && (
+            <Path
+              path={titlesBackgroundPath}
+              color={colors.mapBackground}
+              style="fill"
+            />
+          )}
+          {titlesFillPath && (
+            <Path path={titlesFillPath} color={colors.titles} style="fill" />
+          )}
 
-        {/* Game Path - Base (grey/inactive) with reveal animation */}
-        {gamePath && (
-          <Path
-            path={gamePath}
-            color={gamePathInactiveColor}
-            style="stroke"
-            strokeWidth={strokeWidth}
-            strokeCap="round"
-            strokeJoin="round"
-            start={0}
-            end={basePathEnd}
-          />
-        )}
+          {/* Game Path - Base (grey/inactive) with reveal animation */}
+          {gamePath && (
+            <Path
+              path={gamePath}
+              color={gamePathInactiveColor}
+              style="stroke"
+              strokeWidth={strokeWidth}
+              strokeCap="round"
+              strokeJoin="round"
+              start={0}
+              end={basePathEnd}
+            />
+          )}
 
-        {/* Game Path - Progress (colored) showing journey completion */}
-        {gamePath && (
-          <Path
-            path={gamePath}
-            color={gamePathColor}
-            style="stroke"
-            strokeWidth={strokeWidth}
-            strokeCap="round"
-            strokeJoin="round"
-            start={0}
-            end={journeyPathEnd}
-          />
-        )}
-      </Group>
-    </Canvas>
+          {/* Game Path - Progress (colored) showing journey completion */}
+          {gamePath && (
+            <Path
+              path={gamePath}
+              color={gamePathColor}
+              style="stroke"
+              strokeWidth={strokeWidth}
+              strokeCap="round"
+              strokeJoin="round"
+              start={0}
+              end={journeyPathEnd}
+            />
+          )}
+        </Group>
+      </Canvas>
+    </View>
   );
 }
