@@ -151,6 +151,15 @@ export default function MiddleEarthMapSkia({
     return journeyProgress?.value ?? 0;
   }, [journeyProgress]);
 
+  // Zoom-aware forward adjustment: push end slightly when zoomed in
+  const journeyPathEndAdjusted = useDerivedValue(() => {
+    const base = journeyProgress?.value ?? 0;
+    const zoom = zoomScale?.value ?? 1;
+    const K = 0.004; // tuning constant
+    const delta = zoom > 1 ? (K * (zoom - 1)) / zoom : 0; // 0 at normal zoom
+    return Math.max(0, Math.min(base + delta, 1));
+  }, [journeyProgress, zoomScale]);
+
   return (
     <View style={{ width, height, overflow: 'hidden' }}>
       <Canvas
@@ -211,7 +220,7 @@ export default function MiddleEarthMapSkia({
               color={gamePathInactiveColor}
               style="stroke"
               strokeWidth={strokeWidth}
-              strokeCap="round"
+              strokeCap="butt"
               strokeJoin="round"
               start={0}
               end={basePathEnd}
@@ -225,10 +234,10 @@ export default function MiddleEarthMapSkia({
               color={gamePathColor}
               style="stroke"
               strokeWidth={strokeWidth}
-              strokeCap="round"
+              strokeCap="butt"
               strokeJoin="round"
               start={0}
-              end={journeyPathEnd}
+              end={journeyPathEndAdjusted}
             />
           )}
         </Group>

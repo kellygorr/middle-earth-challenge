@@ -21,6 +21,7 @@ import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
 import { TOTAL_JOURNEY_MILES } from '../constants/journey';
+import { mapBookMilesToPathProgress } from '../utils/pathProgress';
 import { typography } from '../styles/typography';
 import { Checkpoint } from '../types';
 import { GAME_PATH } from '../data/mapPathData';
@@ -105,12 +106,12 @@ export default function MapScreen() {
 
   // Journey progress
   const journeyProgressValue = useSharedValue(
-    testMiles ? Math.min(parseFloat(testMiles) / TOTAL_JOURNEY_MILES, 1) : 0,
+    testMiles ? mapBookMilesToPathProgress(parseFloat(testMiles)) : 0,
   );
 
   useEffect(() => {
     const miles = parseFloat(testMiles) || 0;
-    journeyProgressValue.value = Math.min(miles / TOTAL_JOURNEY_MILES, 1);
+    journeyProgressValue.value = mapBookMilesToPathProgress(miles);
   }, [testMiles, journeyProgressValue]);
 
   return (
@@ -159,10 +160,15 @@ export default function MapScreen() {
           {checkpointsData.map(cp => {
             const baseX = cp.x * uniformScale - mapOffsetX;
             const baseY = cp.y * uniformScale - mapOffsetY;
+            // Compute dynamic activation: unlock when book miles reach the checkpoint's cumulative (book) miles
+            const bookMiles = parseFloat(testMiles) || 0;
+            const activationMiles = cp.cumulativeMiles ?? 0;
+            const isActive = cp.isStart ? true : bookMiles >= activationMiles;
+            const cpWithActive = { ...cp, isActive } as Checkpoint;
             return (
               <PositionedCheckpoint
                 key={cp.id}
-                checkpoint={cp}
+                checkpoint={cpWithActive}
                 baseX={baseX}
                 baseY={baseY}
                 centerX={width / 2}

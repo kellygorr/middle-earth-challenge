@@ -8,7 +8,8 @@
     "x": 760,
     "y": 648,
     "labelPosition": "top",
-    "cumulativeMiles": 0
+    "cumulativeMiles": 0,
+    "checkpointActivationMiles": 0
   },
   {
     "id": 2,
@@ -16,7 +17,8 @@
     "description": "A bustling village where Men and Hobbits live side by side. The Prancing Pony inn stands at the crossroads of the ancient Great East Road.",
     "x": 975,
     "y": 650,
-    "cumulativeMiles": 120
+    "cumulativeMiles": 120,
+    "checkpointActivationMiles": 105
   },
   {
     "id": 3,
@@ -24,7 +26,8 @@
     "description": "The Last Homely House, hidden valley refuge of the Elves. Here the Fellowship was formed under Elrond's guidance.",
     "x": 1485,
     "y": 610,
-    "cumulativeMiles": 420
+    "cumulativeMiles": 420,
+    "checkpointActivationMiles": 420
   },
   {
     "id": 4,
@@ -32,7 +35,8 @@
     "description": "The Golden Wood, realm of Galadriel and Celeborn. Ancient mallorn trees tower above, and time itself seems to move differently here.",
     "x": 1634,
     "y": 1015,
-    "cumulativeMiles": 595
+    "cumulativeMiles": 595,
+    "checkpointActivationMiles": 595
   },
   {
     "id": 5,
@@ -41,7 +45,8 @@
     "x": 1830,
     "y": 1455,
     "labelPosition": "top",
-    "cumulativeMiles": 895
+    "cumulativeMiles": 895,
+    "checkpointActivationMiles": 895
   },
   {
     "id": 6,
@@ -49,7 +54,8 @@
     "description": "The Morannon, mighty fortress guarding the entrance to Mordor. Impassable to all but the most desperate or foolish.",
     "x": 2100,
     "y": 1435,
-    "cumulativeMiles": 1055
+    "cumulativeMiles": 1055,
+    "checkpointActivationMiles": 1055
   },
   {
     "id": 7,
@@ -57,7 +63,8 @@
     "description": "The Tower of Sorcery, once fair Minas Ithil. Now a place of dread, glowing with a corpse-light under the shadow of the mountains.",
     "x": 2060,
     "y": 1648,
-    "cumulativeMiles": 1165
+    "cumulativeMiles": 1165,
+    "checkpointActivationMiles": 1165
   },
   {
     "id": 8,
@@ -66,6 +73,7 @@
     "isEnd": true,
     "x": 2197,
     "y": 1565,
-    "cumulativeMiles": 1235
+    "cumulativeMiles": 1235,
+    "checkpointActivationMiles": 1235
   }
 ]
