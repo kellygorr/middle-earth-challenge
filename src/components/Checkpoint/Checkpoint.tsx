@@ -14,6 +14,7 @@ interface CheckpointProps {
   isActive: boolean;
   showLabel: boolean;
   labelPosition?: 'top' | 'right';
+  type?: 'checkpoint' | 'trivia';
   onPress?: () => void;
 }
 
@@ -22,6 +23,7 @@ export default function Checkpoint({
   isActive,
   showLabel,
   labelPosition = 'right',
+  type = 'checkpoint',
   onPress,
 }: CheckpointProps) {
   const theme = useTheme();
@@ -48,51 +50,70 @@ export default function Checkpoint({
         onPress={onPress}
         activeOpacity={0.7}
       >
-        {/* Outer circle */}
-        <View
-          style={[
-            styles.outerCircle,
-            {
-              borderColor: color,
-            },
-          ]}
-        >
-          {/* Inner circle */}
+        {type === 'trivia' ? (
+          /* Simple filled circle for trivia */
           <View
             style={[
-              styles.innerCircle,
+              styles.triviaCircle,
               {
-                backgroundColor: color,
+                backgroundColor: isActive
+                  ? theme.colors.checkpointUnlocked
+                  : theme.colors.pathGrey,
               },
             ]}
           />
-        </View>
+        ) : (
+          /* Target icon for checkpoints */
+          <>
+            {/* Outer circle */}
+            <View
+              style={[
+                styles.outerCircle,
+                {
+                  borderColor: color,
+                },
+              ]}
+            >
+              {/* Inner circle */}
+              <View
+                style={[
+                  styles.innerCircle,
+                  {
+                    backgroundColor: color,
+                  },
+                ]}
+              />
+            </View>
+          </>
+        )}
       </TouchableOpacity>
 
-      {/* Checkpoint label */}
-      <Animated.View
-        style={[
-          styles.nameContainer,
-          labelPosition === 'top'
-            ? styles.nameContainerAbove
-            : styles.nameContainerRight,
-          {
-            backgroundColor: theme.colors.checkpointTextBackground,
-          },
-          labelAnimatedStyle,
-        ]}
-      >
-        <Text
+      {/* Label - only show for checkpoints */}
+      {type === 'checkpoint' && (
+        <Animated.View
           style={[
-            labelSize === 'large' ? typography.labelLarge : typography.label,
+            styles.nameContainer,
+            labelPosition === 'top'
+              ? styles.nameContainerAbove
+              : styles.nameContainerRight,
             {
-              color: theme.colors.checkpointLabel,
+              backgroundColor: theme.colors.checkpointTextBackground,
             },
+            labelAnimatedStyle,
           ]}
         >
-          {name}
-        </Text>
-      </Animated.View>
+          <Text
+            style={[
+              labelSize === 'large' ? typography.labelLarge : typography.label,
+              {
+                color: theme.colors.checkpointLabel,
+              },
+            ]}
+          >
+            {name}
+          </Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -125,6 +146,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   innerCircle: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  triviaCircle: {
     width: 12,
     height: 12,
     borderRadius: 6,

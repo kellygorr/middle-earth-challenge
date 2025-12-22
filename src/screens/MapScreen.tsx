@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   Text,
   TextInput,
+  Keyboard,
+  Platform,
 } from 'react-native';
 import {
   GestureHandlerRootView,
@@ -20,16 +22,18 @@ import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint'
 import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
-import { TOTAL_JOURNEY_MILES } from '../constants/journey';
+import triviaDataRaw from '../constants/trivia.json';
+import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import { mapBookMilesToPathProgress } from '../utils/pathProgress';
 import { typography } from '../styles/typography';
-import { Checkpoint } from '../types';
-import { GAME_PATH } from '../data/mapPathData';
+import { CheckpointType } from '../types';
+import { GAME_PATH } from '../constants/mapPathData';
 import { useMapGestures } from '../hooks/useMapGestures';
 import { useInitialAnimation } from '../hooks/useInitialAnimation';
 import { useReactiveDimensions } from '../hooks/useReactiveDimensions';
 
-const checkpointsData = checkpointsDataRaw as Checkpoint[];
+const checkpointsData = checkpointsDataRaw as CheckpointType[];
+const triviaData = triviaDataRaw as CheckpointType[];
 
 // SVG dimensions from viewBox (from middle-earth-map-full.svg)
 const SVG_WIDTH = 3059.47;
@@ -40,6 +44,7 @@ export default function MapScreen() {
   const { width, height } = useReactiveDimensions(); // reactive
   const [showSettings, setShowSettings] = useState(false);
   const [testMiles, setTestMiles] = useState('0');
+  const [keyboardOffset, setKeyboardOffset] = useState(20);
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const showCheckpointLabels = useSettingsStore(
     state => state.showCheckpointLabels,
@@ -114,6 +119,25 @@ export default function MapScreen() {
     journeyProgressValue.value = mapBookMilesToPathProgress(miles);
   }, [testMiles, journeyProgressValue]);
 
+  // Lift the Test Miles overlay above the keyboard when it opens
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      e => {
+        const kbHeight = e?.endCoordinates?.height ?? 0;
+        setKeyboardOffset(kbHeight + 20);
+      },
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardOffset(20),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   return (
     <GestureHandlerRootView
       style={[
@@ -156,27 +180,39 @@ export default function MapScreen() {
             />
           </Animated.View>
 
-          {/* Checkpoints outside zoom */}
-          {checkpointsData.map(cp => {
-            const baseX = cp.x * uniformScale - mapOffsetX;
-            const baseY = cp.y * uniformScale - mapOffsetY;
-            // Compute dynamic activation: unlock when book miles reach the checkpoint's cumulative (book) miles
+          {/* Checkpoints and Trivia */}
+          {[...checkpointsData, ...triviaData].map(item => {
+            const baseX = item.x * uniformScale - mapOffsetX;
+            const baseY = item.y * uniformScale - mapOffsetY;
             const bookMiles = parseFloat(testMiles) || 0;
-            const activationMiles = cp.cumulativeMiles ?? 0;
-            const isActive = cp.isStart ? true : bookMiles >= activationMiles;
-            const cpWithActive = { ...cp, isActive } as Checkpoint;
+
+            // Determine type and activation logic
+            const isCheckpoint = 'checkpointActivationMiles' in item;
+            const type = isCheckpoint ? 'checkpoint' : 'trivia';
+
+            let isActive: boolean;
+            if (isCheckpoint) {
+              const activationMiles =
+                item.checkpointActivationMiles ?? item.CUMULATIVE_MILES ?? 0;
+              isActive = item.isStart ? true : bookMiles >= activationMiles;
+            } else {
+              isActive = bookMiles >= item.CUMULATIVE_MILES;
+            }
+
             return (
               <PositionedCheckpoint
-                key={cp.id}
-                checkpoint={cpWithActive}
+                key={item.name}
+                item={item}
+                isActive={isActive}
+                type={type}
                 baseX={baseX}
                 baseY={baseY}
                 centerX={width / 2}
                 centerY={height / 2}
                 translateX={translateX}
                 translateY={translateY}
-                scale={scale} // now used to keep checkpoints fixed while zooming
-                showLabel={showCheckpointLabels}
+                scale={scale}
+                showLabel={isCheckpoint && showCheckpointLabels}
                 onPress={() => {}}
               />
             );
@@ -248,7 +284,7 @@ export default function MapScreen() {
 
       {/* Test Input */}
       {!showWelcome && (
-        <View style={styles.testInputContainer}>
+        <View style={[styles.testInputContainer, { bottom: keyboardOffset }]}>
           <Text style={styles.testInputLabel}>Test Miles:</Text>
           <TextInput
             style={styles.testInput}

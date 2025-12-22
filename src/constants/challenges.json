@@ -1,0 +1,14 @@
+[
+  {
+    "id": "trivia_1",
+    "type": "trivia",
+    "name": "Farmer Maggot's Farm",
+    "description": {
+      "text": "Home of the stout-hearted farmer who aided the hobbits despite his fearsome reputation. His mushrooms were legendary, and his courage proved greater than his bark.",
+      "image": "farmer_maggot.jpg"
+    },
+    "x": 860,
+    "y": 648,
+    "CUMULATIVE_MILES": 40
+  }
+]

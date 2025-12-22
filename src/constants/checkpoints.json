@@ -1,79 +1,103 @@
 [
   {
-    "id": 1,
+    "type": "checkpoint",
     "name": "Hobbiton",
-    "description": "The peaceful homeland of hobbits, with its rolling green hills and cozy hobbit-holes. Here begins the greatest journey of the Third Age.",
+    "description": {
+      "text": "The peaceful homeland of hobbits, with its rolling green hills and cozy hobbit-holes. Here begins the greatest journey of the Third Age."
+    },
     "isStart": true,
     "isActive": true,
     "x": 760,
     "y": 648,
     "labelPosition": "top",
-    "cumulativeMiles": 0,
-    "checkpointActivationMiles": 0
+    "CUMULATIVE_MILES": 0,
+    "checkpointActivationMiles": 0,
+    "postCheckpointOffsetMiles": 0
   },
   {
-    "id": 2,
+    "type": "checkpoint",
     "name": "Bree",
-    "description": "A bustling village where Men and Hobbits live side by side. The Prancing Pony inn stands at the crossroads of the ancient Great East Road.",
+    "description": {
+      "text": "A bustling village where Men and Hobbits live side by side. The Prancing Pony inn stands at the crossroads of the ancient Great East Road."
+    },
     "x": 975,
     "y": 650,
-    "cumulativeMiles": 120,
-    "checkpointActivationMiles": 105
+    "CUMULATIVE_MILES": 120,
+    "checkpointActivationMiles": 105,
+    "postCheckpointOffsetMiles": 4
   },
   {
-    "id": 3,
+    "type": "checkpoint",
     "name": "Rivendell",
-    "description": "The Last Homely House, hidden valley refuge of the Elves. Here the Fellowship was formed under Elrond's guidance.",
-    "x": 1485,
-    "y": 610,
-    "cumulativeMiles": 420,
-    "checkpointActivationMiles": 420
+    "description": {
+      "text": "The Last Homely House, hidden valley refuge of the Elves. Here the Fellowship was formed under Elrond's guidance."
+    },
+    "x": 1484,
+    "y": 608,
+    "CUMULATIVE_MILES": 420,
+    "checkpointActivationMiles": 324,
+    "postCheckpointOffsetMiles": 2
   },
   {
-    "id": 4,
+    "type": "checkpoint",
     "name": "Lothlorien",
-    "description": "The Golden Wood, realm of Galadriel and Celeborn. Ancient mallorn trees tower above, and time itself seems to move differently here.",
+    "description": {
+      "text": "The Golden Wood, realm of Galadriel and Celeborn. Ancient mallorn trees tower above, and time itself seems to move differently here."
+    },
     "x": 1634,
     "y": 1015,
-    "cumulativeMiles": 595,
-    "checkpointActivationMiles": 595
+    "CUMULATIVE_MILES": 595,
+    "checkpointActivationMiles": 624,
+    "postCheckpointOffsetMiles": 5
   },
   {
-    "id": 5,
+    "type": "checkpoint",
     "name": "Parth Galen",
-    "description": "The green lawn beside the Falls of Rauros, where the Fellowship was broken. Here the Company made their fateful choice.",
-    "x": 1830,
-    "y": 1455,
+    "description": {
+      "text": "The green lawn beside the Falls of Rauros, where the Fellowship was broken. Here the Company made their fateful choice."
+    },
+    "x": 1829,
+    "y": 1450,
     "labelPosition": "top",
-    "cumulativeMiles": 895,
-    "checkpointActivationMiles": 895
+    "CUMULATIVE_MILES": 895,
+    "checkpointActivationMiles": 868,
+    "postCheckpointOffsetMiles": 1
   },
   {
-    "id": 6,
+    "type": "checkpoint",
     "name": "The Black Gates",
-    "description": "The Morannon, mighty fortress guarding the entrance to Mordor. Impassable to all but the most desperate or foolish.",
+    "description": {
+      "text": "The Morannon, mighty fortress guarding the entrance to Mordor. Impassable to all but the most desperate or foolish."
+    },
     "x": 2100,
-    "y": 1435,
-    "cumulativeMiles": 1055,
-    "checkpointActivationMiles": 1055
+    "y": 1440,
+    "CUMULATIVE_MILES": 1055,
+    "checkpointActivationMiles": 981,
+    "postCheckpointOffsetMiles": 6
   },
   {
-    "id": 7,
+    "type": "checkpoint",
     "name": "Minas Morgul",
-    "description": "The Tower of Sorcery, once fair Minas Ithil. Now a place of dread, glowing with a corpse-light under the shadow of the mountains.",
+    "description": {
+      "text": "The Tower of Sorcery, once fair Minas Ithil. Now a place of dread, glowing with a corpse-light under the shadow of the mountains."
+    },
     "x": 2060,
     "y": 1648,
-    "cumulativeMiles": 1165,
-    "checkpointActivationMiles": 1165
+    "CUMULATIVE_MILES": 1165,
+    "checkpointActivationMiles": 1097,
+    "postCheckpointOffsetMiles": 4
   },
   {
-    "id": 8,
+    "type": "checkpoint",
     "name": "Mount Doom",
-    "description": "Orodruin, the Fire Mountain where the One Ring was forged and where it must be destroyed. The end of all things, or a new beginning.",
+    "description": {
+      "text": "Orodruin, the Fire Mountain where the One Ring was forged and where it must be destroyed. The end of all things, or a new beginning."
+    },
     "isEnd": true,
     "x": 2197,
     "y": 1565,
-    "cumulativeMiles": 1235,
-    "checkpointActivationMiles": 1235
+    "CUMULATIVE_MILES": 1235,
+    "checkpointActivationMiles": 1230,
+    "postCheckpointOffsetMiles": 3
   }
 ]

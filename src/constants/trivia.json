@@ -1,182 +1,189 @@
 [
   {
-    "id": "trivia_1",
-    "name": "Bag End",
-    "description": "Bilbo's comfortable hobbit-hole at the end of Bagshot Row. It was here that Frodo inherited both the Ring and the burden of its destruction. The round green door became the gateway to the greatest adventure.",
-    "imageFile": "bag_end.jpg",
-    "x": 0,
-    "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 5
+    "type": "trivia",
+    "name": "The Old Forest",
+    "description": {
+      "text": "In the books the hobbits meet Tom Bombadil here, a mysterious and powerful being who is as old as the forest itself.  The Council of Elrond explicitly rejects giving Tom the Ring because: he wouldn't understand its importance.  he'd forget it.  he wouldn't guard it.  Tom is immune to corruption, but also immune to responsibility.",
+      "image": "old_forest.jpg"
+    },
+    "x": 900,
+    "y": 685,
+    "CUMULATIVE_MILES": 77
   },
   {
-    "id": "trivia_2",
-    "name": "Farmer Maggot's Farm",
-    "description": "Home of the stout-hearted farmer who aided the hobbits despite his fearsome reputation. His mushrooms were legendary, and his courage proved greater than his bark.",
-    "imageFile": "farmer_maggot.jpg",
-    "x": 0,
-    "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 40
-  },
-  {
-    "id": "trivia_3",
+    "type": "trivia",
     "name": "Weathertop",
-    "description": "Amon Sûl, the ancient watchtower where Frodo was wounded by the Morgul blade. The ruins stand lonely on the hilltop, haunted by memories of the Nazgûl's attack.",
-    "imageFile": "weathertop.jpg",
-    "x": 0,
-    "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 200
+    "description": {
+      "text": "Amon Sûl, the ancient watchtower where Frodo was wounded by the Morgul blade. The ruins stand lonely on the hilltop, haunted by memories of the Nazgûl's attack.",
+      "image": "weathertop.jpg"
+    },
+    "x": 1000,
+    "y": 648,
+    "CUMULATIVE_MILES": 200
   },
   {
-    "id": "trivia_4",
+    "type": "trivia",
     "name": "The Ford of Bruinen",
-    "description": "Where Arwen summoned the waters to sweep away the pursuing Ringwraiths. The river rose in the shape of white horses, saving Frodo at the very threshold of Rivendell.",
-    "imageFile": "ford_bruinen.jpg",
+    "description": {
+      "text": "Where Arwen summoned the waters to sweep away the pursuing Ringwraiths. The river rose in the shape of white horses, saving Frodo at the very threshold of Rivendell.",
+      "image": "ford_bruinen.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 410
+    "CUMULATIVE_MILES": 410
   },
   {
-    "id": "trivia_5",
+    "type": "trivia",
     "name": "Hollin Gate",
-    "description": "The Doors of Durin, hidden entrance to the Mines of Moria. 'Speak friend and enter' - a riddle that nearly cost the Fellowship their passage.",
-    "imageFile": "hollin_gate.jpg",
+    "description": {
+      "text": "The Doors of Durin, hidden entrance to the Mines of Moria. 'Speak friend and enter' - a riddle that nearly cost the Fellowship their passage.",
+      "image": "hollin_gate.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 470
+    "CUMULATIVE_MILES": 470
   },
   {
-    "id": "trivia_6",
+    "type": "trivia",
     "name": "The Bridge of Khazad-dûm",
-    "description": "The narrow stone arch where Gandalf faced the Balrog. 'You shall not pass!' echoed through the ancient halls as the wizard fell into shadow.",
-    "imageFile": "khazad_dum.jpg",
+    "description": {
+      "text": "The narrow stone arch where Gandalf faced the Balrog. 'You shall not pass!' echoed through the ancient halls as the wizard fell into shadow.",
+      "image": "khazad_dum.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 500
+    "CUMULATIVE_MILES": 500
   },
   {
-    "id": "trivia_7",
+    "type": "trivia",
     "name": "Caras Galadhon",
-    "description": "The heart of Lothlorien, city of the Galadhrim built among the mighty mallorn trees. Here Galadriel's mirror revealed possible futures to Frodo and Sam.",
-    "imageFile": "caras_galadhon.jpg",
+    "description": {
+      "text": "The heart of Lothlorien, city of the Galadhrim built among the mighty mallorn trees. Here Galadriel's mirror revealed possible futures to Frodo and Sam.",
+      "image": "caras_galadhon.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 590
+    "CUMULATIVE_MILES": 590
   },
   {
-    "id": "trivia_8",
+    "type": "trivia",
     "name": "The Argonath",
-    "description": "The Pillars of Kings, massive statues of Isildur and Anárion carved from living rock. They guard the northern approach to Gondor, silent witnesses to the passage of time.",
-    "imageFile": "argonath.jpg",
+    "description": {
+      "text": "The Pillars of Kings, massive statues of Isildur and Anárion carved from living rock. They guard the northern approach to Gondor, silent witnesses to the passage of time.",
+      "image": "argonath.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 850
+    "CUMULATIVE_MILES": 850
   },
   {
-    "id": "trivia_9",
+    "type": "trivia",
     "name": "Amon Hen",
-    "description": "The Hill of Sight, crowned by the Seat of Seeing. Here Frodo gazed across Middle-earth and saw the Eye of Sauron searching for him, before making his choice to go on alone.",
-    "imageFile": "amon_hen.jpg",
+    "description": {
+      "text": "The Hill of Sight, crowned by the Seat of Seeing. Here Frodo gazed across Middle-earth and saw the Eye of Sauron searching for him, before making his choice to go on alone.",
+      "image": "amon_hen.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 890
+    "CUMULATIVE_MILES": 890
   },
   {
-    "id": "trivia_10",
+    "type": "trivia",
     "name": "Emyn Muil",
-    "description": "A maze of barren hills and twisted ravines where Frodo and Sam became hopelessly lost. Here they first captured Gollum, who would become both guide and nemesis.",
-    "imageFile": "emyn_muil.jpg",
+    "description": {
+      "text": "A maze of barren hills and twisted ravines where Frodo and Sam became hopelessly lost. Here they first captured Gollum, who would become both guide and nemesis.",
+      "image": "emyn_muil.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 920
+    "CUMULATIVE_MILES": 920
   },
   {
-    "id": "trivia_11",
+    "type": "trivia",
     "name": "The Dead Marshes",
-    "description": "An accursed wasteland where the dead of ancient battles lie preserved beneath the water. Pale faces and ghostly lights lure travelers to their doom.",
-    "imageFile": "dead_marshes.jpg",
+    "description": {
+      "text": "An accursed wasteland where the dead of ancient battles lie preserved beneath the water. Pale faces and ghostly lights lure travelers to their doom.",
+      "image": "dead_marshes.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 980
+    "CUMULATIVE_MILES": 980
   },
   {
-    "id": "trivia_12",
+    "type": "trivia",
     "name": "The Desolation of Smaug",
-    "description": "The wasteland before the Black Gates, scarred and lifeless. Here the air itself is poison, and hope seems as distant as the memory of green things.",
-    "imageFile": "desolation.jpg",
+    "description": {
+      "text": "The wasteland before the Black Gates, scarred and lifeless. Here the air itself is poison, and hope seems as distant as the memory of green things.",
+      "image": "desolation.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 1040
+    "CUMULATIVE_MILES": 1040
   },
   {
-    "id": "trivia_13",
+    "type": "trivia",
     "name": "Ithilien",
-    "description": "Once the garden of Gondor, now a contested wilderness. Here Sam and Frodo met Faramir and witnessed the battle with the Oliphaunt from Harad.",
-    "imageFile": "ithilien.jpg",
+    "description": {
+      "text": "Once the garden of Gondor, now a contested wilderness. Here Sam and Frodo met Faramir and witnessed the battle with the Oliphaunt from Harad.",
+      "image": "ithilien.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 1090
+    "CUMULATIVE_MILES": 1090
   },
   {
-    "id": "trivia_14",
+    "type": "trivia",
     "name": "The Cross-roads",
-    "description": "Where the road from Osgiliath meets the Morgul road. An ancient king's statue stood here, its head replaced with mockery until the Enemy's darkness began to fade.",
-    "imageFile": "crossroads.jpg",
+    "description": {
+      "text": "Where the road from Osgiliath meets the Morgul road. An ancient king's statue stood here, its head replaced with mockery until the Enemy's darkness began to fade.",
+      "image": "crossroads.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 1150
+    "CUMULATIVE_MILES": 1150
   },
   {
-    "id": "trivia_15",
+    "type": "trivia",
     "name": "Shelob's Lair",
-    "description": "The tunnel of Cirith Ungol, home to Shelob the Great Spider. Ancient and evil, she has dwelt in darkness for ages, feeding on all who dare pass through her domain.",
-    "imageFile": "shelobs_lair.jpg",
+    "description": {
+      "text": "The tunnel of Cirith Ungol, home to Shelob the Great Spider. Ancient and evil, she has dwelt in darkness for ages, feeding on all who dare pass through her domain.",
+      "image": "shelobs_lair.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 1175
+    "CUMULATIVE_MILES": 1175
   },
   {
-    "id": "trivia_16",
+    "type": "trivia",
     "name": "The Tower of Cirith Ungol",
-    "description": "An evil fortress guarding the pass into Mordor. Built by Gondor long ago, it was corrupted into a prison of torment where Sam rescued Frodo from the orcs.",
-    "imageFile": "cirith_ungol.jpg",
+    "description": {
+      "text": "An evil fortress guarding the pass into Mordor. Built by Gondor long ago, it was corrupted into a prison of torment where Sam rescued Frodo from the orcs.",
+      "image": "cirith_ungol.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 1180
+    "CUMULATIVE_MILES": 1180
   },
   {
-    "id": "trivia_17",
+    "type": "trivia",
     "name": "The Plateau of Gorgoroth",
-    "description": "The desolate plain of Mordor, scorched by volcanic heat and poisoned by evil. Across this wasteland, Frodo and Sam made their final desperate march.",
-    "imageFile": "gorgoroth.jpg",
+    "description": {
+      "text": "The desolate plain of Mordor, scorched by volcanic heat and poisoned by evil. Across this wasteland, Frodo and Sam made their final desperate march.",
+      "image": "gorgoroth.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 1210
+    "CUMULATIVE_MILES": 1210
   },
   {
-    "id": "trivia_18",
+    "type": "trivia",
     "name": "The Sammath Naur",
-    "description": "The Chambers of Fire within Mount Doom, where the One Ring was forged in the flames. Only here could it be unmade, in the very fire of its creation.",
-    "imageFile": "sammath_naur.jpg",
+    "description": {
+      "text": "The Chambers of Fire within Mount Doom, where the One Ring was forged in the flames. Only here could it be unmade, in the very fire of its creation.",
+      "image": "sammath_naur.jpg"
+    },
     "x": 0,
     "y": 0,
-    "triggerRadius": 50,
-    "approximateMiles": 1234
+    "CUMULATIVE_MILES": 1234
   }
 ]

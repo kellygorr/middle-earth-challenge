@@ -1,15 +1,20 @@
 import checkpointsData from '../constants/checkpoints.json';
-import { TOTAL_JOURNEY_MILES } from '../constants/journey';
+import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 
-export type Breakpoint = { book: number; visual: number };
+export type Breakpoint = {
+  book: number;
+  visual: number;
+  postOffsetMiles: number;
+};
 
 // Build breakpoints from checkpoints.json
 // book: cumulativeMiles (book miles), visual: checkpointActivationMiles (fallback to book)
 export const getDefaultBreakpoints = (): Breakpoint[] => {
   return (checkpointsData as Array<any>)
     .map(cp => ({
-      book: Number(cp.cumulativeMiles ?? 0),
-      visual: Number(cp.checkpointActivationMiles ?? cp.cumulativeMiles ?? 0),
+      book: Number(cp.CUMULATIVE_MILES ?? 0),
+      visual: Number(cp.checkpointActivationMiles ?? cp.CUMULATIVE_MILES ?? 0),
+      postOffsetMiles: Number(cp.postCheckpointOffsetMiles ?? 3),
     }))
     .sort((a, b) => a.book - b.book);
 };
@@ -42,10 +47,12 @@ export const computePathProgress = (
   const b = breakpoints[Math.min(i + 1, breakpoints.length - 1)];
   const spanBook = Math.max(1, b.book - a.book);
   const alpha = (clamped - a.book) / spanBook; // 0..1
-
-  const tStart = a.visual / total;
-  const tEnd = b.visual / total;
-  return Math.max(0, Math.min(tStart + (tEnd - tStart) * alpha, 1));
+  // Apply checkpoint-specific visual offset immediately after reaching a checkpoint (except start)
+  const visualStart =
+    a.visual + (clamped > a.book && a.book > 0 ? a.postOffsetMiles : 0);
+  const visualEnd = b.visual;
+  const visual = visualStart + (visualEnd - visualStart) * alpha;
+  return Math.max(0, Math.min(visual / total, 1));
 };
 
 // Default mapping used by the app

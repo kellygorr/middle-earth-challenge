@@ -1,5 +1,5 @@
-import { MapPosition } from '../types';
-import { getCurrentSegment, getSegmentProgress } from '../constants/journey';
+import { MapPosition, JourneySegment } from '../types';
+import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpointsData from '../constants/checkpoints.json';
 
 /**
@@ -58,15 +58,53 @@ export const isWithinRadius = (
 };
 
 /**
- * Map "book miles" to visual path trim progress [0..1] using a
- * piecewise-linear mapping. This allows calibrating segments so specific
- * mile markers line up with visual checkpoints on the drawn path.
- *
- * Current calibration: first segment (Hobbiton→Bree)
- * - Book miles: 0..120
- * - Target visual fraction at end of segment: 105 / TOTAL_JOURNEY_MILES
- *   (so typing 120 book miles reaches the visual point formerly at 105)
- * - Remaining miles map linearly over the remaining path fraction to keep
- *   continuity and end at 1.0 when book miles reach TOTAL_JOURNEY_MILES.
+ * Helper function to get current segment based on total miles
  */
-// NOTE: path progress mapping moved to src/utils/pathProgress.ts to keep responsibilities clear.
+export const getCurrentSegment = (totalMiles: number): JourneySegment => {
+  if (totalMiles >= TOTAL_JOURNEY_MILES) {
+    return getJourneySegments()[getJourneySegments().length - 1];
+  }
+
+  const segments = getJourneySegments();
+  const segment = segments.find(
+    seg => totalMiles >= seg.startMiles && totalMiles < seg.endMiles,
+  );
+
+  return segment || segments[0];
+};
+
+/**
+ * Helper function to calculate progress within current segment
+ */
+export const getSegmentProgress = (
+  totalMiles: number,
+  segment: JourneySegment,
+): number => {
+  const milesIntoSegment = totalMiles - segment.startMiles;
+  return Math.min(Math.max(milesIntoSegment / segment.miles, 0), 1);
+};
+
+/**
+ * Build journey segments from checkpoint data
+ */
+const getJourneySegments = (): JourneySegment[] => {
+  const segments: JourneySegment[] = [];
+
+  for (let i = 0; i < checkpointsData.length - 1; i++) {
+    const currentCheckpoint = checkpointsData[i];
+    const nextCheckpoint = checkpointsData[i + 1];
+    const segmentMiles =
+      nextCheckpoint.CUMULATIVE_MILES - currentCheckpoint.CUMULATIVE_MILES;
+
+    segments.push({
+      id: i + 1,
+      from: currentCheckpoint.name,
+      to: nextCheckpoint.name,
+      miles: segmentMiles,
+      startMiles: currentCheckpoint.CUMULATIVE_MILES,
+      endMiles: nextCheckpoint.CUMULATIVE_MILES,
+    });
+  }
+
+  return segments;
+};

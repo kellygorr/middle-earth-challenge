@@ -1,29 +1,24 @@
 import type { ThemeName } from '../styles/themes';
 
-// Checkpoint types
-export interface Checkpoint {
-  id: number;
+// Checkpoint/Trivia unified type
+export interface CheckpointType {
+  id?: number | string; // Optional, can be derived from name
+  type?: 'checkpoint' | 'trivia';
   name: string;
-  description: string;
-  isStart?: boolean;
-  isEnd?: boolean;
-  isActive?: boolean;
   x: number;
   y: number;
   labelPosition?: 'top' | 'right';
-  cumulativeMiles: number;
-}
-
-// Trivia types
-export interface Trivia {
-  id: string;
-  name: string;
-  description: string;
-  imageFile: string;
-  x: number;
-  y: number;
-  triggerRadius: number;
-  approximateMiles: number;
+  description?: {
+    text: string;
+    image?: string;
+  };
+  CUMULATIVE_MILES: number;
+  // Checkpoint-specific fields
+  isStart?: boolean;
+  isEnd?: boolean;
+  isActive?: boolean;
+  checkpointActivationMiles?: number;
+  postCheckpointOffsetMiles?: number;
 }
 
 // Save types

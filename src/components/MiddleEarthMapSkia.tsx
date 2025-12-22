@@ -13,8 +13,8 @@ import {
   BACKGROUND_WHITE_PATH,
   GAME_PATH,
   SVG_WIDTH,
-} from '../data/mapPathData';
-import { TITLES_FILL_PATH } from '../data/titlesFillPath';
+  TITLES_FILL_PATH,
+} from '../constants/mapPathData';
 
 // Render at 2x resolution for crisp display when zoomed
 const RENDER_SCALE = 2;
@@ -146,11 +146,6 @@ export default function MiddleEarthMapSkia({
     return initialPathProgress?.value ?? 1;
   }, [initialPathProgress]);
 
-  // Journey progress for the colored overlay - 0 to 1
-  const journeyPathEnd = useDerivedValue(() => {
-    return journeyProgress?.value ?? 0;
-  }, [journeyProgress]);
-
   // Zoom-aware forward adjustment: push end slightly when zoomed in
   const journeyPathEndAdjusted = useDerivedValue(() => {
     const base = journeyProgress?.value ?? 0;
@@ -160,16 +155,28 @@ export default function MiddleEarthMapSkia({
     return Math.max(0, Math.min(base + delta, 1));
   }, [journeyProgress, zoomScale]);
 
+  const containerStyle = useMemo(
+    () => ({ width, height, overflow: 'hidden' as const }),
+    [width, height],
+  );
+  const canvasStyle = useMemo(() => {
+    const s = 1 / RENDER_SCALE;
+    const offsetX = -(canvasWidth * (1 - s)) / 2;
+    const offsetY = -(canvasHeight * (1 - s)) / 2;
+    return {
+      width: canvasWidth,
+      height: canvasHeight,
+      transform: [
+        { translateX: offsetX },
+        { translateY: offsetY },
+        { scale: s },
+      ],
+    };
+  }, [canvasWidth, canvasHeight]);
+
   return (
-    <View style={{ width, height, overflow: 'hidden' }}>
-      <Canvas
-        style={{
-          width: canvasWidth,
-          height: canvasHeight,
-          transformOrigin: 'top left',
-          transform: [{ scale: 1 / RENDER_SCALE }],
-        }}
-      >
+    <View style={containerStyle}>
+      <Canvas style={canvasStyle}>
         <Group transform={[{ scale: uniformScale }]}>
           {/* Legend layer */}
           {legendPath && (

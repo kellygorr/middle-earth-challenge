@@ -5,11 +5,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import { StyleSheet } from 'react-native';
 import Checkpoint from './Checkpoint';
-import { Checkpoint as CheckpointType } from '../../types';
+import { CheckpointType } from '../../types';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 interface PositionedCheckpointProps {
-  checkpoint: CheckpointType;
+  item: CheckpointType;
+  isActive: boolean;
+  type: 'checkpoint' | 'trivia';
   baseX: number; // original position on the map in screen coordinates
   baseY: number;
   centerX: number; // center of the screen / map view
@@ -22,7 +24,9 @@ interface PositionedCheckpointProps {
 }
 
 export default function PositionedCheckpoint({
-  checkpoint,
+  item,
+  isActive,
+  type,
   baseX,
   baseY,
   centerX,
@@ -41,7 +45,7 @@ export default function PositionedCheckpoint({
     labelSize === 'large' ? LABEL_HEIGHT_LARGE : LABEL_HEIGHT_REGULAR;
 
   const animatedStyle = useAnimatedStyle(() => {
-    const labelOffset = checkpoint.labelPosition === 'top' ? labelHeight : 0;
+    const labelOffset = item.labelPosition === 'top' ? labelHeight : 0;
 
     // Correctly scale the checkpoint relative to the map center
     const x = translateX.value + centerX + (baseX - centerX) * scale.value;
@@ -61,10 +65,11 @@ export default function PositionedCheckpoint({
       <Checkpoint
         x={0}
         y={0}
-        name={checkpoint.name}
-        isActive={checkpoint.isActive || false}
+        name={item.name}
+        isActive={isActive}
         showLabel={showLabel}
-        labelPosition={checkpoint.labelPosition}
+        labelPosition={item.labelPosition}
+        type={type}
         onPress={onPress}
       />
     </Animated.View>
