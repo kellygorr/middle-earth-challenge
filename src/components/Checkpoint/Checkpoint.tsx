@@ -37,10 +37,14 @@ export default function Checkpoint({
     opacity: withTiming(showLabel ? 1 : 0, { duration: 200 }),
   }));
 
+  // Center the 24x24 hitbox on the coordinate for both types
+  const centerOffset = 12;
+
   return (
     <View
       style={[
         styles.container,
+        { marginLeft: -centerOffset, marginTop: -centerOffset },
         labelPosition === 'top' ? styles.containerColumn : styles.containerRow,
       ]}
     >
@@ -120,8 +124,7 @@ export default function Checkpoint({
 
 const styles = StyleSheet.create({
   container: {
-    marginLeft: -12, // Center the bullseye on the coordinates
-    marginTop: -12,
+    // Offsets applied dynamically based on type to center on coordinates
   },
   containerRow: {
     flexDirection: 'row',
@@ -135,6 +138,8 @@ const styles = StyleSheet.create({
     // Container for circles that will be animated
     width: 24,
     height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   outerCircle: {
     width: 24,

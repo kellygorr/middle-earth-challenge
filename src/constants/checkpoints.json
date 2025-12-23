@@ -3,7 +3,7 @@
     "type": "checkpoint",
     "name": "Hobbiton",
     "description": {
-      "text": "The peaceful homeland of hobbits, with its rolling green hills and cozy hobbit-holes. Here begins the greatest journey of the Third Age."
+      "text": "The peaceful homeland of hobbits, with its rolling green hills and cozy hobbit-holes. Here begins the greatest journey of the Third Age. \n\nTake up the Ring, leave the Shire behind, and begin the long road to Mordor."
     },
     "isStart": true,
     "isActive": true,
@@ -70,7 +70,7 @@
       "text": "The Morannon, mighty fortress guarding the entrance to Mordor. Impassable to all but the most desperate or foolish."
     },
     "x": 2100,
-    "y": 1440,
+    "y": 1435,
     "CUMULATIVE_MILES": 1055,
     "checkpointActivationMiles": 981,
     "postCheckpointOffsetMiles": 6

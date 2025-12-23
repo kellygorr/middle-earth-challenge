@@ -7,7 +7,7 @@
       "image": "old_forest.jpg"
     },
     "x": 900,
-    "y": 685,
+    "y": 680,
     "CUMULATIVE_MILES": 77
   },
   {
@@ -17,20 +17,9 @@
       "text": "Amon Sûl, the ancient watchtower where Frodo was wounded by the Morgul blade. The ruins stand lonely on the hilltop, haunted by memories of the Nazgûl's attack.",
       "image": "weathertop.jpg"
     },
-    "x": 1000,
-    "y": 648,
+    "x": 1129,
+    "y": 626,
     "CUMULATIVE_MILES": 200
-  },
-  {
-    "type": "trivia",
-    "name": "The Ford of Bruinen",
-    "description": {
-      "text": "Where Arwen summoned the waters to sweep away the pursuing Ringwraiths. The river rose in the shape of white horses, saving Frodo at the very threshold of Rivendell.",
-      "image": "ford_bruinen.jpg"
-    },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 410
   },
   {
     "type": "trivia",
@@ -39,9 +28,9 @@
       "text": "The Doors of Durin, hidden entrance to the Mines of Moria. 'Speak friend and enter' - a riddle that nearly cost the Fellowship their passage.",
       "image": "hollin_gate.jpg"
     },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 470
+    "x": 1401,
+    "y": 925,
+    "CUMULATIVE_MILES": 531
   },
   {
     "type": "trivia",
@@ -50,20 +39,9 @@
       "text": "The narrow stone arch where Gandalf faced the Balrog. 'You shall not pass!' echoed through the ancient halls as the wizard fell into shadow.",
       "image": "khazad_dum.jpg"
     },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 500
-  },
-  {
-    "type": "trivia",
-    "name": "Caras Galadhon",
-    "description": {
-      "text": "The heart of Lothlorien, city of the Galadhrim built among the mighty mallorn trees. Here Galadriel's mirror revealed possible futures to Frodo and Sam.",
-      "image": "caras_galadhon.jpg"
-    },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 590
+    "x": 1480,
+    "y": 924,
+    "CUMULATIVE_MILES": 551
   },
   {
     "type": "trivia",
@@ -78,25 +56,14 @@
   },
   {
     "type": "trivia",
-    "name": "Amon Hen",
-    "description": {
-      "text": "The Hill of Sight, crowned by the Seat of Seeing. Here Frodo gazed across Middle-earth and saw the Eye of Sauron searching for him, before making his choice to go on alone.",
-      "image": "amon_hen.jpg"
-    },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 890
-  },
-  {
-    "type": "trivia",
     "name": "Emyn Muil",
     "description": {
       "text": "A maze of barren hills and twisted ravines where Frodo and Sam became hopelessly lost. Here they first captured Gollum, who would become both guide and nemesis.",
       "image": "emyn_muil.jpg"
     },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 920
+    "x": 1880,
+    "y": 1404,
+    "CUMULATIVE_MILES": 927
   },
   {
     "type": "trivia",
@@ -105,42 +72,9 @@
       "text": "An accursed wasteland where the dead of ancient battles lie preserved beneath the water. Pale faces and ghostly lights lure travelers to their doom.",
       "image": "dead_marshes.jpg"
     },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 980
-  },
-  {
-    "type": "trivia",
-    "name": "The Desolation of Smaug",
-    "description": {
-      "text": "The wasteland before the Black Gates, scarred and lifeless. Here the air itself is poison, and hope seems as distant as the memory of green things.",
-      "image": "desolation.jpg"
-    },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 1040
-  },
-  {
-    "type": "trivia",
-    "name": "Ithilien",
-    "description": {
-      "text": "Once the garden of Gondor, now a contested wilderness. Here Sam and Frodo met Faramir and witnessed the battle with the Oliphaunt from Harad.",
-      "image": "ithilien.jpg"
-    },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 1090
-  },
-  {
-    "type": "trivia",
-    "name": "The Cross-roads",
-    "description": {
-      "text": "Where the road from Osgiliath meets the Morgul road. An ancient king's statue stood here, its head replaced with mockery until the Enemy's darkness began to fade.",
-      "image": "crossroads.jpg"
-    },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 1150
+    "x": 1980,
+    "y": 1431,
+    "CUMULATIVE_MILES": 986
   },
   {
     "type": "trivia",
@@ -149,20 +83,9 @@
       "text": "The tunnel of Cirith Ungol, home to Shelob the Great Spider. Ancient and evil, she has dwelt in darkness for ages, feeding on all who dare pass through her domain.",
       "image": "shelobs_lair.jpg"
     },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 1175
-  },
-  {
-    "type": "trivia",
-    "name": "The Tower of Cirith Ungol",
-    "description": {
-      "text": "An evil fortress guarding the pass into Mordor. Built by Gondor long ago, it was corrupted into a prison of torment where Sam rescued Frodo from the orcs.",
-      "image": "cirith_ungol.jpg"
-    },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 1180
+    "x": 2090,
+    "y": 1628,
+    "CUMULATIVE_MILES": 1170
   },
   {
     "type": "trivia",
@@ -171,19 +94,8 @@
       "text": "The desolate plain of Mordor, scorched by volcanic heat and poisoned by evil. Across this wasteland, Frodo and Sam made their final desperate march.",
       "image": "gorgoroth.jpg"
     },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 1210
-  },
-  {
-    "type": "trivia",
-    "name": "The Sammath Naur",
-    "description": {
-      "text": "The Chambers of Fire within Mount Doom, where the One Ring was forged in the flames. Only here could it be unmade, in the very fire of its creation.",
-      "image": "sammath_naur.jpg"
-    },
-    "x": 0,
-    "y": 0,
-    "CUMULATIVE_MILES": 1234
+    "x": 2110,
+    "y": 1580,
+    "CUMULATIVE_MILES": 1184
   }
 ]

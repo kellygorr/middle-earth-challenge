@@ -4,7 +4,6 @@ import {
   useSharedValue,
   useDerivedValue,
   withTiming,
-  Easing,
   SharedValue,
 } from 'react-native-reanimated';
 import { useEffect } from 'react';
@@ -220,7 +219,7 @@ export function useMapGestures({
     });
     scale.value = withTiming(
       1,
-      { duration: motion.recenter.duration, easing: Easing.out(Easing.cubic) },
+      { duration: motion.recenter.duration, easing: motion.easing.standard },
       finished => {
         if (finished) {
           savedScale.value = 1;
@@ -229,7 +228,7 @@ export function useMapGestures({
     );
     translateX.value = withTiming(
       initialScrollX,
-      { duration: motion.recenter.duration, easing: Easing.out(Easing.cubic) },
+      { duration: motion.recenter.duration, easing: motion.easing.standard },
       finished => {
         if (finished) {
           savedTranslateX.value = initialScrollX;
@@ -238,7 +237,7 @@ export function useMapGestures({
     );
     translateY.value = withTiming(
       initialScrollY,
-      { duration: motion.recenter.duration, easing: Easing.out(Easing.cubic) },
+      { duration: motion.recenter.duration, easing: motion.easing.standard },
       finished => {
         if (finished) {
           savedTranslateY.value = initialScrollY;

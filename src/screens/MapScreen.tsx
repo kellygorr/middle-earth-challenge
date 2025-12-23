@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -20,7 +20,11 @@ import RecenterIcon from '../components/Icons/RecenterIcon';
 import { iconSizes } from '../styles/global';
 import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint';
 import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
+import InfoButton from '../components/InfoButton';
+import InfoModal from '../components/InfoModal';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
+import { useInfoStore } from '../stores/infoStore';
+import { useProgressStore } from '../stores/progressStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
 import triviaDataRaw from '../constants/trivia.json';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
@@ -54,6 +58,24 @@ export default function MapScreen() {
   );
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const reducedMapTitles = useSettingsStore(state => state.reducedMapTitles);
+
+  // Info store for checkpoint/trivia info
+  const {
+    currentItem,
+    itemType,
+    isModalVisible,
+    closeModal,
+    showInfo,
+    openModal,
+  } = useInfoStore();
+
+  // Miles from progress store (source of truth)
+  const miles = useProgressStore(state => state.miles);
+  const setMiles = useProgressStore(state => state.setMiles);
+
+  const [currentCheckpointIndex, setCurrentCheckpointIndex] = useState<
+    number | null
+  >(null);
 
   // UNIFORM SCALING: Use consistent zoom feel across orientations
   // Base minimum width on the shorter screen dimension for consistent scale
@@ -101,23 +123,117 @@ export default function MapScreen() {
   });
 
   // Initial animation
-  const { initialPathProgress, settingsEnterStyle, labelsEnterStyle } =
-    useInitialAnimation({
-      showWelcome,
-      recenterOpacity,
-      originMonitorEnabled,
-      resetToOrigin,
-    });
+  const {
+    initialPathProgress,
+    settingsEnterStyle,
+    labelsEnterStyle,
+    infoEnterStyle,
+  } = useInitialAnimation({
+    showWelcome,
+    recenterOpacity,
+    originMonitorEnabled,
+    resetToOrigin,
+    onInfoAnimationComplete: () => {
+      // Auto-open only on first map open after welcome dismissal
+      const hasAutoOpenedRef = autoOpenRef.current;
+      if (!hasAutoOpenedRef && currentItem) {
+        setShowInfoButtonOnce(true);
+        openModal();
+        autoOpenRef.current = true;
+        setObserveMilesChanges(true);
+      }
+    },
+  });
+
+  // Gate auto-open to first map open only
+  const autoOpenRef = useRef(false);
+  // Show Info button only once when map opens; hide on progress changes
+  const [showInfoButtonOnce, setShowInfoButtonOnce] = useState(false);
+  // Track previous miles, seeded with current store value to avoid first-render hide
+  const prevMilesRef = useRef<number>(miles || 0);
+  // Begin observing miles changes only after info animation completes
+  const [observeMilesChanges, setObserveMilesChanges] = useState(false);
 
   // Journey progress
   const journeyProgressValue = useSharedValue(
-    testMiles ? mapBookMilesToPathProgress(parseFloat(testMiles)) : 0,
+    miles ? mapBookMilesToPathProgress(miles) : 0,
   );
 
   useEffect(() => {
-    const miles = parseFloat(testMiles) || 0;
-    journeyProgressValue.value = mapBookMilesToPathProgress(miles);
-  }, [testMiles, journeyProgressValue]);
+    journeyProgressValue.value = mapBookMilesToPathProgress(miles || 0);
+    // Hide Info button when miles value changes after map open
+    if (
+      observeMilesChanges &&
+      showInfoButtonOnce &&
+      prevMilesRef.current !== miles
+    ) {
+      setShowInfoButtonOnce(false);
+    }
+    prevMilesRef.current = miles;
+  }, [miles, journeyProgressValue, showInfoButtonOnce, observeMilesChanges]);
+
+  // Determine current active checkpoint and trivia
+  useEffect(() => {
+    const currentMiles = miles || 0;
+
+    // Find the current active checkpoint (last checkpoint the user has reached/passed)
+    let currentCheckpoint: CheckpointType | null = null;
+    let checkpointIndex: number | null = null;
+    for (let i = checkpointsData.length - 1; i >= 0; i--) {
+      const checkpoint = checkpointsData[i];
+      if (currentMiles >= checkpoint.CUMULATIVE_MILES) {
+        currentCheckpoint = checkpoint;
+        checkpointIndex = i;
+        break;
+      }
+    }
+
+    // If no checkpoint reached yet, show Hobbiton (the start)
+    if (!currentCheckpoint && currentMiles === 0) {
+      currentCheckpoint = checkpointsData.find(cp => cp.isStart) || null;
+      checkpointIndex = checkpointsData.findIndex(cp => cp.isStart);
+    }
+
+    // Update checkpoint index state
+    setCurrentCheckpointIndex(checkpointIndex);
+
+    // Find any trivia at current location (within a small range), but only once active
+    let currentTrivia: CheckpointType | null = null;
+    for (const trivia of triviaData) {
+      const activationMiles = trivia.CUMULATIVE_MILES;
+      // Only consider trivia once the user has reached/passed its activation mile
+      if (
+        currentMiles >= activationMiles &&
+        Math.abs(currentMiles - activationMiles) <= 5 // 5 mile tolerance
+      ) {
+        currentTrivia = trivia;
+        break;
+      }
+    }
+
+    // Prioritize trivia over checkpoints when both are available
+    if (currentTrivia) {
+      if (currentItem?.name !== currentTrivia.name || itemType !== 'trivia') {
+        showInfo(currentTrivia, 'trivia');
+      }
+    } else if (currentCheckpoint) {
+      if (
+        currentItem?.name !== currentCheckpoint.name ||
+        itemType !== 'checkpoint'
+      ) {
+        showInfo(currentCheckpoint, 'checkpoint');
+      }
+    }
+  }, [miles, currentItem, itemType, showInfo]);
+
+  // Reset Info button gating when welcome is shown again
+  useEffect(() => {
+    if (showWelcome) {
+      setShowInfoButtonOnce(false);
+      autoOpenRef.current = false;
+      setObserveMilesChanges(false);
+    }
+  }, [showWelcome]);
 
   // Lift the Test Miles overlay above the keyboard when it opens
   useEffect(() => {
@@ -181,10 +297,10 @@ export default function MapScreen() {
           </Animated.View>
 
           {/* Checkpoints and Trivia */}
-          {[...checkpointsData, ...triviaData].map(item => {
+          {[...triviaData, ...checkpointsData].map(item => {
             const baseX = item.x * uniformScale - mapOffsetX;
             const baseY = item.y * uniformScale - mapOffsetY;
-            const bookMiles = parseFloat(testMiles) || 0;
+            const bookMiles = miles || 0;
 
             // Determine type and activation logic
             const isCheckpoint = 'checkpointActivationMiles' in item;
@@ -192,11 +308,16 @@ export default function MapScreen() {
 
             let isActive: boolean;
             if (isCheckpoint) {
-              const activationMiles =
-                item.checkpointActivationMiles ?? item.CUMULATIVE_MILES ?? 0;
+              // Use book miles (CUMULATIVE_MILES) for actual activation; keep checkpointActivationMiles for any visual-only needs elsewhere
+              const activationMiles = item.CUMULATIVE_MILES ?? 0;
               isActive = item.isStart ? true : bookMiles >= activationMiles;
             } else {
               isActive = bookMiles >= item.CUMULATIVE_MILES;
+            }
+
+            // Hide trivia entirely until active
+            if (!isCheckpoint && !isActive) {
+              return null;
             }
 
             return (
@@ -233,6 +354,24 @@ export default function MapScreen() {
           />
         </TouchableOpacity>
       </Animated.View>
+
+      {/* Info System - Checkpoint/Trivia Info */}
+      {currentItem && showInfoButtonOnce && (
+        <Animated.View
+          style={[styles.infoContainer, infoEnterStyle]}
+          pointerEvents="box-none"
+        >
+          <InfoButton
+            item={currentItem}
+            type={itemType!}
+            checkpointIndex={
+              itemType === 'checkpoint' && currentCheckpointIndex !== null
+                ? currentCheckpointIndex
+                : undefined
+            }
+          />
+        </Animated.View>
+      )}
 
       {/* Labels Toggle */}
       <Animated.View style={[styles.labelsButton, labelsEnterStyle]}>
@@ -282,6 +421,9 @@ export default function MapScreen() {
         onDismiss={() => setShowSettings(false)}
       />
 
+      {/* Info Modal */}
+      <InfoModal visible={isModalVisible} onDismiss={closeModal} />
+
       {/* Test Input */}
       {!showWelcome && (
         <View style={[styles.testInputContainer, { bottom: keyboardOffset }]}>
@@ -289,7 +431,11 @@ export default function MapScreen() {
           <TextInput
             style={styles.testInput}
             value={testMiles}
-            onChangeText={setTestMiles}
+            onChangeText={t => {
+              setTestMiles(t);
+              const parsed = parseFloat(t);
+              setMiles(isNaN(parsed) ? 0 : parsed);
+            }}
             keyboardType="numeric"
             placeholder="0"
             placeholderTextColor="#999"
@@ -327,6 +473,12 @@ export const styles = StyleSheet.create({
     backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  infoContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    zIndex: 100,
   },
   labelsButton: {
     position: 'absolute',

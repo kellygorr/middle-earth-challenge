@@ -10,15 +10,15 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
-  withTiming,
+  interpolateColor,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { typography } from '../styles/typography';
 import { spacing, shadows, iconSizes } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
+import { motion } from '../styles/motion';
 import Button from './Button';
 import SettingsIcon from './Icons/SettingsIcon';
 import HomeIcon from './Icons/HomeIcon';
@@ -49,26 +49,29 @@ export default function SettingsModal({
   );
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
 
-  const { internalVisible, animatedBackgroundStyle, animatedContentStyle } =
-    useAnimatedModal(visible, {
-      entranceDelay: 200,
-      entranceDuration: 300,
-      exitDuration: 150,
-      translateDistance: -spacing.lg,
-    });
+  const {
+    internalVisible,
+    animatedBackgroundStyle,
+    animatedContentStyle,
+    contentOpacitySV,
+  } = useAnimatedModal(visible, {
+    entranceDelay: motion.modal.entranceDelay,
+    entranceDuration: motion.modal.entranceDuration,
+    exitDuration: motion.modal.exitDuration,
+    easing: motion.easing.standard,
+    translateDistance: -spacing.lg,
+  });
 
-  // Independent fade for the floating settings button (opacity-only)
-  const buttonOpacity = useSharedValue(visible ? 1 : 0);
-  const animatedButtonStyle = useAnimatedStyle(() => ({
-    opacity: buttonOpacity.value,
+  // Sync card shadow/background with content fade to avoid shadow-only frames
+  const animatedCardStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      contentOpacitySV.value,
+      [0, 1],
+      ['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)'],
+    ),
+    shadowOpacity: 0.3 * contentOpacitySV.value,
+    elevation: contentOpacitySV.value > 0.95 ? 8 : 0,
   }));
-  React.useEffect(() => {
-    const BUTTON_ENTER_DURATION = 220;
-    const BUTTON_EXIT_DURATION = 50;
-    buttonOpacity.value = withTiming(visible ? 1 : 0, {
-      duration: visible ? BUTTON_ENTER_DURATION : BUTTON_EXIT_DURATION,
-    });
-  }, [visible, buttonOpacity]);
 
   const handleHomePress = () => {
     setShowWelcome(true);
@@ -109,18 +112,14 @@ export default function SettingsModal({
               style={[
                 typography.modalTitle,
                 styles.title,
-                { color: '#FFFFFF', ...shadows.text },
+                { color: theme.colors.textOnPrimary },
+                shadows.text,
               ]}
             >
               Settings
             </Text>
 
-            <View
-              style={[
-                styles.modalContainer,
-                { backgroundColor: theme.colors.modalBackground },
-              ]}
-            >
+            <Animated.View style={[styles.modalContainer, animatedCardStyle]}>
               <TouchableOpacity
                 style={styles.homeButton}
                 onPress={handleHomePress}
@@ -306,31 +305,9 @@ export default function SettingsModal({
                   </View>
                 </View>
               </ScrollView>
-            </View>
+            </Animated.View>
           </Animated.View>
         </SafeAreaView>
-      </Animated.View>
-
-      {/* Settings Button - Independent fade-only animation (no translate) */}
-      <Animated.View
-        style={[styles.settingsButton, animatedButtonStyle]}
-        pointerEvents="box-none"
-      >
-        <TouchableOpacity
-          style={{
-            width: '100%',
-            height: '100%',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onPress={onDismiss}
-          activeOpacity={0.7}
-        >
-          <SettingsIcon
-            size={iconSizes.medium}
-            color={theme.colors.mapBackground}
-          />
-        </TouchableOpacity>
       </Animated.View>
     </Modal>
   );
@@ -412,16 +389,5 @@ const styles = StyleSheet.create({
   settingRowWithBorder: {
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  settingsButton: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#000000',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

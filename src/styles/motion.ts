@@ -1,5 +1,6 @@
 // Animation timing constants
 // Centralized motion values for consistent animations across the app
+import { Easing } from 'react-native-reanimated';
 
 export const motion = {
   // Button fade in/out animations
@@ -25,5 +26,28 @@ export const motion = {
     entranceDelay: 200,
     entranceDuration: 300,
     exitDuration: 150,
+    translateDistanceDefault: -24, // use 0 for fade-only modals
+  },
+
+  // Confetti baseline timings
+  confetti: {
+    maxRunMs: 3000,
+    fadeOutDuration: 600,
+    startStaggerMax: 900,
+    fallDurationMin: 2500,
+    fallDurationMax: 5000,
+  },
+
+  // Easing presets used across animations
+  easing: {
+    standard: Easing.out(Easing.cubic),
+    inOut: Easing.inOut(Easing.cubic),
+    linear: Easing.linear,
+    sway: Easing.inOut(Easing.sin),
+  },
+
+  // Global motion-related feature flags
+  flags: {
+    confettiEnabled: true,
   },
 } as const;

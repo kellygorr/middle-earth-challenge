@@ -9,6 +9,7 @@ import {
   EasingFunction,
   EasingFunctionFactory,
 } from 'react-native-reanimated';
+import { motion } from '../styles/motion';
 
 interface UseAnimatedModalConfig {
   entranceDelay?: number;
@@ -24,74 +25,62 @@ export function useAnimatedModal(
   config: UseAnimatedModalConfig = {},
 ) {
   const {
-    entranceDelay = 200,
-    entranceDuration = 300,
-    exitDuration = 300,
+    entranceDelay = motion.modal.entranceDelay,
+    entranceDuration = motion.modal.entranceDuration,
+    exitDuration = motion.modal.exitDuration,
     exitDelay = 0,
-    translateDistance = -24,
-    easing = Easing.out(Easing.cubic),
+    translateDistance = motion.modal.translateDistanceDefault,
+    easing = motion.easing.standard,
   } = config;
 
-  // Internal state to keep modal mounted during exit animation
+  const hasTranslate = translateDistance !== 0;
+
   const [internalVisible, setInternalVisible] = useState(false);
 
-  // Animation values
   const backgroundOpacity = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
-  const contentTranslateY = useSharedValue(translateDistance);
-
-  // Calculate total exit animation time (if needed for future use)
-  // const totalExitDuration = exitDuration + exitDelay;
+  const contentTranslateY = useSharedValue(
+    hasTranslate ? translateDistance : 0,
+  );
 
   useEffect(() => {
     if (visible) {
-      // Show modal immediately
       setInternalVisible(true);
 
-      // Entrance: background fades in, then content slides down
-      backgroundOpacity.value = withTiming(1, { duration: entranceDelay });
+      // Entrance animations
+      backgroundOpacity.value = withTiming(1, {
+        duration: entranceDuration,
+      });
       contentOpacity.value = withDelay(
         entranceDelay,
-        withTiming(1, {
-          duration: entranceDuration,
-          easing,
-        }),
+        withTiming(1, { duration: entranceDuration, easing }),
       );
-      contentTranslateY.value = withDelay(
-        entranceDelay,
-        withTiming(0, {
-          duration: entranceDuration,
-          easing,
-        }),
-      );
+      if (hasTranslate) {
+        contentTranslateY.value = withDelay(
+          entranceDelay,
+          withTiming(0, { duration: entranceDuration, easing }),
+        );
+      } else {
+        contentTranslateY.value = 0;
+      }
     } else if (internalVisible) {
-      // Exit: content slides up, then background fades out
+      // Exit animations
       contentOpacity.value = withDelay(
         exitDelay,
-        withTiming(0, {
-          duration: exitDuration,
-          easing,
-        }),
+        withTiming(0, { duration: exitDuration, easing }),
       );
-      contentTranslateY.value = withDelay(
-        exitDelay,
-        withTiming(translateDistance, {
-          duration: exitDuration,
-          easing,
-        }),
-      );
+      if (hasTranslate) {
+        contentTranslateY.value = withDelay(
+          exitDelay,
+          withTiming(translateDistance, { duration: exitDuration, easing }),
+        );
+      }
+
       backgroundOpacity.value = withDelay(
-        exitDuration + exitDelay + 50,
-        withTiming(
-          0,
-          {
-            duration: entranceDelay, // Use same duration as entrance for symmetry
-          },
-          () => {
-            // Hide modal after animation completes
-            runOnJS(setInternalVisible)(false);
-          },
-        ),
+        exitDelay + exitDuration,
+        withTiming(0, { duration: exitDuration }, () => {
+          runOnJS(setInternalVisible)(false);
+        }),
       );
     }
   }, [
@@ -106,21 +95,25 @@ export function useAnimatedModal(
     exitDelay,
     translateDistance,
     easing,
+    hasTranslate,
   ]);
 
-  // Animated styles
   const animatedBackgroundStyle = useAnimatedStyle(() => ({
     opacity: backgroundOpacity.value,
   }));
 
-  const animatedContentStyle = useAnimatedStyle(() => ({
-    opacity: contentOpacity.value,
-    transform: [{ translateY: contentTranslateY.value }],
-  }));
+  const animatedContentStyle = useAnimatedStyle(() => {
+    const base: any = { opacity: contentOpacity.value };
+    if (hasTranslate) {
+      base.transform = [{ translateY: contentTranslateY.value }];
+    }
+    return base;
+  });
 
   return {
     internalVisible,
     animatedBackgroundStyle,
     animatedContentStyle,
+    contentOpacitySV: contentOpacity,
   };
 }
