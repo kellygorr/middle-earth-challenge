@@ -662,9 +662,7 @@ const styles = StyleSheet.create({
   milesToNextValue: {
     textAlign: 'left',
   },
-  milesToNextValueRight: {
-    textAlign: 'right',
-  },
+
   milesToNextPill: {
     borderRadius: borderRadius.sm,
     paddingHorizontal: spacing.sm,
@@ -673,21 +671,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: '100%',
   },
-  milesCenterWrapper: {
-    alignItems: 'center',
-  },
-  milesCenteredTitle: {
-    textAlign: 'center',
-  },
-  milesCenterPill: {
-    alignItems: 'center',
-    marginTop: spacing.xs,
-    width: 'auto',
-    paddingHorizontal: spacing.md,
-  },
-  milesCenteredText: {
-    textAlign: 'center',
-  },
+
   hidden: {
     opacity: 0,
   },
