@@ -15,13 +15,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
-import { typography } from '../styles/typography';
-import { spacing, shadows, iconSizes } from '../styles/global';
+import { typography, typographyThemed } from '../styles/typography';
+import { spacing, iconSizes, shadows } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
-import Button from './Button';
-import SettingsIcon from './Icons/SettingsIcon';
-import HomeIcon from './Icons/HomeIcon';
+import Button from './Buttons';
+import { HomeButton } from './ButtonIcons';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -47,6 +46,8 @@ export default function SettingsModal({
   const setReducedMapTitles = useSettingsStore(
     state => state.setReducedMapTitles,
   );
+  const devMode = useSettingsStore(state => state.devMode);
+  const setDevMode = useSettingsStore(state => state.setDevMode);
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
 
   const {
@@ -110,10 +111,8 @@ export default function SettingsModal({
             {/* Settings Title - Outside modal */}
             <Text
               style={[
-                typography.modalTitle,
+                typographyThemed(theme).titleMediumInverted,
                 styles.title,
-                { color: theme.colors.textOnPrimary },
-                shadows.text,
               ]}
             >
               Settings
@@ -125,7 +124,7 @@ export default function SettingsModal({
                 onPress={handleHomePress}
                 activeOpacity={0.7}
               >
-                <HomeIcon
+                <HomeButton
                   size={iconSizes.large}
                   color={theme.colors.textPrimary}
                 />
@@ -137,7 +136,7 @@ export default function SettingsModal({
               >
                 <Text
                   style={[
-                    typography.modalTitle,
+                    typography.titleMedium,
                     { color: theme.colors.textPrimary, fontSize: 40 },
                   ]}
                 >
@@ -156,9 +155,8 @@ export default function SettingsModal({
                 <View style={styles.section}>
                   <Text
                     style={[
-                      typography.subtitle,
+                      typographyThemed(theme).subtitleLargePrimary,
                       styles.sectionTitle,
-                      { color: theme.colors.textPrimary },
                     ]}
                   >
                     Theme
@@ -168,10 +166,9 @@ export default function SettingsModal({
                       <Button
                         onPress={() => setTheme('minimalist')}
                         variant={
-                          currentTheme === 'minimalist'
-                            ? 'primary'
-                            : 'secondary'
+                          currentTheme === 'minimalist' ? 'brand' : 'outline'
                         }
+                        size={'large'}
                       >
                         Minimal
                       </Button>
@@ -180,8 +177,9 @@ export default function SettingsModal({
                       <Button
                         onPress={() => setTheme('classic')}
                         variant={
-                          currentTheme === 'classic' ? 'primary' : 'secondary'
+                          currentTheme === 'classic' ? 'brand' : 'outline'
                         }
+                        size={'large'}
                       >
                         Classic
                       </Button>
@@ -193,9 +191,8 @@ export default function SettingsModal({
                 <View style={styles.section}>
                   <Text
                     style={[
-                      typography.subtitle,
+                      typographyThemed(theme).subtitleLargePrimary,
                       styles.sectionTitle,
-                      { color: theme.colors.textPrimary },
                     ]}
                   >
                     Interface
@@ -206,10 +203,7 @@ export default function SettingsModal({
                     style={[styles.settingRow, styles.settingRowWithBorder]}
                   >
                     <Text
-                      style={[
-                        typography.body,
-                        { color: theme.colors.textPrimary, flex: 1 },
-                      ]}
+                      style={[typographyThemed(theme).bodyPrimary, { flex: 1 }]}
                     >
                       Large labels
                     </Text>
@@ -227,7 +221,9 @@ export default function SettingsModal({
                   </View>
 
                   {/* Show Trivia Markers */}
-                  <View style={styles.settingRow}>
+                  <View
+                    style={[styles.settingRow, styles.settingRowWithBorder]}
+                  >
                     <Text
                       style={[
                         typography.body,
@@ -246,15 +242,32 @@ export default function SettingsModal({
                       thumbColor={theme.colors.surface}
                     />
                   </View>
+
+                  {/* Developer Mode */}
+                  <View style={styles.settingRow}>
+                    <Text
+                      style={[typographyThemed(theme).bodyPrimary, { flex: 1 }]}
+                    >
+                      Developer mode
+                    </Text>
+                    <Switch
+                      value={devMode}
+                      onValueChange={setDevMode}
+                      trackColor={{
+                        false: theme.colors.buttonInactive,
+                        true: theme.colors.buttonPrimary,
+                      }}
+                      thumbColor={theme.colors.surface}
+                    />
+                  </View>
                 </View>
 
                 {/* Map Options */}
                 <View style={styles.section}>
                   <Text
                     style={[
-                      typography.subtitle,
+                      typographyThemed(theme).subtitleLargePrimary,
                       styles.sectionTitle,
-                      { color: theme.colors.textPrimary },
                     ]}
                   >
                     Map
@@ -265,10 +278,7 @@ export default function SettingsModal({
                     style={[styles.settingRow, styles.settingRowWithBorder]}
                   >
                     <Text
-                      style={[
-                        typography.body,
-                        { color: theme.colors.textPrimary, flex: 1 },
-                      ]}
+                      style={[typographyThemed(theme).bodyPrimary, { flex: 1 }]}
                     >
                       Map colors
                     </Text>
@@ -286,10 +296,7 @@ export default function SettingsModal({
                   {/* Reduced Map Titles */}
                   <View style={styles.settingRow}>
                     <Text
-                      style={[
-                        typography.body,
-                        { color: theme.colors.textPrimary, flex: 1 },
-                      ]}
+                      style={[typographyThemed(theme).bodyPrimary, { flex: 1 }]}
                     >
                       Reduced map titles
                     </Text>
@@ -335,11 +342,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 400,
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...shadows.large,
     paddingTop: 64, // Space for larger home/close buttons
   },
   scrollView: {

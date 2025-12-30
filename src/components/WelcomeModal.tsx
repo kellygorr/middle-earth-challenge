@@ -7,9 +7,9 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { useTheme } from '../stores/settingsStore';
-import { typography } from '../styles/typography';
-import { spacing, shadows } from '../styles/global';
-import Button from './Button';
+import { typography, typographyThemed } from '../styles/typography';
+import { spacing } from '../styles/global';
+import Button from './Buttons';
 
 interface WelcomeModalProps {
   visible: boolean;
@@ -42,7 +42,7 @@ export default function WelcomeModal({
               <Text
                 style={[
                   styles.title,
-                  { color: theme.colors.textOnPrimary, ...shadows.text },
+                  typographyThemed(theme).titleLargeInverted,
                 ]}
               >
                 Middle Earth
@@ -50,12 +50,12 @@ export default function WelcomeModal({
               <Text
                 style={[
                   styles.subtitle,
-                  { color: theme.colors.textOnPrimary, ...shadows.text },
+                  typographyThemed(theme).subtitleLargeInverted,
                 ]}
               >
                 1,235 miles from Bag End to Mount Doom
               </Text>
-              <Button onPress={onDismiss} variant="primary">
+              <Button onPress={onDismiss} variant="brand" size="large">
                 Begin Journey
               </Button>
             </View>
@@ -77,11 +77,11 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   title: {
-    ...typography.title,
+    ...typography.titleLarge,
     marginBottom: spacing.md,
   },
   subtitle: {
-    ...typography.subtitle,
+    ...typography.subtitleLarge,
     marginBottom: spacing.xxl,
   },
 });

@@ -15,13 +15,13 @@ import {
 } from 'react-native-gesture-handler';
 import Animated, { useSharedValue } from 'react-native-reanimated';
 import SettingsModal from '../components/SettingsModal';
-import SettingsIcon from '../components/Icons/SettingsIcon';
-import RecenterIcon from '../components/Icons/RecenterIcon';
+import { SettingsButton, RecenterButton } from '../components/ButtonIcons';
 import { iconSizes } from '../styles/global';
 import PositionedCheckpoint from '../components/Checkpoint/PositionedCheckpoint';
 import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
-import InfoButton from '../components/InfoButton';
+import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import InfoModal from '../components/InfoModal';
+import { spacing } from '../styles/global';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useInfoStore } from '../stores/infoStore';
 import { useProgressStore } from '../stores/progressStore';
@@ -29,17 +29,16 @@ import checkpointsDataRaw from '../constants/checkpoints.json';
 import triviaDataRaw from '../constants/trivia.json';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import { mapBookMilesToPathProgress } from '../utils/pathProgress';
-import { typography } from '../styles/typography';
+// typography not used in this screen
 import { CheckpointType } from '../types';
 import { GAME_PATH } from '../constants/mapPathData';
 import { useMapGestures } from '../hooks/useMapGestures';
 import { useInitialAnimation } from '../hooks/useInitialAnimation';
 import { useReactiveDimensions } from '../hooks/useReactiveDimensions';
 
+// Data sets and SVG viewBox dimensions
 const checkpointsData = checkpointsDataRaw as CheckpointType[];
 const triviaData = triviaDataRaw as CheckpointType[];
-
-// SVG dimensions from viewBox (from middle-earth-map-full.svg)
 const SVG_WIDTH = 3059.47;
 const SVG_HEIGHT = 2350.67;
 
@@ -50,6 +49,7 @@ export default function MapScreen() {
   const [testMiles, setTestMiles] = useState('0');
   const [keyboardOffset, setKeyboardOffset] = useState(20);
   const showWelcome = useSettingsStore(state => state.showWelcome);
+  const devMode = useSettingsStore(state => state.devMode);
   const showCheckpointLabels = useSettingsStore(
     state => state.showCheckpointLabels,
   );
@@ -58,6 +58,7 @@ export default function MapScreen() {
   );
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const reducedMapTitles = useSettingsStore(state => state.reducedMapTitles);
+  const labelSize = useSettingsStore(state => state.labelSize);
 
   // Info store for checkpoint/trivia info
   const {
@@ -137,8 +138,9 @@ export default function MapScreen() {
       // Auto-open only on first map open after welcome dismissal
       const hasAutoOpenedRef = autoOpenRef.current;
       if (!hasAutoOpenedRef && currentItem) {
+        // Show the InfoButton once and display a startup tooltip instead of auto-opening
         setShowInfoButtonOnce(true);
-        openModal();
+        setShowStartupTooltip(true);
         autoOpenRef.current = true;
         setObserveMilesChanges(true);
       }
@@ -149,10 +151,17 @@ export default function MapScreen() {
   const autoOpenRef = useRef(false);
   // Show Info button only once when map opens; hide on progress changes
   const [showInfoButtonOnce, setShowInfoButtonOnce] = useState(false);
+  const [showStartupTooltip, setShowStartupTooltip] = useState(false);
+  const infoButtonRef = useRef<any>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   // Track previous miles, seeded with current store value to avoid first-render hide
   const prevMilesRef = useRef<number>(miles || 0);
   // Begin observing miles changes only after info animation completes
   const [observeMilesChanges, setObserveMilesChanges] = useState(false);
+  // (No extra activation guards; equality-based activation below)
 
   // Journey progress
   const journeyProgressValue = useSharedValue(
@@ -161,19 +170,68 @@ export default function MapScreen() {
 
   useEffect(() => {
     journeyProgressValue.value = mapBookMilesToPathProgress(miles || 0);
-    // Hide Info button when miles value changes after map open
-    if (
-      observeMilesChanges &&
-      showInfoButtonOnce &&
-      prevMilesRef.current !== miles
-    ) {
-      setShowInfoButtonOnce(false);
-    }
-    prevMilesRef.current = miles;
   }, [miles, journeyProgressValue, showInfoButtonOnce, observeMilesChanges]);
+
+  // Show/hide InfoButton when landing on or crossing a checkpoint mile
+  useEffect(() => {
+    // Do not override while a modal is open due to manual selection
+    if (isModalVisible) return;
+    const current = miles || 0;
+    const prev = prevMilesRef.current || 0;
+
+    // Only change InfoButton visibility when miles actually change
+    if (current !== prev) {
+      // Prefer exact match with small float tolerance; fallback to crossing detection
+      const isExact = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+      let idx = checkpointsData.findIndex(cp =>
+        isExact(cp.CUMULATIVE_MILES, current),
+      );
+      if (idx === -1 && current > prev) {
+        idx = checkpointsData.findIndex(
+          cp => cp.CUMULATIVE_MILES > prev && cp.CUMULATIVE_MILES <= current,
+        );
+      }
+
+      if (idx !== -1) {
+        const reached = checkpointsData[idx];
+        if (currentItem?.name !== reached.name || itemType !== 'checkpoint') {
+          showInfo(reached, 'checkpoint');
+        }
+        setCurrentCheckpointIndex(idx);
+        if (!showInfoButtonOnce) setShowInfoButtonOnce(true);
+      } else {
+        // Hide InfoButton when miles change away from any checkpoint
+        if (showInfoButtonOnce) {
+          setShowInfoButtonOnce(false);
+        }
+        // Additionally, if we have a checkpoint selected and have moved beyond it, force-hide
+        if (
+          showInfoButtonOnce &&
+          itemType === 'checkpoint' &&
+          currentItem &&
+          'CUMULATIVE_MILES' in currentItem &&
+          current > (currentItem as any).CUMULATIVE_MILES
+        ) {
+          setShowInfoButtonOnce(false);
+        }
+      }
+
+      // Update previous miles after handling detection
+      prevMilesRef.current = current;
+    }
+  }, [
+    miles,
+    showInfo,
+    currentItem,
+    itemType,
+    showInfoButtonOnce,
+    isModalVisible,
+  ]);
 
   // Determine current active checkpoint and trivia
   useEffect(() => {
+    // Respect manual selection while the modal is open
+    if (isModalVisible) return;
     const currentMiles = miles || 0;
 
     // Find the current active checkpoint (last checkpoint the user has reached/passed)
@@ -211,10 +269,15 @@ export default function MapScreen() {
       }
     }
 
-    // Prioritize trivia over checkpoints when both are available
-    if (currentTrivia) {
+    // Prioritize trivia over checkpoints when both are available,
+    // unless we're showing a freshly reached checkpoint's InfoButton
+    if (currentTrivia && !(showInfoButtonOnce && itemType === 'checkpoint')) {
       if (currentItem?.name !== currentTrivia.name || itemType !== 'trivia') {
         showInfo(currentTrivia, 'trivia');
+      }
+      // After initial animation completes, show InfoButton once (no trivia tooltip)
+      if (observeMilesChanges) {
+        setShowInfoButtonOnce(true);
       }
     } else if (currentCheckpoint) {
       if (
@@ -224,16 +287,67 @@ export default function MapScreen() {
         showInfo(currentCheckpoint, 'checkpoint');
       }
     }
-  }, [miles, currentItem, itemType, showInfo]);
+  }, [
+    miles,
+    currentItem,
+    itemType,
+    showInfo,
+    showInfoButtonOnce,
+    observeMilesChanges,
+    isModalVisible,
+  ]);
 
   // Reset Info button gating when welcome is shown again
   useEffect(() => {
     if (showWelcome) {
       setShowInfoButtonOnce(false);
+      setShowStartupTooltip(false);
       autoOpenRef.current = false;
       setObserveMilesChanges(false);
+      setTooltipPosition(null);
     }
   }, [showWelcome]);
+
+  // Hide tooltips when the info modal opens (user acted)
+  useEffect(() => {
+    if (isModalVisible && showStartupTooltip) {
+      setShowStartupTooltip(false);
+    }
+  }, [isModalVisible, showStartupTooltip]);
+
+  // Measure anchor (InfoButton or activated trivia) and position tooltip under it
+  useEffect(() => {
+    if (!showStartupTooltip) return;
+    const node = infoButtonRef.current as any;
+    if (!node || typeof node.measureInWindow !== 'function') return;
+    const measure = () => {
+      try {
+        node.measureInWindow((x: number, y: number, w: number, h: number) => {
+          const top = y + h + spacing.xs;
+          const left = x;
+          setTooltipPosition({ top, left });
+        });
+      } catch {}
+    };
+    // Measure on next frame to ensure layout committed after animation
+    requestAnimationFrame(measure);
+  }, [showStartupTooltip]);
+
+  // Re-measure on dimension changes while tooltip is visible
+  useEffect(() => {
+    if (!showStartupTooltip) return;
+    const node = infoButtonRef.current as any;
+    if (!node || typeof node.measureInWindow !== 'function') return;
+    requestAnimationFrame(() => {
+      try {
+        node.measureInWindow((x: number, y: number, w: number, h: number) => {
+          const top = y + h + spacing.xs;
+          const left = x;
+          setTooltipPosition({ top, left });
+        });
+      } catch {}
+    });
+  }, [width, height, showStartupTooltip]);
 
   // Lift the Test Miles overlay above the keyboard when it opens
   useEffect(() => {
@@ -260,6 +374,10 @@ export default function MapScreen() {
         styles.container,
         { backgroundColor: theme.colors.mapBackground },
       ]}
+      onStartShouldSetResponderCapture={() => {
+        if (showStartupTooltip) setShowStartupTooltip(false);
+        return false;
+      }}
     >
       <StatusBar barStyle="dark-content" />
       <GestureDetector gesture={composedGesture}>
@@ -334,7 +452,20 @@ export default function MapScreen() {
                 translateY={translateY}
                 scale={scale}
                 showLabel={isCheckpoint && showCheckpointLabels}
-                onPress={() => {}}
+                onPress={() => {
+                  // Show info for the tapped marker and open modal
+                  showInfo(item, type);
+                  // Track checkpoint index for numbering if applicable
+                  if (type === 'checkpoint') {
+                    const idx = checkpointsData.findIndex(
+                      cp => cp.name === item.name,
+                    );
+                    setCurrentCheckpointIndex(idx !== -1 ? idx : null);
+                    // Activate InfoButton on manual open regardless of miles; miles change will hide it as usual
+                    setShowInfoButtonOnce(true);
+                  }
+                  openModal();
+                }}
               />
             );
           })}
@@ -348,9 +479,9 @@ export default function MapScreen() {
           onPress={() => setShowSettings(true)}
           activeOpacity={0.7}
         >
-          <SettingsIcon
+          <SettingsButton
             size={iconSizes.medium}
-            color={theme.colors.mapBackground}
+            color={theme.colors.buttonPrimaryText}
           />
         </TouchableOpacity>
       </Animated.View>
@@ -362,6 +493,7 @@ export default function MapScreen() {
           pointerEvents="box-none"
         >
           <InfoButton
+            ref={infoButtonRef}
             item={currentItem}
             type={itemType!}
             checkpointIndex={
@@ -370,35 +502,37 @@ export default function MapScreen() {
                 : undefined
             }
           />
+          {showStartupTooltip && tooltipPosition && (
+            <View
+              style={[
+                styles.tooltipOverlay,
+                {
+                  top: tooltipPosition.top,
+                  left: tooltipPosition.left,
+                },
+              ]}
+            >
+              <TooltipButton
+                onPress={() => {
+                  if (showStartupTooltip) setShowStartupTooltip(false);
+                  openModal();
+                }}
+              />
+            </View>
+          )}
         </Animated.View>
       )}
 
       {/* Labels Toggle */}
       <Animated.View style={[styles.labelsButton, labelsEnterStyle]}>
-        <TouchableOpacity
+        <Button
           onPress={() => setShowCheckpointLabels(!showCheckpointLabels)}
-          activeOpacity={0.7}
+          variant="primary"
+          size="small"
+          isMediumText={labelSize === 'large'}
         >
-          <View
-            style={[
-              styles.labelContainer,
-              {
-                backgroundColor: showCheckpointLabels
-                  ? theme.colors.checkpointTextBackground
-                  : theme.colors.checkpointLabelInactive,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                typography.label,
-                { color: theme.colors.checkpointLabel },
-              ]}
-            >
-              Labels
-            </Text>
-          </View>
-        </TouchableOpacity>
+          Labels
+        </Button>
       </Animated.View>
 
       {/* Recenter Button */}
@@ -408,12 +542,15 @@ export default function MapScreen() {
           onPress={handleRecenter}
           activeOpacity={0.7}
         >
-          <RecenterIcon
+          <RecenterButton
             size={iconSizes.medium}
             color={theme.colors.mapBackground}
           />
         </TouchableOpacity>
       </Animated.View>
+
+      {/* Info Modal */}
+      <InfoModal visible={isModalVisible} onDismiss={closeModal} />
 
       {/* Settings Modal */}
       <SettingsModal
@@ -421,11 +558,8 @@ export default function MapScreen() {
         onDismiss={() => setShowSettings(false)}
       />
 
-      {/* Info Modal */}
-      <InfoModal visible={isModalVisible} onDismiss={closeModal} />
-
-      {/* Test Input */}
-      {!showWelcome && (
+      {/* Test Input (Developer mode) */}
+      {devMode && (
         <View style={[styles.testInputContainer, { bottom: keyboardOffset }]}>
           <Text style={styles.testInputLabel}>Test Miles:</Text>
           <TextInput
@@ -479,6 +613,11 @@ export const styles = StyleSheet.create({
     top: 50,
     left: 20,
     zIndex: 100,
+  },
+  tooltipOverlay: {
+    position: 'absolute',
+    zIndex: 101,
+    pointerEvents: 'box-none',
   },
   labelsButton: {
     position: 'absolute',

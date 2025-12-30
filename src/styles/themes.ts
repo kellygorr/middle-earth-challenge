@@ -16,6 +16,7 @@ export interface Theme {
     checkpointLabel: string;
     checkpointLabelInactive: string;
     checkpointTextBackground: string;
+    infoModalInactive: string;
 
     // Trivia markers
     triviaLocked: string;
@@ -32,18 +33,27 @@ export interface Theme {
     // Text colors
     textPrimary: string;
     textSecondary: string;
-    textOnPrimary: string;
+    textInverted: string;
     textOnSurface: string;
 
     // Modal/Celebration colors
     modalBackground: string;
     modalOverlay: string;
     celebrationAccent: string;
+    modalHeaderText: string;
 
     // Button colors
     buttonPrimary: string;
     buttonInactive: string;
     buttonText: string;
+    // Button variant-specific tokens
+    buttonPrimaryBackground: string;
+    buttonPrimaryText: string;
+    buttonBrandBackground: string;
+    buttonBrandText: string;
+    buttonOutlineBg: string;
+    buttonOutlineBorder: string;
+    buttonOutlineText: string;
 
     // SVG layer colors (for colorized map mode)
     svgLegend: string;
@@ -86,16 +96,17 @@ export const classicTheme: Theme = {
     mapDefaultColor: '#231f20',
 
     // Path colors
-    pathGrey: '#A0826D',
+    pathGrey: '#afa99cff',
     pathProgress: '#8B4513',
     pathGlow: 'rgba(139, 69, 19, 0.3)',
 
     // Checkpoint markers
-    checkpointLocked: '#A0826D',
+    checkpointLocked: '#afa99cff',
     checkpointUnlocked: '#D4AF37',
     checkpointLabel: '#ffffff',
     checkpointLabelInactive: '#757575',
     checkpointTextBackground: '#000000',
+    infoModalInactive: '#6e6e6eff',
 
     // Trivia markers
     triviaLocked: '#8B7355',
@@ -112,18 +123,27 @@ export const classicTheme: Theme = {
     // Text colors
     textPrimary: '#2C1810',
     textSecondary: '#5C4033',
-    textOnPrimary: '#F5EFE0',
+    textInverted: '#F5EFE0',
     textOnSurface: '#2C1810',
 
     // Modal/Celebration colors
     modalBackground: '#e6e2daff',
     modalOverlay: 'rgba(53, 41, 28, 0.75)',
     celebrationAccent: '#D4AF37',
+    modalHeaderText: '#FFFFFF',
 
     // Button colors
     buttonPrimary: '#543f30ff',
     buttonInactive: '#A0826D',
     buttonText: '#F5EFE0',
+    // Button variant-specific tokens
+    buttonPrimaryBackground: '#000000',
+    buttonPrimaryText: '#FFFFFF',
+    buttonBrandBackground: '#8B4513',
+    buttonBrandText: '#F5EFE0',
+    buttonOutlineBg: '#FFFFFF',
+    buttonOutlineBorder: '#8B4513',
+    buttonOutlineText: '#2C1810',
 
     // SVG layer colors
     ...svgLayerColors,
@@ -146,16 +166,17 @@ export const minimalistTheme: Theme = {
     mapDefaultColor: '#231f20',
 
     // Path colors
-    pathGrey: '#B0BEC5',
-    pathProgress: '#2C3E50',
+    pathGrey: '#c7c0b2ff',
+    pathProgress: '#D4AF37',
     pathGlow: 'rgba(44, 62, 80, 0.2)',
 
     // Checkpoint markers
-    checkpointLocked: '#B0BEC5',
+    checkpointLocked: '#c7c0b2ff',
     checkpointUnlocked: '#D4AF37',
     checkpointLabel: '#ffffff',
     checkpointLabelInactive: '#757575',
     checkpointTextBackground: '#000000',
+    infoModalInactive: '#6e6e6eff',
 
     // Trivia markers
     triviaLocked: '#CFD8DC',
@@ -172,18 +193,27 @@ export const minimalistTheme: Theme = {
     // Text colors
     textPrimary: '#212121',
     textSecondary: '#757575',
-    textOnPrimary: '#FFFFFF',
+    textInverted: '#FFFFFF',
     textOnSurface: '#212121',
 
     // Modal/Celebration colors
     modalBackground: '#FFFFFF',
     modalOverlay: 'rgba(0, 0, 0, 0.75)',
     celebrationAccent: '#D4AF37',
+    modalHeaderText: '#FFFFFF',
 
     // Button colors
     buttonPrimary: '#D4AF37',
     buttonInactive: '#E0E0E0',
     buttonText: '#000000',
+    // Button variant-specific tokens
+    buttonPrimaryBackground: '#000000',
+    buttonPrimaryText: '#FFFFFF',
+    buttonBrandBackground: '#D4AF37',
+    buttonBrandText: '#000000',
+    buttonOutlineBg: '#FFFFFF',
+    buttonOutlineBorder: '#D4AF37',
+    buttonOutlineText: '#212121',
 
     // SVG layer colors
     ...svgLayerColors,

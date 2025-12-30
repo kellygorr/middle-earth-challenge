@@ -48,8 +48,7 @@ export const computePathProgress = (
   const spanBook = Math.max(1, b.book - a.book);
   const alpha = (clamped - a.book) / spanBook; // 0..1
   // Apply checkpoint-specific visual offset immediately after reaching a checkpoint (except start)
-  const visualStart =
-    a.visual + (clamped > a.book && a.book > 0 ? a.postOffsetMiles : 0);
+  const visualStart = a.visual + (clamped > a.book ? a.postOffsetMiles : 0);
   const visualEnd = b.visual;
   const visual = visualStart + (visualEnd - visualStart) * alpha;
   return Math.max(0, Math.min(visual / total, 1));

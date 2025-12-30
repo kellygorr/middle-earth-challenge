@@ -21,6 +21,7 @@ interface PositionedCheckpointProps {
   scale: SharedValue<number>; // from useMapGestures
   showLabel: boolean;
   onPress: () => void;
+  anchorRef?: React.Ref<any>;
 }
 
 export default function PositionedCheckpoint({
@@ -36,6 +37,7 @@ export default function PositionedCheckpoint({
   scale,
   showLabel,
   onPress,
+  anchorRef,
 }: PositionedCheckpointProps) {
   const labelSize = useSettingsStore(state => state.labelSize);
 
@@ -61,7 +63,10 @@ export default function PositionedCheckpoint({
   });
 
   return (
-    <Animated.View style={[styles.wrapper, animatedStyle]}>
+    <Animated.View
+      ref={anchorRef as any}
+      style={[styles.wrapper, animatedStyle]}
+    >
       <Checkpoint
         x={0}
         y={0}

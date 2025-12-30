@@ -1,11 +1,11 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import Button from '../Buttons';
 import Animated, {
   withTiming,
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
-import { typography } from '../../styles/typography';
 
 interface CheckpointProps {
   x: number;
@@ -47,12 +47,14 @@ export default function Checkpoint({
         { marginLeft: -centerOffset, marginTop: -centerOffset },
         labelPosition === 'top' ? styles.containerColumn : styles.containerRow,
       ]}
+      pointerEvents="box-none"
     >
       {/* Checkpoint circles - will be wrapped with animation later */}
       <TouchableOpacity
         style={styles.circleContainer}
         onPress={onPress}
         activeOpacity={0.7}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         {type === 'trivia' ? (
           /* Simple filled circle for trivia */
@@ -96,26 +98,22 @@ export default function Checkpoint({
       {type === 'checkpoint' && (
         <Animated.View
           style={[
-            styles.nameContainer,
             labelPosition === 'top'
               ? styles.nameContainerAbove
               : styles.nameContainerRight,
-            {
-              backgroundColor: theme.colors.checkpointTextBackground,
-            },
             labelAnimatedStyle,
           ]}
+          pointerEvents={showLabel ? 'auto' : 'none'}
         >
-          <Text
-            style={[
-              labelSize === 'large' ? typography.labelLarge : typography.label,
-              {
-                color: theme.colors.checkpointLabel,
-              },
-            ]}
+          <Button
+            onPress={onPress as any}
+            variant="primary"
+            size="small"
+            isMediumText={labelSize === 'large'}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             {name}
-          </Text>
+          </Button>
         </Animated.View>
       )}
     </View>

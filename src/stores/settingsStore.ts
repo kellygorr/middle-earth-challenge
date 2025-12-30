@@ -14,10 +14,11 @@ interface SettingsStore extends UserSettings {
   setColorizeMap: (colorize: boolean) => void;
   setShowWelcome: (show: boolean) => void;
   setReducedMapTitles: (reduced: boolean) => void;
+  setDevMode: (enabled: boolean) => void;
   loadSettings: () => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsStore>((set, get) => ({
+export const useSettingsStore = create<SettingsStore>(set => ({
   // Initial state
   id: 'default',
   labelSize: 'regular',
@@ -27,6 +28,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   colorizeMap: false,
   showWelcome: true,
   reducedMapTitles: true,
+  devMode: true,
   isLoaded: false,
 
   // Actions - each setter also persists to database
@@ -62,6 +64,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     database.updateUserSettings({ reducedMapTitles: reduced });
   },
 
+  setDevMode: enabled => {
+    set({ devMode: enabled });
+    database.updateUserSettings({ devMode: enabled });
+  },
+
   loadSettings: async () => {
     try {
       const settings = await database.getUserSettings();
@@ -73,6 +80,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         showCheckpointLabels: settings.showCheckpointLabels,
         colorizeMap: settings.colorizeMap,
         reducedMapTitles: settings.reducedMapTitles,
+        devMode:
+          settings.devMode === undefined || settings.devMode === null
+            ? true
+            : settings.devMode,
         isLoaded: true,
       });
     } catch (error) {

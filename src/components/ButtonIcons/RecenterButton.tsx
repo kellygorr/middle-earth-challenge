@@ -1,15 +1,15 @@
 import React from 'react';
 import Svg, { Circle, Line } from 'react-native-svg';
 
-interface RecenterIconProps {
+interface RecenterButtonProps {
   size?: number;
   color?: string;
 }
 
-export default function RecenterIcon({
+export default function RecenterButton({
   size = 24,
   color = '#FFFFFF',
-}: RecenterIconProps) {
+}: RecenterButtonProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       {/* Outer circle */}

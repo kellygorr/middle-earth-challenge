@@ -23,7 +23,7 @@ class Database {
     if (!this.db) throw new Error('Database not initialized');
 
     // User settings table - simple key-value style for app preferences
-    await this.db.executeAsync(`
+    this.db.executeSync(`
       CREATE TABLE IF NOT EXISTS user_settings (
         id TEXT PRIMARY KEY,
         label_size TEXT NOT NULL DEFAULT 'regular',
@@ -31,18 +31,34 @@ class Database {
         show_trivia_markers INTEGER NOT NULL DEFAULT 1,
         show_checkpoint_labels INTEGER NOT NULL DEFAULT 1,
         colorize_map INTEGER NOT NULL DEFAULT 0,
-        reduced_map_titles INTEGER NOT NULL DEFAULT 1
+        reduced_map_titles INTEGER NOT NULL DEFAULT 1,
+        dev_mode INTEGER NOT NULL DEFAULT 1
       )
     `);
+
+    // Ensure dev_mode column exists for older installations
+    try {
+      const result = this.db.executeSync(`PRAGMA table_info(user_settings)`);
+      const hasDevMode = (result.rows || []).some(
+        (r: any) => (r.name || r.COLUMN_NAME || r.column_name) === 'dev_mode',
+      );
+      if (!hasDevMode) {
+        this.db.executeSync(
+          `ALTER TABLE user_settings ADD COLUMN dev_mode INTEGER NOT NULL DEFAULT 1`,
+        );
+      }
+    } catch {
+      // Best-effort; ignore if pragma or alter fails
+    }
   }
 
   private async initializeDefaultSettings(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     // Use INSERT OR IGNORE to avoid UNIQUE constraint errors on race conditions
-    await this.db.executeAsync(
-      `INSERT OR IGNORE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles)
-       VALUES ('default', 'regular', 'classic', 1, 1, 0, 1)`,
+    this.db.executeSync(
+      `INSERT OR IGNORE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode)
+       VALUES ('default', 'regular', 'classic', 1, 1, 0, 1, 1)`,
     );
   }
 
@@ -50,7 +66,7 @@ class Database {
   async getUserSettings(): Promise<UserSettings> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const result = await this.db.executeAsync(
+    const result = this.db.executeSync(
       'SELECT * FROM user_settings WHERE id = ? LIMIT 1',
       ['default'],
     );
@@ -59,12 +75,12 @@ class Database {
 
     // If no settings found, create defaults
     if (!row) {
-      await this.db.executeAsync(
-        `INSERT OR REPLACE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles)
-         VALUES ('default', 'regular', 'classic', 1, 1, 0, 1)`,
+      this.db.executeSync(
+        `INSERT OR REPLACE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode)
+         VALUES ('default', 'regular', 'classic', 1, 1, 0, 1, 1)`,
       );
 
-      const newResult = await this.db.executeAsync(
+      const newResult = this.db.executeSync(
         'SELECT * FROM user_settings WHERE id = ? LIMIT 1',
         ['default'],
       );
@@ -83,6 +99,10 @@ class Database {
       showCheckpointLabels: row.show_checkpoint_labels === 1,
       colorizeMap: row.colorize_map === 1,
       reducedMapTitles: row.reduced_map_titles === 1,
+      devMode:
+        (row as any).dev_mode === 1 ||
+        (row as any).dev_mode === true ||
+        (row as any).dev_mode === '1',
     };
   }
 
@@ -118,10 +138,14 @@ class Database {
       fields.push('reduced_map_titles = ?');
       values.push(updates.reducedMapTitles ? 1 : 0);
     }
+    if (updates.devMode !== undefined) {
+      fields.push('dev_mode = ?');
+      values.push(updates.devMode ? 1 : 0);
+    }
 
     if (fields.length === 0) return;
 
-    await this.db.executeAsync(
+    this.db.executeSync(
       `UPDATE user_settings SET ${fields.join(', ')} WHERE id = 'default'`,
       values,
     );

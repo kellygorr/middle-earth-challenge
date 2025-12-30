@@ -1,15 +1,15 @@
 import React from 'react';
 import Svg, { Path } from 'react-native-svg';
 
-interface HomeIconProps {
+interface HomeButtonProps {
   size?: number;
   color?: string;
 }
 
-export default function HomeIcon({
+export default function HomeButton({
   size = 24,
   color = '#000000',
-}: HomeIconProps) {
+}: HomeButtonProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       {/* Filled house shape */}

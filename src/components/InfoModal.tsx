@@ -22,13 +22,15 @@ import {
 import { useTheme } from '../stores/settingsStore';
 import { useInfoStore } from '../stores/infoStore';
 import { useProgressStore } from '../stores/progressStore';
-import { typography } from '../styles/typography';
-import { spacing, shadows, borderRadius } from '../styles/global';
+import { typography, typographyThemed } from '../styles/typography';
+import { spacing, borderRadius, shadows } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
+import trivia from '../constants/trivia.json';
 import Confetti from './Confetti';
+import JourneyProgressBar from './JourneyProgressBar';
 
 // Centralized timings and flags
 const CONFETTI_MAX_MS = motion.confetti.maxRunMs;
@@ -42,6 +44,12 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   const theme = useTheme();
   const { currentItem, itemType } = useInfoStore();
   const { checkpointCompletions, miles } = useProgressStore();
+  // Locked checkpoint mode: show limited info when tapping a future checkpoint
+  const isLockedCheckpoint =
+    itemType === 'checkpoint' &&
+    currentItem &&
+    'CUMULATIVE_MILES' in currentItem &&
+    (miles || 0) < (currentItem.CUMULATIVE_MILES || 0);
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const safeHeight = Math.max(0, windowHeight - insets.top - insets.bottom);
@@ -194,7 +202,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     return null;
   }
 
-  // Calculate progress to next checkpoint
+  // Calculate progress to next checkpoint (and static span between checkpoints)
   const getCheckpointProgress = () => {
     if (itemType === 'checkpoint' && 'CUMULATIVE_MILES' in currentItem) {
       const currentCheckpointIndex = getCheckpointNumber();
@@ -211,25 +219,48 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
           percentage,
           nextCheckpointNumber: nextCheckpointIndex + 1,
           milesToNext,
+          spanMiles: span,
+          currentCumulativeMiles: currentCM,
         };
       }
     }
-    return { percentage: 100, nextCheckpointNumber: null, milesToNext: null };
+    return {
+      percentage: 100,
+      nextCheckpointNumber: null,
+      milesToNext: null,
+      spanMiles: null,
+      currentCumulativeMiles: null,
+    };
   };
 
-  // Calculate progress info for checkpoints
+  // Journey progress should reflect the user's current walked miles
   const getProgressInfo = () => {
-    if (itemType === 'checkpoint' && 'CUMULATIVE_MILES' in currentItem) {
-      const progressMiles = currentItem.CUMULATIVE_MILES;
-      const progressPercentage = Math.round(
-        (progressMiles / TOTAL_JOURNEY_MILES) * 100,
-      );
-      return { progressMiles, progressPercentage };
-    }
-    return null;
+    const walkedMiles = Math.max(0, Math.min(miles ?? 0, TOTAL_JOURNEY_MILES));
+    const progressPercentage = Math.round(
+      (walkedMiles / TOTAL_JOURNEY_MILES) * 100,
+    );
+    return { progressMiles: walkedMiles, progressPercentage };
   };
 
   const progressInfo = getProgressInfo();
+
+  // Trivia between previous and current checkpoint (inclusive of current)
+  const getSegmentTrivia = () => {
+    if (itemType !== 'checkpoint' || !('CUMULATIVE_MILES' in currentItem)) {
+      return [] as Array<any>;
+    }
+    const idx = getCheckpointNumber();
+    const currentCM = checkpoints[idx]?.CUMULATIVE_MILES ?? 0;
+    const prevCM = idx > 0 ? checkpoints[idx - 1].CUMULATIVE_MILES : -Infinity;
+    const items = (trivia as Array<any>).filter(t => {
+      const mile = Number(t.CUMULATIVE_MILES ?? -Infinity);
+      return mile > prevCM && mile <= currentCM;
+    });
+    items.sort(
+      (a, b) => Number(a.CUMULATIVE_MILES) - Number(b.CUMULATIVE_MILES),
+    );
+    return items;
+  };
 
   return (
     <>
@@ -271,10 +302,8 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
               {/* Modal Title */}
               <Text
                 style={[
-                  typography.modalTitle,
+                  typographyThemed(theme).titleMediumInverted,
                   styles.title,
-                  shadows.text,
-                  { color: theme.colors.textOnPrimary },
                 ]}
               >
                 {itemType === 'checkpoint'
@@ -291,7 +320,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                 >
                   <Text
                     style={[
-                      typography.modalTitle,
+                      typography.titleMedium,
                       styles.closeButtonText,
                       { color: theme.colors.textPrimary },
                     ]}
@@ -303,7 +332,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                 {/* Scrollable Content */}
                 <ScrollView
                   style={styles.scrollView}
-                  contentContainerStyle={styles.scrollContent}
+                  contentContainerStyle={[styles.scrollContent]}
                   showsVerticalScrollIndicator={false}
                   bounces={true}
                   scrollEventThrottle={16}
@@ -312,29 +341,48 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   {/* Location name */}
                   <Text
                     style={[
-                      typography.title,
+                      typographyThemed(theme).titleMediumPrimary,
                       styles.locationName,
-                      { color: theme.colors.textPrimary },
                     ]}
                   >
                     {currentItem.name}
                   </Text>
 
-                  {/* Description */}
-                  {currentItem.description?.text && (
+                  {itemType === 'checkpoint' && isLockedCheckpoint ? (
+                    <View style={styles.lockedSectionContainer}>
+                      <View
+                        style={[
+                          styles.lockedCenterContainer,
+                          { backgroundColor: theme.colors.infoModalInactive },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            typography.caption,
+                            styles.lockedBannerText,
+                            { color: theme.colors.checkpointLabel },
+                          ]}
+                        >
+                          Checkpoint locked
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* Description (hidden for locked checkpoints) */}
+                  {!isLockedCheckpoint && currentItem.description?.text && (
                     <Text
                       style={[
-                        typography.body,
+                        typographyThemed(theme).bodySecondary,
                         styles.description,
-                        { color: theme.colors.textSecondary },
                       ]}
                     >
                       {currentItem.description.text}
                     </Text>
                   )}
 
-                  {/* Image if available */}
-                  {currentItem.description?.image && (
+                  {/* Image if available (hidden for locked checkpoints) */}
+                  {!isLockedCheckpoint && currentItem.description?.image && (
                     <View style={styles.imageContainer}>
                       <Image
                         source={{ uri: currentItem.description.image }}
@@ -349,229 +397,207 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                     'CUMULATIVE_MILES' in currentItem && (
                       <View style={styles.milesContainer}>
                         <Text
-                          style={[
-                            typography.caption,
-                            { color: theme.colors.textSecondary },
-                          ]}
+                          style={[typographyThemed(theme).captionSecondary]}
                         >
-                          Mile {currentItem.CUMULATIVE_MILES}
+                          {currentItem.CUMULATIVE_MILES} miles
                         </Text>
                       </View>
                     )}
-                </ScrollView>
-
-                {/* Miles to Next Checkpoint - standalone section above progress bars */}
-                {itemType === 'checkpoint' &&
-                  (() => {
-                    const cp = getCheckpointProgress();
-                    return typeof cp.milesToNext === 'number' ? (
-                      <View style={styles.milesToNextSection}>
-                        <Text
-                          style={[
-                            typography.caption,
-                            styles.milesToNextTitle,
-                            { color: theme.colors.textPrimary },
-                          ]}
-                        >
-                          Miles to Next Checkpoint
-                        </Text>
-                        <View
-                          style={[
-                            styles.milesToNextPill,
-                            {
-                              backgroundColor:
-                                theme.colors.checkpointTextBackground,
-                            },
-                          ]}
-                        >
+                  {/* Previous trivia (under description/image) */}
+                  {itemType === 'checkpoint' &&
+                    (() => {
+                      // Show previous trivia only after this checkpoint is completed/reached
+                      const isCompleted =
+                        'CUMULATIVE_MILES' in currentItem &&
+                        (miles || 0) >= (currentItem.CUMULATIVE_MILES || 0);
+                      if (!isCompleted) return null;
+                      const segmentTrivia = getSegmentTrivia();
+                      return segmentTrivia.length ? (
+                        <View style={styles.triviaSection}>
                           <Text
                             style={[
-                              typography.title,
-                              styles.milesToNextValue,
-                              { color: theme.colors.checkpointLabel },
+                              typographyThemed(theme).captionPrimary,
+                              styles.triviaTitle,
                             ]}
                           >
-                            {cp.milesToNext}
-                            <Text
-                              style={[
-                                styles.milesSuffix,
-                                { color: theme.colors.checkpointLabel },
-                              ]}
-                            >
-                              miles
-                            </Text>
+                            Trivia
                           </Text>
-                        </View>
-                      </View>
-                    ) : null;
-                  })()}
-
-                {/* Progress bars for checkpoints - at bottom of modal */}
-                {itemType === 'checkpoint' && progressInfo && (
-                  <View style={styles.bottomProgressSection}>
-                    {/* Next Checkpoint Progress */}
-                    {(() => {
-                      const checkpointProgress = getCheckpointProgress();
-                      const currentIdx = getCheckpointNumber();
-                      const nextIdx = currentIdx + 1;
-                      const latestName = currentItem.name;
-                      const nextName =
-                        nextIdx < checkpoints.length
-                          ? checkpoints[nextIdx].name
-                          : undefined;
-
-                      return nextName ? (
-                        <View
-                          style={[styles.progressSection, styles.progressRow]}
-                        >
-                          <View style={styles.progressLeft}>
-                            <View style={styles.progressLabelRow}>
-                              <Text
-                                style={[
-                                  typography.caption,
-                                  styles.progressSideLabel,
-                                  { color: theme.colors.textPrimary },
-                                ]}
-                              >
-                                {latestName}
-                              </Text>
-                              <Text
-                                style={[
-                                  typography.caption,
-                                  styles.progressSideLabel,
-                                  { color: theme.colors.textPrimary },
-                                ]}
-                              >
-                                {`${nextName} (Checkpoint #${nextIdx + 1})`}
-                              </Text>
-                            </View>
-                            <View style={styles.progressBarContainer}>
-                              <View
-                                style={[
-                                  styles.progressBarBackground,
-                                  { backgroundColor: theme.colors.pathGrey },
-                                ]}
-                              >
-                                <View
+                          <View style={styles.triviaList}>
+                            {segmentTrivia.map(t => (
+                              <View key={t.name} style={styles.triviaItemRow}>
+                                <Text
                                   style={[
-                                    styles.progressBarFill,
-                                    {
-                                      backgroundColor:
-                                        theme.colors.checkpointUnlocked,
-                                      width: `${checkpointProgress.percentage}%`,
-                                    },
+                                    typographyThemed(theme).bodyPrimary,
+                                    styles.triviaItemName,
                                   ]}
-                                />
+                                  numberOfLines={1}
+                                >
+                                  {t.name}
+                                </Text>
+                                {'CUMULATIVE_MILES' in t && (
+                                  <Text
+                                    style={[
+                                      typographyThemed(theme).captionSecondary,
+                                      styles.triviaItemMile,
+                                    ]}
+                                  >
+                                    {t.CUMULATIVE_MILES} miles
+                                  </Text>
+                                )}
                               </View>
-                            </View>
-                          </View>
-                          <View
-                            style={[
-                              styles.progressPercentFixed,
-                              styles.progressPercentContainer,
-                            ]}
-                          >
-                            <View
-                              style={[
-                                styles.progressPercentPillBox,
-                                {
-                                  backgroundColor:
-                                    theme.colors.checkpointTextBackground,
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  typography.caption,
-                                  styles.progressPercentageText,
-                                  { color: theme.colors.checkpointLabel },
-                                ]}
-                              >
-                                {checkpointProgress.percentage}%
-                              </Text>
-                            </View>
+                            ))}
                           </View>
                         </View>
                       ) : null;
                     })()}
+                </ScrollView>
 
-                    {/* Journey Progress */}
-                    {(() => {
-                      const firstName = checkpoints[0]?.name;
-                      const lastName =
-                        checkpoints[checkpoints.length - 1]?.name;
-                      return (
+                {/* Miles section */}
+                {itemType === 'checkpoint' &&
+                  (() => {
+                    const cp = getCheckpointProgress();
+                    if (typeof cp.spanMiles !== 'number') return null;
+                    const showLeft =
+                      typeof cp.currentCumulativeMiles === 'number' &&
+                      cp.currentCumulativeMiles > 0;
+                    const targetMiles = (currentItem as any)
+                      .CUMULATIVE_MILES as number;
+                    const remaining = Math.max(0, targetMiles - (miles || 0));
+                    return (
+                      <View style={styles.milesToNextSection}>
                         <View
-                          style={[styles.progressSection, styles.progressRow]}
+                          style={[styles.milesTwoColRow, styles.milesTitleRow]}
                         >
-                          <View style={styles.progressLeft}>
-                            <View style={styles.progressLabelRow}>
+                          <View
+                            style={styles.milesCol}
+                            pointerEvents={showLeft ? 'auto' : 'none'}
+                          >
+                            <Text
+                              style={[
+                                typographyThemed(theme).captionPrimaryBold,
+                                styles.milesToNextTitle,
+                                !showLeft ? styles.hidden : null,
+                              ]}
+                            >
+                              Checkpoint
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.milesCol,
+                              { marginLeft: spacing.md },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                typographyThemed(theme).captionPrimaryBold,
+                                styles.milesToNextTitle,
+                                isLockedCheckpoint
+                                  ? { color: theme.colors.infoModalInactive }
+                                  : null,
+                              ]}
+                            >
+                              {isLockedCheckpoint
+                                ? 'Remaining'
+                                : 'Next checkpoint'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.milesTwoColRow,
+                            { marginTop: spacing.xs },
+                          ]}
+                        >
+                          <View
+                            style={styles.milesCol}
+                            pointerEvents={showLeft ? 'auto' : 'none'}
+                          >
+                            <View
+                              style={[
+                                styles.milesToNextPill,
+                                {
+                                  backgroundColor:
+                                    theme.colors.checkpointTextBackground,
+                                },
+                                !showLeft ? styles.hidden : null,
+                              ]}
+                            >
                               <Text
                                 style={[
-                                  typography.caption,
-                                  styles.progressSideLabel,
-                                  { color: theme.colors.textPrimary },
+                                  typography.titleLarge,
+                                  styles.milesToNextValue,
+                                  { color: theme.colors.checkpointLabel },
                                 ]}
                               >
-                                {firstName}
-                              </Text>
-                              <Text
-                                style={[
-                                  typography.caption,
-                                  styles.progressSideLabel,
-                                  { color: theme.colors.textPrimary },
-                                ]}
-                              >
-                                {lastName}
-                              </Text>
-                            </View>
-                            <View style={styles.progressBarContainer}>
-                              <View
-                                style={[
-                                  styles.progressBarBackground,
-                                  { backgroundColor: theme.colors.pathGrey },
-                                ]}
-                              >
-                                <View
+                                {cp.currentCumulativeMiles}
+                                <Text
                                   style={[
-                                    styles.progressBarFill,
-                                    {
-                                      backgroundColor:
-                                        theme.colors.pathProgress,
-                                      width: `${progressInfo.progressPercentage}%`,
-                                    },
+                                    styles.milesSuffix,
+                                    { color: theme.colors.checkpointLabel },
                                   ]}
-                                />
-                              </View>
+                                >
+                                  miles
+                                </Text>
+                              </Text>
                             </View>
                           </View>
                           <View
                             style={[
-                              styles.progressPercentFixed,
-                              styles.progressPercentContainer,
+                              styles.milesCol,
+                              { marginLeft: spacing.md },
                             ]}
                           >
                             <View
                               style={[
-                                styles.progressPercentPillBox,
+                                styles.milesToNextPill,
                                 {
-                                  backgroundColor:
-                                    theme.colors.checkpointTextBackground,
+                                  backgroundColor: isLockedCheckpoint
+                                    ? theme.colors.infoModalInactive
+                                    : theme.colors.checkpointTextBackground,
                                 },
                               ]}
                             >
                               <Text
                                 style={[
-                                  typography.caption,
-                                  styles.progressPercentageText,
+                                  typography.titleLarge,
+                                  styles.milesToNextValue,
                                   { color: theme.colors.checkpointLabel },
                                 ]}
                               >
-                                {progressInfo.progressPercentage}%
+                                {isLockedCheckpoint
+                                  ? '-' + remaining
+                                  : cp.spanMiles}
+                                <Text
+                                  style={[
+                                    styles.milesSuffix,
+                                    { color: theme.colors.checkpointLabel },
+                                  ]}
+                                >
+                                  miles
+                                </Text>
                               </Text>
                             </View>
                           </View>
                         </View>
+                      </View>
+                    );
+                  })()}
+
+                {/* Progress - Journey at bottom of modal */}
+                {itemType === 'checkpoint' && progressInfo && (
+                  <View style={styles.bottomProgressSection}>
+                    {(() => {
+                      const firstName = checkpoints[0]?.name;
+                      const lastName = checkpoints[checkpoints.length - 1]?.name;
+                      return (
+                        <JourneyProgressBar
+                          leftLabel={firstName}
+                          rightLabel={lastName}
+                          progressPercentage={progressInfo.progressPercentage}
+                          isLocked={!!isLockedCheckpoint}
+                        />
                       );
                     })()}
                   </View>
@@ -602,26 +628,71 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignItems: 'flex-start',
   },
+  lockedSectionContainer: {
+    alignSelf: 'stretch',
+    flexGrow: 1,
+    marginHorizontal: -spacing.lg,
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'center',
+  },
+
+  lockedBannerText: {
+    fontWeight: '600',
+  },
   // Miles to Next section
   milesToNextSection: {
-    alignItems: 'center',
-    marginTop: spacing.md,
+    alignItems: 'stretch',
     marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  milesTwoColRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  milesTitleRow: {
+    alignItems: 'flex-end',
+  },
+  milesCol: {
+    flex: 1,
   },
   milesToNextTitle: {
     marginBottom: 4,
-    textAlign: 'center',
-    fontWeight: '600',
+    textAlign: 'left',
   },
   milesToNextValue: {
-    textAlign: 'center',
+    textAlign: 'left',
+  },
+  milesToNextValueRight: {
+    textAlign: 'right',
   },
   milesToNextPill: {
     borderRadius: borderRadius.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
+    width: '100%',
+  },
+  milesCenterWrapper: {
+    alignItems: 'center',
+  },
+  milesCenteredTitle: {
+    textAlign: 'center',
+  },
+  milesCenterPill: {
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    width: 'auto',
+    paddingHorizontal: spacing.md,
+  },
+  milesCenteredText: {
+    textAlign: 'center',
+  },
+  hidden: {
+    opacity: 0,
+  },
+  singleColRight: {
+    alignItems: 'flex-end',
   },
   milesSuffix: {
     fontSize: 12,
@@ -630,9 +701,6 @@ const styles = StyleSheet.create({
   title: {
     marginBottom: spacing.sm,
     textAlign: 'center',
-  },
-  titleText: {
-    color: '#FFFFFF',
   },
   safeArea: {
     flex: 1,
@@ -645,12 +713,8 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 400,
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    paddingTop: 64, // Space for larger close button
+    ...shadows.large,
+    paddingTop: spacing.xl2, // Standardized 40px top padding using token
   },
   scrollView: {
     flex: 1,
@@ -691,76 +755,39 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   bottomProgressSection: {
-    padding: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
-  progressSection: {
+  triviaSection: {
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
-  progressLabel: {
+  triviaTitle: {
     marginBottom: spacing.xs,
-    fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  progressLabelRow: {
+  triviaList: {
+    gap: spacing.xs,
+  },
+  triviaItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
   },
-  progressSideLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    maxWidth: '48%',
-    textAlign: 'left',
+  triviaItemName: {
+    flex: 1,
+    marginRight: spacing.sm,
   },
-  progressBarContainer: {
-    marginTop: 0,
-  },
-  progressBarBackground: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 0,
-    width: '100%',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 4,
-    minWidth: 2,
-  },
-  progressPercentageText: {
+  triviaItemMile: {
     textAlign: 'right',
-    fontSize: 14,
   },
-  progressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  progressLeft: {
+
+  lockedCenterContainer: {
     flex: 1,
-  },
-  progressPercentFixed: {
-    width: 40,
-    marginLeft: spacing.sm,
-  },
-  progressPercentPill: {
-    paddingVertical: 2,
-    paddingHorizontal: spacing.xs,
-    borderRadius: borderRadius.sm,
-  },
-  progressPercentContainer: {
-    alignSelf: 'stretch',
     justifyContent: 'center',
-    alignItems: 'flex-end',
-  },
-  progressPercentPillBox: {
-    flex: 1,
-    width: '100%',
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.lg,
+    borderRadius: borderRadius.md,
   },
 
   milesContainer: {

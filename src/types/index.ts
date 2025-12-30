@@ -80,6 +80,7 @@ export interface UserSettings {
   showCheckpointLabels: boolean;
   colorizeMap: boolean;
   reducedMapTitles: boolean;
+  devMode: boolean;
 }
 
 // Journey segment definition (from distance.md)

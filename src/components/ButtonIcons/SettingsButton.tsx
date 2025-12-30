@@ -1,15 +1,15 @@
 import React from 'react';
 import Svg, { Path } from 'react-native-svg';
 
-interface SettingsIconProps {
+interface SettingsButtonProps {
   size?: number;
   color?: string;
 }
 
-export default function SettingsIcon({
+export default function SettingsButton({
   size = 32,
   color = '#242424',
-}: SettingsIconProps) {
+}: SettingsButtonProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Path
