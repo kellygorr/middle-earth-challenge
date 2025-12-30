@@ -8,7 +8,7 @@
     "isStart": true,
     "isActive": true,
     "x": 760,
-    "y": 648,
+    "y": 645,
     "labelPosition": "top",
     "CUMULATIVE_MILES": 0,
     "checkpointActivationMiles": 0,
@@ -21,7 +21,7 @@
       "text": "A bustling village where Men and Hobbits live side by side. The Prancing Pony inn stands at the crossroads of the ancient Great East Road."
     },
     "x": 975,
-    "y": 650,
+    "y": 648,
     "CUMULATIVE_MILES": 120,
     "checkpointActivationMiles": 105,
     "postCheckpointOffsetMiles": 11

@@ -44,6 +44,8 @@ export const motion = {
     inOut: Easing.inOut(Easing.cubic),
     linear: Easing.linear,
     sway: Easing.inOut(Easing.sin),
+    // Snappier curve for small delta animations
+    snappy: Easing.bezier(0.2, 0.8, 0.2, 1),
   },
 
   // Global motion-related feature flags

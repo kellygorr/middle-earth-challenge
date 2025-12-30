@@ -3,21 +3,26 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../stores/settingsStore';
 import { typography, typographyThemed } from '../styles/typography';
 import { spacing, borderRadius } from '../styles/global';
+import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
+import checkpoints from '../constants/checkpoints.json';
+import { useProgressStore } from '../stores/progressStore';
 
 interface JourneyProgressBarProps {
-  leftLabel: string | undefined;
-  rightLabel: string | undefined;
-  progressPercentage: number;
   isLocked: boolean;
 }
 
 export default function JourneyProgressBar({
-  leftLabel,
-  rightLabel,
-  progressPercentage,
   isLocked,
 }: JourneyProgressBarProps) {
   const theme = useTheme();
+  const miles = useProgressStore(state => state.miles) ?? 0;
+  const progressMiles = Math.max(0, Math.min(miles, TOTAL_JOURNEY_MILES));
+  const progressPercentage = Math.round(
+    (progressMiles / TOTAL_JOURNEY_MILES) * 100,
+  );
+
+  const firstName = (checkpoints[0] as any)?.name ?? '';
+  const lastName = (checkpoints[checkpoints.length - 1] as any)?.name ?? '';
 
   return (
     <View style={styles.container}>
@@ -30,7 +35,7 @@ export default function JourneyProgressBar({
                 styles.progressSideLabel,
               ]}
             >
-              {leftLabel}
+              {firstName}
             </Text>
             <Text
               style={[
@@ -38,7 +43,7 @@ export default function JourneyProgressBar({
                 styles.progressSideLabel,
               ]}
             >
-              {rightLabel}
+              {lastName}
             </Text>
           </View>
           <View style={styles.progressBarContainer}>
@@ -135,22 +140,26 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: 14,
   },
+  progressMilesText: {
+    textAlign: 'right',
+    fontSize: 12,
+    marginTop: spacing.xs,
+  },
   progressPercentFixed: {
-    width: 40,
+    width: 56,
     marginLeft: spacing.sm,
   },
   progressPercentContainer: {
-    alignSelf: 'stretch',
     justifyContent: 'center',
     alignItems: 'flex-end',
   },
   progressPercentPillBox: {
-    flex: 1,
     width: '100%',
     borderRadius: borderRadius.sm,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: spacing.xs,
     paddingHorizontal: spacing.xs,
   },
 });

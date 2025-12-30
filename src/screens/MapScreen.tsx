@@ -13,7 +13,12 @@ import {
   GestureHandlerRootView,
   GestureDetector,
 } from 'react-native-gesture-handler';
-import Animated, { useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  useSharedValue,
+  withTiming,
+  useAnimatedReaction,
+  runOnJS,
+} from 'react-native-reanimated';
 import SettingsModal from '../components/SettingsModal';
 import { SettingsButton, RecenterButton } from '../components/ButtonIcons';
 import { iconSizes } from '../styles/global';
@@ -35,6 +40,7 @@ import { GAME_PATH } from '../constants/mapPathData';
 import { useMapGestures } from '../hooks/useMapGestures';
 import { useInitialAnimation } from '../hooks/useInitialAnimation';
 import { useReactiveDimensions } from '../hooks/useReactiveDimensions';
+import { motion } from '../styles/motion';
 
 // Data sets and SVG viewBox dimensions
 const checkpointsData = checkpointsDataRaw as CheckpointType[];
@@ -162,6 +168,12 @@ export default function MapScreen() {
   // Begin observing miles changes only after info animation completes
   const [observeMilesChanges, setObserveMilesChanges] = useState(false);
   // (No extra activation guards; equality-based activation below)
+  // Animated path progress mirrored into React state for gating
+  const [animatedProgress, setAnimatedProgress] = useState(
+    miles ? mapBookMilesToPathProgress(miles) : 0,
+  );
+  // Track previous miles for animation ramping based on delta
+  const prevAnimMilesRef = useRef<number>(miles || 0);
 
   // Journey progress
   const journeyProgressValue = useSharedValue(
@@ -169,10 +181,42 @@ export default function MapScreen() {
   );
 
   useEffect(() => {
-    journeyProgressValue.value = mapBookMilesToPathProgress(miles || 0);
+    const currentMiles = miles || 0;
+    const target = mapBookMilesToPathProgress(currentMiles);
+    // Compute delta and choose duration ramp
+    const delta = Math.abs(currentMiles - (prevAnimMilesRef.current || 0));
+    const base = motion.pathReveal.duration; // default base duration (ms)
+    // Three-tier ramp: <50, <300, <600; else large
+    // Make animations slower for these tiers (increased again)
+    let factor = 2.8; // default for very large changes
+    if (delta < 50) factor = 1.0;
+    else if (delta < 300) factor = 1.5;
+    else if (delta < 600) factor = 2.2;
+    const durationMs = Math.max(120, Math.round(base * factor));
+    // Pick easing curve for tiers
+    const easingCurve =
+      delta < 50
+        ? motion.easing.inOut
+        : delta < 300
+        ? motion.easing.standard
+        : motion.easing.inOut;
+    journeyProgressValue.value = withTiming(target, {
+      duration: durationMs,
+      easing: easingCurve,
+    });
+    prevAnimMilesRef.current = currentMiles;
   }, [miles, journeyProgressValue, showInfoButtonOnce, observeMilesChanges]);
 
-  // Show/hide InfoButton when landing on or crossing a checkpoint mile
+  // Mirror journey progress (shared value) into React state for gating logic
+  useAnimatedReaction(
+    () => journeyProgressValue.value,
+    val => {
+      runOnJS(setAnimatedProgress)(val);
+    },
+    [journeyProgressValue],
+  );
+
+  // Show/hide InfoButton only when landing exactly on a checkpoint mile (and after path animation completes)
   useEffect(() => {
     // Do not override while a modal is open due to manual selection
     if (isModalVisible) return;
@@ -183,14 +227,9 @@ export default function MapScreen() {
     if (current !== prev) {
       // Prefer exact match with small float tolerance; fallback to crossing detection
       const isExact = (a: number, b: number) => Math.abs(a - b) < 1e-6;
-      let idx = checkpointsData.findIndex(cp =>
+      const idx = checkpointsData.findIndex(cp =>
         isExact(cp.CUMULATIVE_MILES, current),
       );
-      if (idx === -1 && current > prev) {
-        idx = checkpointsData.findIndex(
-          cp => cp.CUMULATIVE_MILES > prev && cp.CUMULATIVE_MILES <= current,
-        );
-      }
 
       if (idx !== -1) {
         const reached = checkpointsData[idx];
@@ -202,16 +241,6 @@ export default function MapScreen() {
       } else {
         // Hide InfoButton when miles change away from any checkpoint
         if (showInfoButtonOnce) {
-          setShowInfoButtonOnce(false);
-        }
-        // Additionally, if we have a checkpoint selected and have moved beyond it, force-hide
-        if (
-          showInfoButtonOnce &&
-          itemType === 'checkpoint' &&
-          currentItem &&
-          'CUMULATIVE_MILES' in currentItem &&
-          current > (currentItem as any).CUMULATIVE_MILES
-        ) {
           setShowInfoButtonOnce(false);
         }
       }
@@ -228,7 +257,7 @@ export default function MapScreen() {
     isModalVisible,
   ]);
 
-  // Determine current active checkpoint and trivia
+  // Determine current active checkpoint and trivia (gate while path animates)
   useEffect(() => {
     // Respect manual selection while the modal is open
     if (isModalVisible) return;
@@ -418,19 +447,25 @@ export default function MapScreen() {
           {[...triviaData, ...checkpointsData].map(item => {
             const baseX = item.x * uniformScale - mapOffsetX;
             const baseY = item.y * uniformScale - mapOffsetY;
-            const bookMiles = miles || 0;
+            // Use animated path progress for activation gating
 
             // Determine type and activation logic
             const isCheckpoint = 'checkpointActivationMiles' in item;
             const type = isCheckpoint ? 'checkpoint' : 'trivia';
 
-            let isActive: boolean;
+            // Single activation: checkpoints activate when the animated path reaches the center circle (CUMULATIVE_MILES)
+            let isActive = false;
             if (isCheckpoint) {
-              // Use book miles (CUMULATIVE_MILES) for actual activation; keep checkpointActivationMiles for any visual-only needs elsewhere
-              const activationMiles = item.CUMULATIVE_MILES ?? 0;
-              isActive = item.isStart ? true : bookMiles >= activationMiles;
+              const centerMiles = item.CUMULATIVE_MILES ?? 0;
+              const centerProgress = mapBookMilesToPathProgress(centerMiles);
+              isActive = item.isStart
+                ? true
+                : animatedProgress + 1e-6 >= centerProgress;
             } else {
-              isActive = bookMiles >= item.CUMULATIVE_MILES;
+              const activationProgress = mapBookMilesToPathProgress(
+                item.CUMULATIVE_MILES,
+              );
+              isActive = animatedProgress + 1e-6 >= activationProgress;
             }
 
             // Hide trivia entirely until active
@@ -493,42 +528,61 @@ export default function MapScreen() {
         </Pressable>
       </Animated.View>
 
-      {/* Info System - Checkpoint/Trivia Info */}
-      {currentItem && showInfoButtonOnce && (
-        <Animated.View
-          style={[styles.infoContainer, infoEnterStyle]}
-          pointerEvents="box-none"
-        >
-          <InfoButton
-            ref={infoButtonRef}
-            item={currentItem}
-            type={itemType!}
-            checkpointIndex={
-              itemType === 'checkpoint' && currentCheckpointIndex !== null
-                ? currentCheckpointIndex
-                : undefined
-            }
-          />
-          {showStartupTooltip && tooltipPosition && (
-            <View
-              style={[
-                styles.tooltipOverlay,
-                {
-                  top: tooltipPosition.top,
-                  left: tooltipPosition.left,
-                },
-              ]}
-            >
-              <TooltipButton
-                onPress={() => {
-                  if (showStartupTooltip) setShowStartupTooltip(false);
-                  openModal();
-                }}
-              />
-            </View>
-          )}
-        </Animated.View>
-      )}
+      {/* Info System - Checkpoint/Trivia Info (gate until animated path reaches checkpoint) */}
+      {(() => {
+        if (!currentItem || !showInfoButtonOnce) return null;
+        const currentMiles = miles || 0;
+        const isCheckpointItem =
+          itemType === 'checkpoint' && 'CUMULATIVE_MILES' in currentItem;
+        const isTriviaItem = itemType === 'trivia';
+        const isExact = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+        const checkpointProgressThreshold = isCheckpointItem
+          ? mapBookMilesToPathProgress(
+              (currentItem as any).CUMULATIVE_MILES ?? 0,
+            )
+          : 0;
+        const allowCheckpointInfo =
+          isCheckpointItem &&
+          isExact(currentMiles, (currentItem as any).CUMULATIVE_MILES) &&
+          animatedProgress + 1e-6 >= checkpointProgressThreshold;
+        const allowTriviaInfo = isTriviaItem; // trivia gating handled by activation logic above
+        if (!allowCheckpointInfo && !allowTriviaInfo) return null;
+        return (
+          <Animated.View
+            style={[styles.infoContainer, infoEnterStyle]}
+            pointerEvents="box-none"
+          >
+            <InfoButton
+              ref={infoButtonRef}
+              item={currentItem}
+              type={itemType!}
+              checkpointIndex={
+                itemType === 'checkpoint' && currentCheckpointIndex !== null
+                  ? currentCheckpointIndex
+                  : undefined
+              }
+            />
+            {showStartupTooltip && tooltipPosition && (
+              <View
+                style={[
+                  styles.tooltipOverlay,
+                  {
+                    top: tooltipPosition.top,
+                    left: tooltipPosition.left,
+                  },
+                ]}
+              >
+                <TooltipButton
+                  onPress={() => {
+                    if (showStartupTooltip) setShowStartupTooltip(false);
+                    openModal();
+                  }}
+                />
+              </View>
+            )}
+          </Animated.View>
+        );
+      })()}
 
       {/* Labels Toggle */}
       <Animated.View style={[styles.labelsButton, labelsEnterStyle]}>
@@ -581,14 +635,23 @@ export default function MapScreen() {
             value={testMiles}
             onChangeText={t => {
               setTestMiles(t);
-              const parsed = parseFloat(t);
-              setMiles(isNaN(parsed) ? 0 : parsed);
             }}
             keyboardType="numeric"
             placeholder="0"
             placeholderTextColor="#999"
           />
           <Text style={styles.testInputLabel}>/ {TOTAL_JOURNEY_MILES}</Text>
+          <Button
+            onPress={() => {
+              const parsed = parseFloat(testMiles);
+              setMiles(isNaN(parsed) ? 0 : parsed);
+            }}
+            variant="brand"
+            size="default"
+            isMediumText={false}
+          >
+            Walk
+          </Button>
         </View>
       )}
     </GestureHandlerRootView>

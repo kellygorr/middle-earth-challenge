@@ -10,6 +10,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 
 interface PositionedCheckpointProps {
   item: CheckpointType;
+  // Single active flag for both checkpoint and trivia
   isActive: boolean;
   type: 'checkpoint' | 'trivia';
   baseX: number; // original position on the map in screen coordinates
@@ -71,7 +72,7 @@ export default function PositionedCheckpoint({
         x={0}
         y={0}
         name={item.name}
-        isActive={isActive}
+        isActive={!!isActive}
         showLabel={showLabel}
         labelPosition={item.labelPosition}
         type={type}

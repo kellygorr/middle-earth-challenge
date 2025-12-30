@@ -89,20 +89,32 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     return 0;
   }, [itemType, currentItem]);
 
+  // Helper to compute latest completed checkpoint using either saved completions or miles fallback
+  const getLatestCompletedCheckpointNumber = useCallback(() => {
+    const byCompletions = checkpointCompletions.length
+      ? Math.max(...checkpointCompletions.map(c => c.checkpointNumber ?? 0))
+      : 0;
+    const totalMiles = miles || 0;
+    let byMiles = 0;
+    for (let i = 0; i < checkpoints.length; i++) {
+      const m = checkpoints[i]?.CUMULATIVE_MILES ?? 0;
+      if (m > 0 && m <= totalMiles) byMiles = i + 1;
+    }
+    return Math.max(byCompletions, byMiles);
+  }, [checkpointCompletions, miles]);
+
   // Predict whether confetti will run to choose animation mode
   const isCheckpointPre =
     itemType === 'checkpoint' &&
     currentItem &&
     'CUMULATIVE_MILES' in currentItem;
-  const maxCompletedPre = checkpointCompletions.length
-    ? Math.max(...checkpointCompletions.map(c => c.checkpointNumber ?? 0))
-    : 0;
+  const latestCompletedPre = getLatestCompletedCheckpointNumber();
   const currentCheckpointNumberPre = getCheckpointNumber() + 1;
   const willConfettiRun =
     motion.flags.confettiEnabled &&
     isCheckpointPre &&
-    currentCheckpointNumberPre === maxCompletedPre &&
-    maxCompletedPre > 1 &&
+    currentCheckpointNumberPre === latestCompletedPre &&
+    latestCompletedPre > 1 &&
     !reduceMotionEnabled;
 
   // Use shared modal hook; slide+fade unless confetti will run (fade-only)
@@ -166,14 +178,12 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
 
     // Celebrate only the user's latest completed checkpoint,
     // excluding the first checkpoint (no confetti for new game).
-    const maxCompleted = checkpointCompletions.length
-      ? Math.max(...checkpointCompletions.map(c => c.checkpointNumber ?? 0))
-      : 0;
+    const latestCompleted = getLatestCompletedCheckpointNumber();
     const currentCheckpointNumber = getCheckpointNumber() + 1;
     const isLatestCheckpoint =
       isCheckpoint &&
-      currentCheckpointNumber === maxCompleted &&
-      maxCompleted > 1 &&
+      currentCheckpointNumber === latestCompleted &&
+      latestCompleted > 1 &&
       !reduceMotionEnabled;
 
     if (internalVisible && motion.flags.confettiEnabled && isLatestCheckpoint) {
@@ -195,6 +205,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     checkpointCompletions,
     getCheckpointNumber,
     reduceMotionEnabled,
+    getLatestCompletedCheckpointNumber,
   ]);
 
   if (!currentItem || !itemType) {
@@ -316,7 +327,11 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   {({ pressed }) => (
                     <CloseButton
                       size={32}
-                      color={pressed ? theme.colors.buttonPressed : theme.colors.textPrimary}
+                      color={
+                        pressed
+                          ? theme.colors.buttonPressed
+                          : theme.colors.textPrimary
+                      }
                     />
                   )}
                 </Pressable>
@@ -581,15 +596,8 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                 {itemType === 'checkpoint' && progressInfo && (
                   <View style={styles.bottomProgressSection}>
                     {(() => {
-                      const firstName = checkpoints[0]?.name;
-                      const lastName = checkpoints[checkpoints.length - 1]?.name;
                       return (
-                        <JourneyProgressBar
-                          leftLabel={firstName}
-                          rightLabel={lastName}
-                          progressPercentage={progressInfo.progressPercentage}
-                          isLocked={!!isLockedCheckpoint}
-                        />
+                        <JourneyProgressBar isLocked={!!isLockedCheckpoint} />
                       );
                     })()}
                   </View>
