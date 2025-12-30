@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, memo } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import Button from '../Buttons';
 import Animated, {
@@ -6,6 +6,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   interpolateColor,
+  useDerivedValue,
 } from 'react-native-reanimated';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 
@@ -21,7 +22,7 @@ interface CheckpointProps {
   onPress?: () => void;
 }
 
-export default function Checkpoint({
+function Checkpoint({
   name,
   isActive,
   showLabel,
@@ -43,31 +44,21 @@ export default function Checkpoint({
     activationSV.value = withTiming(isActive ? 1 : 0, { duration: 100 });
   }, [isActive, activationSV]);
 
-  const outerAnimatedStyle = useAnimatedStyle(() => {
-    const borderColor = interpolateColor(
+  // Derive the active color once and reuse in both styles
+  const activeColorDV = useDerivedValue(() =>
+    interpolateColor(
       activationSV.value,
       [0, 1],
       [theme.colors.checkpointLocked, theme.colors.checkpointUnlocked],
-    );
-    return { borderColor };
-  });
+    ),
+  );
 
-  const innerAnimatedStyle = useAnimatedStyle(() => {
-    const backgroundColor = interpolateColor(
-      activationSV.value,
-      [0, 1],
-      [theme.colors.checkpointLocked, theme.colors.checkpointUnlocked],
-    );
-    return { backgroundColor };
-  });
+  const outerAnimatedStyle = useAnimatedStyle(() => ({
+    borderColor: activeColorDV.value,
+  }));
 
-  // Trivia fade-in when it becomes active
-  const triviaFadeSV = useSharedValue(0);
-  useEffect(() => {
-    triviaFadeSV.value = withTiming(isActive ? 1 : 0, { duration: 100 });
-  }, [isActive, triviaFadeSV]);
-  const triviaAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: triviaFadeSV.value,
+  const innerAnimatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: activeColorDV.value,
   }));
 
   // Center the 24x24 hitbox on the coordinate for both types
@@ -91,17 +82,7 @@ export default function Checkpoint({
       >
         {type === 'trivia' ? (
           /* Simple filled circle for trivia */
-          <Animated.View
-            style={[
-              styles.triviaCircle,
-              {
-                backgroundColor: isActive
-                  ? theme.colors.checkpointUnlocked
-                  : theme.colors.pathInactive,
-              },
-              triviaAnimatedStyle,
-            ]}
-          />
+          <Animated.View style={[styles.innerCircle, innerAnimatedStyle]} />
         ) : (
           /* Target icon for checkpoints */
           <>
@@ -140,6 +121,8 @@ export default function Checkpoint({
   );
 }
 
+export default memo(Checkpoint);
+
 const styles = StyleSheet.create({
   container: {
     // Offsets applied dynamically based on type to center on coordinates
@@ -169,11 +152,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   innerCircle: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  triviaCircle: {
     width: 12,
     height: 12,
     borderRadius: 6,
