@@ -58,6 +58,8 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       progress.value = withTiming(isFilled ? 1 : 0, { duration: 200 });
     }, [isFilled, progress]);
 
+    // Pressed state animation
+    const pressedSV = useSharedValue(0);
     const animatedStyle = useAnimatedStyle(() => {
       const filledColor =
         variant === 'brand'
@@ -65,14 +67,37 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
           : variant === 'outline'
           ? theme.colors.buttonOutlineBg
           : theme.colors.buttonPrimaryBackground;
-      const outlineColor = theme.colors.buttonOutlineBorder;
 
-      const backgroundColor = interpolateColor(
+      // Base background (filled vs transparent)
+      const baseBackground = interpolateColor(
         progress.value,
         [0, 1],
         ['transparent', filledColor],
       );
-      const borderColor = variant === 'outline' ? outlineColor : 'transparent';
+
+      // Apply pressed overrides
+      const backgroundColor =
+        variant === 'outline'
+          ? baseBackground
+          : interpolateColor(
+              pressedSV.value,
+              [0, 1],
+              [baseBackground, theme.colors.buttonPressed],
+            );
+
+      const baseBorderColor =
+        variant === 'outline'
+          ? theme.colors.buttonOutlineBorder
+          : 'transparent';
+      const borderColor = interpolateColor(
+        pressedSV.value,
+        [0, 1],
+        [
+          baseBorderColor,
+          variant === 'outline' ? theme.colors.buttonPressed : 'transparent',
+        ],
+      );
+
       return { backgroundColor, borderColor };
     });
 
@@ -119,6 +144,12 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
           { opacity: opacityValue },
         ]}
         onPress={onPress}
+        onPressIn={() => {
+          if (!disabled) pressedSV.value = withTiming(1, { duration: 80 });
+        }}
+        onPressOut={() => {
+          pressedSV.value = withTiming(0, { duration: 120 });
+        }}
         disabled={disabled}
         hitSlop={hitSlop}
       >

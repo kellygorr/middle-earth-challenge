@@ -4,13 +4,13 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableWithoutFeedback,
-  TouchableOpacity,
+  Pressable,
   Image,
   ScrollView,
   useWindowDimensions,
   AccessibilityInfo,
 } from 'react-native';
+import { TouchableWithoutFeedback } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   interpolateColor,
@@ -30,6 +30,7 @@ import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 import trivia from '../constants/trivia.json';
 import Confetti from './Confetti';
+import { CloseButton } from './ButtonIcons';
 import JourneyProgressBar from './JourneyProgressBar';
 
 // Centralized timings and flags
@@ -96,13 +97,12 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   const maxCompletedPre = checkpointCompletions.length
     ? Math.max(...checkpointCompletions.map(c => c.checkpointNumber ?? 0))
     : 0;
-  const nextToUnlockPre = maxCompletedPre + 1;
   const currentCheckpointNumberPre = getCheckpointNumber() + 1;
   const willConfettiRun =
     motion.flags.confettiEnabled &&
     isCheckpointPre &&
-    currentCheckpointNumberPre === nextToUnlockPre &&
-    currentCheckpointNumberPre > 1 &&
+    currentCheckpointNumberPre === maxCompletedPre &&
+    maxCompletedPre > 1 &&
     !reduceMotionEnabled;
 
   // Use shared modal hook; slide+fade unless confetti will run (fade-only)
@@ -164,17 +164,16 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
       currentItem &&
       'CUMULATIVE_MILES' in currentItem;
 
-    // Celebrate only the user's latest checkpoint (next to unlock),
+    // Celebrate only the user's latest completed checkpoint,
     // excluding the first checkpoint (no confetti for new game).
     const maxCompleted = checkpointCompletions.length
       ? Math.max(...checkpointCompletions.map(c => c.checkpointNumber ?? 0))
       : 0;
-    const nextToUnlock = maxCompleted + 1;
     const currentCheckpointNumber = getCheckpointNumber() + 1;
     const isLatestCheckpoint =
       isCheckpoint &&
-      currentCheckpointNumber === nextToUnlock &&
-      currentCheckpointNumber > 1 &&
+      currentCheckpointNumber === maxCompleted &&
+      maxCompleted > 1 &&
       !reduceMotionEnabled;
 
     if (internalVisible && motion.flags.confettiEnabled && isLatestCheckpoint) {
@@ -313,21 +312,14 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
 
               <Animated.View style={[styles.modalContainer, animatedCardStyle]}>
                 {/* Close button */}
-                <TouchableOpacity
-                  style={styles.closeButton}
-                  onPress={handleDismiss}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      typography.titleMedium,
-                      styles.closeButtonText,
-                      { color: theme.colors.textPrimary },
-                    ]}
-                  >
-                    ×
-                  </Text>
-                </TouchableOpacity>
+                <Pressable style={styles.closeButton} onPress={handleDismiss}>
+                  {({ pressed }) => (
+                    <CloseButton
+                      size={32}
+                      color={pressed ? theme.colors.buttonPressed : theme.colors.textPrimary}
+                    />
+                  )}
+                </Pressable>
 
                 {/* Scrollable Content */}
                 <ScrollView

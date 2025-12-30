@@ -6,7 +6,7 @@ export interface Theme {
     mapDefaultColor: string;
 
     // Path colors
-    pathGrey: string;
+    pathInactive: string;
     pathProgress: string;
     pathGlow: string;
 
@@ -44,8 +44,8 @@ export interface Theme {
 
     // Button colors
     buttonPrimary: string;
-    buttonInactive: string;
-    buttonText: string;
+    // Switch colors
+    switchInactive: string;
     // Button variant-specific tokens
     buttonPrimaryBackground: string;
     buttonPrimaryText: string;
@@ -54,6 +54,8 @@ export interface Theme {
     buttonOutlineBg: string;
     buttonOutlineBorder: string;
     buttonOutlineText: string;
+    // Pressed state
+    buttonPressed: string;
 
     // SVG layer colors (for colorized map mode)
     svgLegend: string;
@@ -96,13 +98,13 @@ export const classicTheme: Theme = {
     mapDefaultColor: '#231f20',
 
     // Path colors
-    pathGrey: '#afa99cff',
+    pathInactive: '#afa99cff',
     pathProgress: '#8B4513',
     pathGlow: 'rgba(139, 69, 19, 0.3)',
 
     // Checkpoint markers
     checkpointLocked: '#afa99cff',
-    checkpointUnlocked: '#D4AF37',
+    checkpointUnlocked: '#6a4c34ff',
     checkpointLabel: '#ffffff',
     checkpointLabelInactive: '#757575',
     checkpointTextBackground: '#000000',
@@ -116,12 +118,12 @@ export const classicTheme: Theme = {
     // UI colors
     background: '#F5EFE0',
     surface: '#EDE4D3',
-    primary: '#8B4513',
+    primary: '#6a4c34ff',
     secondary: '#A0826D',
-    accent: '#D4AF37',
+    accent: '#6a4c34ff',
 
     // Text colors
-    textPrimary: '#2C1810',
+    textPrimary: '#3f321fff',
     textSecondary: '#5C4033',
     textInverted: '#F5EFE0',
     textOnSurface: '#2C1810',
@@ -129,21 +131,23 @@ export const classicTheme: Theme = {
     // Modal/Celebration colors
     modalBackground: '#e6e2daff',
     modalOverlay: 'rgba(53, 41, 28, 0.75)',
-    celebrationAccent: '#D4AF37',
+    celebrationAccent: '#6a4c34ff',
     modalHeaderText: '#FFFFFF',
 
     // Button colors
     buttonPrimary: '#543f30ff',
-    buttonInactive: '#A0826D',
-    buttonText: '#F5EFE0',
+    // Switch colors
+    switchInactive: '#A0826D',
     // Button variant-specific tokens
-    buttonPrimaryBackground: '#000000',
+    buttonPrimaryBackground: '#3f321fff',
     buttonPrimaryText: '#FFFFFF',
-    buttonBrandBackground: '#8B4513',
-    buttonBrandText: '#F5EFE0',
+    buttonBrandBackground: '#6a4c34ff',
+    buttonBrandText: '#FFFFFF',
     buttonOutlineBg: '#FFFFFF',
-    buttonOutlineBorder: '#8B4513',
-    buttonOutlineText: '#2C1810',
+    buttonOutlineBorder: '#6a4c34ff',
+    buttonOutlineText: '#2f1b14ff',
+    // Pressed state
+    buttonPressed: 'rgba(107, 89, 67, 1)',
 
     // SVG layer colors
     ...svgLayerColors,
@@ -166,7 +170,7 @@ export const minimalistTheme: Theme = {
     mapDefaultColor: '#231f20',
 
     // Path colors
-    pathGrey: '#c7c0b2ff',
+    pathInactive: '#c7c0b2ff',
     pathProgress: '#D4AF37',
     pathGlow: 'rgba(44, 62, 80, 0.2)',
 
@@ -204,8 +208,8 @@ export const minimalistTheme: Theme = {
 
     // Button colors
     buttonPrimary: '#D4AF37',
-    buttonInactive: '#E0E0E0',
-    buttonText: '#000000',
+    // Switch colors
+    switchInactive: '#E0E0E0',
     // Button variant-specific tokens
     buttonPrimaryBackground: '#000000',
     buttonPrimaryText: '#FFFFFF',
@@ -214,6 +218,8 @@ export const minimalistTheme: Theme = {
     buttonOutlineBg: '#FFFFFF',
     buttonOutlineBorder: '#D4AF37',
     buttonOutlineText: '#212121',
+    // Pressed state
+    buttonPressed: '#757575',
 
     // SVG layer colors
     ...svgLayerColors,

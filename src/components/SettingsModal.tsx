@@ -7,7 +7,7 @@ import {
   Switch,
   ScrollView,
   TouchableWithoutFeedback,
-  TouchableOpacity,
+  Pressable,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -20,7 +20,7 @@ import { spacing, iconSizes, shadows } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
 import Button from './Buttons';
-import { HomeButton } from './ButtonIcons';
+import { HomeButton, CloseButton } from './ButtonIcons';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -119,30 +119,30 @@ export default function SettingsModal({
             </Text>
 
             <Animated.View style={[styles.modalContainer, animatedCardStyle]}>
-              <TouchableOpacity
-                style={styles.homeButton}
-                onPress={handleHomePress}
-                activeOpacity={0.7}
-              >
-                <HomeButton
-                  size={iconSizes.large}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={onDismiss}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    typography.titleMedium,
-                    { color: theme.colors.textPrimary, fontSize: 40 },
-                  ]}
-                >
-                  ×
-                </Text>
-              </TouchableOpacity>
+              <Pressable style={styles.homeButton} onPress={handleHomePress}>
+                {({ pressed }) => (
+                  <HomeButton
+                    size={iconSizes.large}
+                    color={
+                      pressed
+                        ? theme.colors.buttonPressed
+                        : theme.colors.textPrimary
+                    }
+                  />
+                )}
+              </Pressable>
+              <Pressable style={styles.closeButton} onPress={onDismiss}>
+                {({ pressed }) => (
+                  <CloseButton
+                    size={32}
+                    color={
+                      pressed
+                        ? theme.colors.buttonPressed
+                        : theme.colors.textPrimary
+                    }
+                  />
+                )}
+              </Pressable>
               <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
@@ -213,7 +213,7 @@ export default function SettingsModal({
                         setLabelSize(value ? 'large' : 'regular')
                       }
                       trackColor={{
-                        false: theme.colors.buttonInactive,
+                        false: theme.colors.switchInactive,
                         true: theme.colors.buttonPrimary,
                       }}
                       thumbColor={theme.colors.surface}
@@ -236,7 +236,7 @@ export default function SettingsModal({
                       value={showTriviaMarkers}
                       onValueChange={setShowTriviaMarkers}
                       trackColor={{
-                        false: theme.colors.buttonInactive,
+                        false: theme.colors.switchInactive,
                         true: theme.colors.buttonPrimary,
                       }}
                       thumbColor={theme.colors.surface}
@@ -254,7 +254,7 @@ export default function SettingsModal({
                       value={devMode}
                       onValueChange={setDevMode}
                       trackColor={{
-                        false: theme.colors.buttonInactive,
+                        false: theme.colors.switchInactive,
                         true: theme.colors.buttonPrimary,
                       }}
                       thumbColor={theme.colors.surface}
@@ -286,7 +286,7 @@ export default function SettingsModal({
                       value={colorizeMap}
                       onValueChange={setColorizeMap}
                       trackColor={{
-                        false: theme.colors.buttonInactive,
+                        false: theme.colors.switchInactive,
                         true: theme.colors.buttonPrimary,
                       }}
                       thumbColor={theme.colors.surface}
@@ -304,7 +304,7 @@ export default function SettingsModal({
                       value={reducedMapTitles}
                       onValueChange={setReducedMapTitles}
                       trackColor={{
-                        false: theme.colors.buttonInactive,
+                        false: theme.colors.switchInactive,
                         true: theme.colors.buttonPrimary,
                       }}
                       thumbColor={theme.colors.surface}

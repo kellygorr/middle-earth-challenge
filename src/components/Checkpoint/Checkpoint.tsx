@@ -64,7 +64,7 @@ export default function Checkpoint({
               {
                 backgroundColor: isActive
                   ? theme.colors.checkpointUnlocked
-                  : theme.colors.pathGrey,
+                  : theme.colors.pathInactive,
               },
             ]}
           />

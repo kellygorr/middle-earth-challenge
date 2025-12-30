@@ -45,7 +45,7 @@ export default function JourneyProgressBar({
             <View
               style={[
                 styles.progressBarBackground,
-                { backgroundColor: theme.colors.pathGrey },
+                { backgroundColor: theme.colors.pathInactive },
               ]}
             >
               <View

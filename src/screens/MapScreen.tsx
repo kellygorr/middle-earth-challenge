@@ -3,7 +3,7 @@ import {
   View,
   StyleSheet,
   StatusBar,
-  TouchableOpacity,
+  Pressable,
   Text,
   TextInput,
   Keyboard,
@@ -395,7 +395,7 @@ export default function MapScreen() {
               reducedTitles={reducedMapTitles}
               defaultColor={theme.colors.mapDefaultColor}
               gamePathColor={theme.colors.checkpointUnlocked}
-              gamePathInactiveColor={theme.colors.pathGrey}
+              gamePathInactiveColor={theme.colors.pathInactive}
               gamePathData={GAME_PATH}
               zoomScale={scale}
               journeyProgress={journeyProgressValue}
@@ -474,16 +474,23 @@ export default function MapScreen() {
 
       {/* Settings Button */}
       <Animated.View style={[styles.settingsButton, settingsEnterStyle]}>
-        <TouchableOpacity
-          style={styles.recenterButtonTouch}
+        <Pressable
+          style={({ pressed }) => [
+            styles.recenterButtonTouch,
+            {
+              backgroundColor: pressed
+                ? theme.colors.buttonPressed
+                : theme.colors.buttonPrimaryBackground,
+              borderRadius: 25,
+            },
+          ]}
           onPress={() => setShowSettings(true)}
-          activeOpacity={0.7}
         >
           <SettingsButton
             size={iconSizes.medium}
             color={theme.colors.buttonPrimaryText}
           />
-        </TouchableOpacity>
+        </Pressable>
       </Animated.View>
 
       {/* Info System - Checkpoint/Trivia Info */}
@@ -537,16 +544,23 @@ export default function MapScreen() {
 
       {/* Recenter Button */}
       <Animated.View style={[styles.recenterButton, recenterButtonStyle]}>
-        <TouchableOpacity
-          style={styles.recenterButtonTouch}
+        <Pressable
+          style={({ pressed }) => [
+            styles.recenterButtonTouch,
+            {
+              backgroundColor: pressed
+                ? theme.colors.buttonPressed
+                : theme.colors.buttonPrimaryBackground,
+              borderRadius: 25,
+            },
+          ]}
           onPress={handleRecenter}
-          activeOpacity={0.7}
         >
           <RecenterButton
             size={iconSizes.medium}
             color={theme.colors.mapBackground}
           />
-        </TouchableOpacity>
+        </Pressable>
       </Animated.View>
 
       {/* Info Modal */}
@@ -604,7 +618,6 @@ export const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
   },
