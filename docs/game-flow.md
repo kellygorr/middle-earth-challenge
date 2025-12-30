@@ -7,7 +7,7 @@ This document outlines what users see based on their progress, how onboarding an
 - The journey advances with accumulated miles (`TOTAL_JOURNEY_MILES`).
 - Checkpoints and trivia entries are defined in JSON constants and shown contextually.
 - Modals use fade-only or slide+fade animations driven by shared timing configuration.
-  - InfoModal: fade-only when confetti will run; slide+fade when confetti will not run.
+  - InfoModal: fade+slide per motion config; celebration effect does not alter overlay behavior.
 
 ## Sources of Truth
 
@@ -56,18 +56,18 @@ File: `src/components/InfoModal.tsx`
 - Animation: Fade-only via `useAnimatedModal(visible, { translateDistance: 0 })`.
 - Card background and shadow interpolate with content opacity to prevent artifacts.
 - Dismissal: backdrop tap, close button, and `onRequestClose` call a local handler.
-- Confetti: rendered when `itemType === 'checkpoint'` and if it is the user's latest checkpoint, if system Reduce Motion is OFF.
-  - System Reduce Motion detection via `AccessibilityInfo`.
-  - Timings sourced from `motion.confetti`.
-  - Exclusions: no confetti for the first checkpoint (new game). Confetti only runs when the modal shows the user's latest unlocked checkpoint beyond checkpoint 1.
+- Celebration Border: animated multi-color gradient border is shown when `itemType === 'checkpoint'` and the modal is for the user's latest completed checkpoint (excluding the very first).
+  - Accessibility: honors system Reduce Motion (rotation disabled; fades still apply).
+  - Timings: duration sourced from `motion.checkpointCelebration.maxRunMs` (used to schedule border fade-out).
+  - Behavior: the border sits above the modal and does not block taps.
 
-## Confetti
+## Celebration Border
 
-File: `src/components/Confetti.tsx`
+File: `src/components/CelebrationBorder.tsx`
 
-- Piece count, fall duration, stagger, and fade-out sourced from `motion.confetti`.
-- Easing: `motion.easing.standard/sway/linear`.
-- Accessibility: if Reduce Motion is enabled (system), confetti does not render.
+- Renders a full-screen rectangular stroke with a rotating linear gradient using a celebratory gold/white/yellow palette.
+- Animation via Reanimated: gradient rotation with `withRepeat` and timed fade in/out.
+- Accessibility: respects system Reduce Motion by disabling rotation while keeping fade.
 
 ## Settings Modal
 
@@ -99,20 +99,20 @@ File: `src/styles/motion.ts`
 - `recenter`: duration.
 - `pathReveal`: delay + duration.
 - `modal`: entrance delay/duration, exit duration, and default translate distance.
-- `confetti`: max run, fade-out, stagger, min/max fall durations.
+- `checkpointCelebration`: celebration timing (`maxRunMs`) used by the border.
 - `easing`: `standard`, `inOut`, `linear`, `sway` presets.
-- `flags`: `confettiEnabled` (feature toggle).
+- `flags`: `checkpointCelebrationEnabled` (feature toggle).
 
 ## Reduce Motion Behavior
 
-- Confetti is disabled when system Reduce Motion is ON (via `AccessibilityInfo`).
+- Celebration Border rotation is disabled when system Reduce Motion is ON (via `AccessibilityInfo`); fades remain.
 - Other animations continue unchanged unless explicitly updated.
 
 ## Key UX Rules
 
 - InfoModal does not slide; fade-only to avoid layout shifts.
 - Card shadow/background animate with content opacity to prevent flicker.
-- Confetti never blocks taps (container `pointerEvents="none"`).
+- Celebration Border never blocks taps (`pointerEvents="none"`).
 - Dismiss interactions do not re-open modals (hook manages `internalVisible`).
 
 ## Notes & Future Enhancements

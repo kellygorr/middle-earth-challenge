@@ -1,9 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { useTheme } from '../stores/settingsStore';
 import { typography, typographyThemed } from '../styles/typography';
 import { spacing, borderRadius } from '../styles/global';
-import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 import { useProgressStore } from '../stores/progressStore';
 
@@ -15,11 +14,27 @@ export default function JourneyProgressBar({
   isLocked,
 }: JourneyProgressBarProps) {
   const theme = useTheme();
-  const miles = useProgressStore(state => state.miles) ?? 0;
-  const progressMiles = Math.max(0, Math.min(miles, TOTAL_JOURNEY_MILES));
-  const progressPercentage = Math.round(
-    (progressMiles / TOTAL_JOURNEY_MILES) * 100,
-  );
+  const progressPercentage = useProgressStore(
+    state => state.getProgressPercentage,
+  )();
+
+  const [barWidth, setBarWidth] = React.useState(0);
+  const fillWidth = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (barWidth <= 0) return;
+    const pct = Math.max(0, Math.min(100, progressPercentage));
+    const target = (pct / 100) * barWidth;
+    let duration = 2000;
+    if (pct < 5) duration = 500;
+    else if (pct < 30) duration = 1000;
+    Animated.timing(fillWidth, {
+      toValue: target,
+      duration,
+      easing: Easing.linear,
+      useNativeDriver: false,
+    }).start();
+  }, [barWidth, progressPercentage, fillWidth]);
 
   const firstName = (checkpoints[0] as any)?.name ?? '';
   const lastName = (checkpoints[checkpoints.length - 1] as any)?.name ?? '';
@@ -52,15 +67,16 @@ export default function JourneyProgressBar({
                 styles.progressBarBackground,
                 { backgroundColor: theme.colors.pathInactive },
               ]}
+              onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
             >
-              <View
+              <Animated.View
                 style={[
                   styles.progressBarFill,
                   {
                     backgroundColor: isLocked
                       ? theme.colors.infoModalInactive
                       : theme.colors.pathProgress,
-                    width: `${Math.max(0, Math.min(100, progressPercentage))}%`,
+                    width: fillWidth,
                   },
                 ]}
               />
@@ -87,7 +103,7 @@ export default function JourneyProgressBar({
                 { color: theme.colors.checkpointLabel },
               ]}
             >
-              {Math.round(Math.max(0, Math.min(100, progressPercentage)))}%
+              {progressPercentage}%
             </Text>
           </View>
         </View>

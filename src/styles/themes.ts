@@ -41,6 +41,7 @@ export interface Theme {
     modalOverlay: string;
     celebrationAccent: string;
     modalHeaderText: string;
+    modalCelebrationGold: string;
 
     // Button colors
     buttonPrimary: string;
@@ -133,6 +134,7 @@ export const classicTheme: Theme = {
     modalOverlay: 'rgba(53, 41, 28, 0.75)',
     celebrationAccent: '#6a4c34ff',
     modalHeaderText: '#FFFFFF',
+    modalCelebrationGold: 'rgba(120, 94, 10, 0.75)',
 
     // Button colors
     buttonPrimary: '#543f30ff',
@@ -205,6 +207,7 @@ export const minimalistTheme: Theme = {
     modalOverlay: 'rgba(0, 0, 0, 0.75)',
     celebrationAccent: '#D4AF37',
     modalHeaderText: '#FFFFFF',
+    modalCelebrationGold: 'rgba(120, 94, 10, 0.75)',
 
     // Button colors
     buttonPrimary: '#D4AF37',

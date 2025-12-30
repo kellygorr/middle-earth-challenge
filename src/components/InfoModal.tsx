@@ -11,10 +11,7 @@ import {
   AccessibilityInfo,
 } from 'react-native';
 import { TouchableWithoutFeedback } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  interpolateColor,
-} from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -26,15 +23,13 @@ import { typography, typographyThemed } from '../styles/typography';
 import { spacing, borderRadius, shadows } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
-import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
-import checkpoints from '../constants/checkpoints.json';
-import trivia from '../constants/trivia.json';
-import Confetti from './Confetti';
+// TOTAL_JOURNEY_MILES not needed; journey progress computed via store selectors
+import CelebrationBorder from './CelebrationBorder';
 import { CloseButton } from './ButtonIcons';
 import JourneyProgressBar from './JourneyProgressBar';
 
 // Centralized timings and flags
-const CONFETTI_MAX_MS = motion.confetti.maxRunMs;
+const CELEBRATION_MAX_MS = motion.checkpointCelebration.maxRunMs;
 
 interface InfoModalProps {
   visible: boolean;
@@ -50,13 +45,15 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     itemType === 'checkpoint' &&
     currentItem &&
     'CUMULATIVE_MILES' in currentItem &&
-    (miles || 0) < (currentItem.CUMULATIVE_MILES || 0);
+    useProgressStore
+      .getState()
+      .isLockedCheckpoint((currentItem as any).CUMULATIVE_MILES || 0);
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const safeHeight = Math.max(0, windowHeight - insets.top - insets.bottom);
   const containerHeight = Math.round(safeHeight * 0.8);
 
-  // System Reduce Motion gating (used to predict confetti and animation mode)
+  // System Reduce Motion gating (used to predict celebration and animation mode)
   const [reduceMotionEnabled, setReduceMotionEnabled] = React.useState(false);
   useEffect(() => {
     let mounted = true;
@@ -74,59 +71,36 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     };
   }, []);
 
-  // Helper function to get checkpoint number for display
-  const getCheckpointNumber = useCallback(() => {
-    if (
-      itemType === 'checkpoint' &&
-      currentItem &&
-      'CUMULATIVE_MILES' in currentItem
-    ) {
-      const checkpointIndex = checkpoints.findIndex(
-        cp => cp.CUMULATIVE_MILES === currentItem.CUMULATIVE_MILES,
-      );
-      return checkpointIndex >= 0 ? checkpointIndex : 0;
-    }
-    return 0;
-  }, [itemType, currentItem]);
+  // Use store selectors for checkpoint indexes and progress
+  const getCheckpointIndexForCumulativeMiles = useProgressStore(
+    state => state.getCheckpointIndexForCumulativeMiles,
+  );
+  const getLatestCompletedCheckpointNumber = useProgressStore(
+    state => state.getLatestCompletedCheckpointNumber,
+  );
+  const getCheckpointProgressFor = useProgressStore(
+    state => state.getCheckpointProgressFor,
+  );
+  const getRemainingMilesTo = useProgressStore(
+    state => state.getRemainingMilesTo,
+  );
+  const getSegmentTriviaForCheckpointIndex = useProgressStore(
+    state => state.getSegmentTriviaForCheckpointIndex,
+  );
+  const shouldShowCheckpointCelebration = useProgressStore(
+    state => state.shouldShowCheckpointCelebration,
+  );
 
-  // Helper to compute latest completed checkpoint using either saved completions or miles fallback
-  const getLatestCompletedCheckpointNumber = useCallback(() => {
-    const byCompletions = checkpointCompletions.length
-      ? Math.max(...checkpointCompletions.map(c => c.checkpointNumber ?? 0))
-      : 0;
-    const totalMiles = miles || 0;
-    let byMiles = 0;
-    for (let i = 0; i < checkpoints.length; i++) {
-      const m = checkpoints[i]?.CUMULATIVE_MILES ?? 0;
-      if (m > 0 && m <= totalMiles) byMiles = i + 1;
-    }
-    return Math.max(byCompletions, byMiles);
-  }, [checkpointCompletions, miles]);
+  // Celebration will run when the current checkpoint equals the latest completed (excluding the first)
 
-  // Predict whether confetti will run to choose animation mode
-  const isCheckpointPre =
-    itemType === 'checkpoint' &&
-    currentItem &&
-    'CUMULATIVE_MILES' in currentItem;
-  const latestCompletedPre = getLatestCompletedCheckpointNumber();
-  const currentCheckpointNumberPre = getCheckpointNumber() + 1;
-  const willConfettiRun =
-    motion.flags.confettiEnabled &&
-    isCheckpointPre &&
-    currentCheckpointNumberPre === latestCompletedPre &&
-    latestCompletedPre > 1 &&
-    !reduceMotionEnabled;
-
-  // Use shared modal hook; slide+fade unless confetti will run (fade-only)
+  // Use shared modal hook; slide+fade unless celebration will run (fade-only)
   const {
     internalVisible,
     animatedBackgroundStyle: animatedOverlayStyle,
     animatedContentStyle,
     contentOpacitySV,
   } = useAnimatedModal(visible, {
-    translateDistance: willConfettiRun
-      ? 0
-      : motion.modal.translateDistanceDefault,
+    translateDistance: motion.modal.translateDistanceDefault,
     entranceDelay: motion.modal.entranceDelay,
     entranceDuration: motion.modal.entranceDuration,
     exitDuration: motion.modal.exitDuration,
@@ -135,40 +109,36 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
 
   // Animate card background and shadow with content to avoid shadow-only frames
   const animatedCardStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      contentOpacitySV.value,
-      [0, 1],
-      ['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)'],
-    ),
     shadowOpacity: 0.3 * contentOpacitySV.value,
     elevation: contentOpacitySV.value > 0.95 ? 8 : 0,
   }));
 
-  // Confetti animation trigger state
-  const [showConfetti, setShowConfetti] = React.useState(false);
+  // Celebration animation trigger state
+  const [showCheckpointCelebration, setShowCheckpointCelebration] =
+    React.useState(false);
+  const celebrationStartRaf = useRef<number | null>(null);
 
   const handleDismiss = useCallback(() => {
-    setShowConfetti(false);
+    setShowCheckpointCelebration(false);
     if (onDismiss) onDismiss();
   }, [onDismiss]);
 
   // getCheckpointNumber defined above
 
-  // Confetti timer and concurrent behavior
-  const confettiCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Celebration timer and concurrent behavior
+  const celebrationCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // Open/close modal immediately based on visible
-  useEffect(() => {
-    if (!visible) {
-      setShowConfetti(false);
-    }
-  }, [visible]);
+  // Removed direct dependency on `visible` to avoid race conditions
+  // Celebration visibility is controlled by `internalVisible` and selector gating
 
-  // Run confetti concurrently when modal is open (on top layer)
+  // Run celebration concurrently when modal is open (on top layer)
   useEffect(() => {
-    if (confettiCloseTimer.current) {
-      clearTimeout(confettiCloseTimer.current);
-      confettiCloseTimer.current = null;
+    if (celebrationCloseTimer.current) {
+      clearTimeout(celebrationCloseTimer.current);
+      celebrationCloseTimer.current = null;
     }
 
     const isCheckpoint =
@@ -177,33 +147,50 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
       'CUMULATIVE_MILES' in currentItem;
 
     // Celebrate only the user's latest completed checkpoint,
-    // excluding the first checkpoint (no confetti for new game).
-    const latestCompleted = getLatestCompletedCheckpointNumber();
-    const currentCheckpointNumber = getCheckpointNumber() + 1;
+    // excluding the first checkpoint (no celebration for new game).
+    const currentIdx = isCheckpoint
+      ? getCheckpointIndexForCumulativeMiles(
+          (currentItem as any).CUMULATIVE_MILES,
+        )
+      : -1;
     const isLatestCheckpoint =
-      isCheckpoint &&
-      currentCheckpointNumber === latestCompleted &&
-      latestCompleted > 1 &&
-      !reduceMotionEnabled;
+      isCheckpoint && shouldShowCheckpointCelebration(currentIdx);
 
-    if (internalVisible && motion.flags.confettiEnabled && isLatestCheckpoint) {
-      setShowConfetti(true);
-      confettiCloseTimer.current = setTimeout(() => {
-        setShowConfetti(false);
-      }, CONFETTI_MAX_MS);
+    if (
+      internalVisible &&
+      motion.flags.checkpointCelebrationEnabled &&
+      isLatestCheckpoint
+    ) {
+      // Defer to next frame to avoid mount timing races
+      if (celebrationStartRaf.current) {
+        cancelAnimationFrame(celebrationStartRaf.current);
+        celebrationStartRaf.current = null;
+      }
+      celebrationStartRaf.current = requestAnimationFrame(() => {
+        setShowCheckpointCelebration(() => true);
+      });
+      celebrationCloseTimer.current = setTimeout(() => {
+        setShowCheckpointCelebration(() => false);
+      }, CELEBRATION_MAX_MS);
     } else {
-      setShowConfetti(false);
+      setShowCheckpointCelebration(() => false);
     }
 
     return () => {
-      if (confettiCloseTimer.current) clearTimeout(confettiCloseTimer.current);
+      if (celebrationCloseTimer.current)
+        clearTimeout(celebrationCloseTimer.current);
+      if (celebrationStartRaf.current) {
+        cancelAnimationFrame(celebrationStartRaf.current);
+        celebrationStartRaf.current = null;
+      }
     };
   }, [
     internalVisible,
     itemType,
     currentItem,
     checkpointCompletions,
-    getCheckpointNumber,
+    getCheckpointIndexForCumulativeMiles,
+    shouldShowCheckpointCelebration,
     reduceMotionEnabled,
     getLatestCompletedCheckpointNumber,
   ]);
@@ -212,65 +199,10 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     return null;
   }
 
-  // Calculate progress to next checkpoint (and static span between checkpoints)
-  const getCheckpointProgress = () => {
-    if (itemType === 'checkpoint' && 'CUMULATIVE_MILES' in currentItem) {
-      const currentCheckpointIndex = getCheckpointNumber();
-      const nextCheckpointIndex = currentCheckpointIndex + 1;
-
-      if (nextCheckpointIndex < checkpoints.length) {
-        const currentCM = checkpoints[currentCheckpointIndex].CUMULATIVE_MILES;
-        const nextCM = checkpoints[nextCheckpointIndex].CUMULATIVE_MILES;
-        const span = Math.max(1, nextCM - currentCM);
-        const through = Math.max(0, Math.min((miles ?? 0) - currentCM, span));
-        const percentage = Math.round((through / span) * 100);
-        const milesToNext = Math.max(0, nextCM - (miles ?? 0));
-        return {
-          percentage,
-          nextCheckpointNumber: nextCheckpointIndex + 1,
-          milesToNext,
-          spanMiles: span,
-          currentCumulativeMiles: currentCM,
-        };
-      }
-    }
-    return {
-      percentage: 100,
-      nextCheckpointNumber: null,
-      milesToNext: null,
-      spanMiles: null,
-      currentCumulativeMiles: null,
-    };
-  };
-
-  // Journey progress should reflect the user's current walked miles
-  const getProgressInfo = () => {
-    const walkedMiles = Math.max(0, Math.min(miles ?? 0, TOTAL_JOURNEY_MILES));
-    const progressPercentage = Math.round(
-      (walkedMiles / TOTAL_JOURNEY_MILES) * 100,
-    );
-    return { progressMiles: walkedMiles, progressPercentage };
-  };
-
-  const progressInfo = getProgressInfo();
+  // Checkpoint progress moved to store selector; Journey progress handled by JourneyProgressBar
 
   // Trivia between previous and current checkpoint (inclusive of current)
-  const getSegmentTrivia = () => {
-    if (itemType !== 'checkpoint' || !('CUMULATIVE_MILES' in currentItem)) {
-      return [] as Array<any>;
-    }
-    const idx = getCheckpointNumber();
-    const currentCM = checkpoints[idx]?.CUMULATIVE_MILES ?? 0;
-    const prevCM = idx > 0 ? checkpoints[idx - 1].CUMULATIVE_MILES : -Infinity;
-    const items = (trivia as Array<any>).filter(t => {
-      const mile = Number(t.CUMULATIVE_MILES ?? -Infinity);
-      return mile > prevCM && mile <= currentCM;
-    });
-    items.sort(
-      (a, b) => Number(a.CUMULATIVE_MILES) - Number(b.CUMULATIVE_MILES),
-    );
-    return items;
-  };
+  // Segment trivia retrieval moved to progressStore
 
   return (
     <>
@@ -281,21 +213,24 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
         onRequestClose={handleDismiss}
         statusBarTranslucent={true}
       >
+        {/* Celebration border will render above the overlay later */}
         <Animated.View
           style={[
             styles.overlay,
-            { backgroundColor: theme.colors.modalOverlay },
+            {
+              backgroundColor: showCheckpointCelebration
+                ? theme.colors.modalCelebrationGold
+                : theme.colors.modalOverlay,
+            },
             animatedOverlayStyle,
           ]}
         >
-          {motion.flags.confettiEnabled ? (
-            <Confetti show={showConfetti} />
-          ) : null}
+          {/* Celebration moved to root of Modal for top-level layering */}
           <TouchableWithoutFeedback onPress={handleDismiss}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
 
-          {/* Overlay and content only; confetti rendered in its own Modal below */}
+          {/* Overlay and content; celebration rendered here after content for top layering */}
 
           <SafeAreaView
             style={styles.safeArea}
@@ -317,11 +252,21 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                 ]}
               >
                 {itemType === 'checkpoint'
-                  ? `Checkpoint #${getCheckpointNumber() + 1}`
+                  ? `Checkpoint #${
+                      getCheckpointIndexForCumulativeMiles(
+                        (currentItem as any).CUMULATIVE_MILES,
+                      ) + 1
+                    }`
                   : currentItem.name}
               </Text>
 
-              <Animated.View style={[styles.modalContainer, animatedCardStyle]}>
+              <Animated.View
+                style={[
+                  styles.modalContainer,
+                  animatedCardStyle,
+                  styles.modalCardDefault,
+                ]}
+              >
                 {/* Close button */}
                 <Pressable style={styles.closeButton} onPress={handleDismiss}>
                   {({ pressed }) => (
@@ -418,7 +363,11 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                         'CUMULATIVE_MILES' in currentItem &&
                         (miles || 0) >= (currentItem.CUMULATIVE_MILES || 0);
                       if (!isCompleted) return null;
-                      const segmentTrivia = getSegmentTrivia();
+                      const segmentTrivia = getSegmentTriviaForCheckpointIndex(
+                        getCheckpointIndexForCumulativeMiles(
+                          (currentItem as any).CUMULATIVE_MILES,
+                        ),
+                      );
                       return segmentTrivia.length ? (
                         <View style={styles.triviaSection}>
                           <Text
@@ -462,14 +411,17 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                 {/* Miles section */}
                 {itemType === 'checkpoint' &&
                   (() => {
-                    const cp = getCheckpointProgress();
+                    const currentIdx = getCheckpointIndexForCumulativeMiles(
+                      (currentItem as any).CUMULATIVE_MILES,
+                    );
+                    const cp = getCheckpointProgressFor(currentIdx);
                     if (typeof cp.spanMiles !== 'number') return null;
                     const showLeft =
                       typeof cp.currentCumulativeMiles === 'number' &&
                       cp.currentCumulativeMiles > 0;
                     const targetMiles = (currentItem as any)
                       .CUMULATIVE_MILES as number;
-                    const remaining = Math.max(0, targetMiles - (miles || 0));
+                    const remaining = getRemainingMilesTo(targetMiles);
                     return (
                       <View style={styles.milesToNextSection}>
                         <View
@@ -593,7 +545,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   })()}
 
                 {/* Progress - Journey at bottom of modal */}
-                {itemType === 'checkpoint' && progressInfo && (
+                {itemType === 'checkpoint' && (
                   <View style={styles.bottomProgressSection}>
                     {(() => {
                       return (
@@ -605,13 +557,22 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
               </Animated.View>
             </Animated.View>
           </SafeAreaView>
+
+          {/* Celebration border is the chosen celebration effect */}
         </Animated.View>
 
-        {/* Confetti Animation */}
-        {/* {itemType === 'checkpoint' && <Confetti show={showConfetti} />} */}
+        {/* Animated gradient border on top of modal */}
+        {motion.flags.checkpointCelebrationEnabled &&
+        itemType === 'checkpoint' ? (
+          <CelebrationBorder
+            show={showCheckpointCelebration}
+            borderWidth={5}
+            cycleDurationMs={3000}
+          />
+        ) : null}
       </Modal>
 
-      {/* Confetti rendered within overlay (pointerEvents none) to avoid blocking taps */}
+      {/* Celebration rendered within overlay (pointerEvents none) to avoid blocking taps */}
     </>
   );
 }
@@ -699,6 +660,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     ...shadows.large,
     paddingTop: spacing.xl2, // Standardized 40px top padding using token
+  },
+  modalCardDefault: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
   },
   scrollView: {
     flex: 1,

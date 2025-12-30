@@ -29,13 +29,20 @@ export const motion = {
     translateDistanceDefault: -24, // use 0 for fade-only modals
   },
 
-  // Confetti baseline timings
-  confetti: {
+  // Checkpoint celebration baseline timings (used by CelebrationBorder)
+  checkpointCelebration: {
     maxRunMs: 3000,
     fadeOutDuration: 600,
     startStaggerMax: 900,
     fallDurationMin: 2500,
     fallDurationMax: 5000,
+    pieceCount: 75,
+    fadeOutBufferMs: 120,
+    // Horizontal sway tuning
+    swayAmplitudeMin: 6,
+    swayAmplitudeMax: 12,
+    swayCyclesMin: 2,
+    swayCyclesMax: 3,
   },
 
   // Easing presets used across animations
@@ -50,6 +57,9 @@ export const motion = {
 
   // Global motion-related feature flags
   flags: {
-    confettiEnabled: true,
+    checkpointCelebrationEnabled: true,
+    // Debug/testing: allow celebration even if Reduce Motion is enabled
+    // Keep false for production; toggle to true only for local diagnostics
+    checkpointCelebrationIgnoreReduceMotion: false,
   },
 } as const;

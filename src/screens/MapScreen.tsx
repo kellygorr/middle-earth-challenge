@@ -74,6 +74,14 @@ export default function MapScreen() {
     closeModal,
     showInfo,
     openModal,
+    showInfoButtonOnce,
+    showStartupTooltip,
+    tooltipPosition,
+    observeMilesChanges,
+    setShowInfoButtonOnce,
+    setShowStartupTooltip,
+    setTooltipPosition,
+    setObserveMilesChanges,
   } = useInfoStore();
 
   // Miles from progress store (source of truth)
@@ -155,18 +163,11 @@ export default function MapScreen() {
 
   // Gate auto-open to first map open only
   const autoOpenRef = useRef(false);
-  // Show Info button only once when map opens; hide on progress changes
-  const [showInfoButtonOnce, setShowInfoButtonOnce] = useState(false);
-  const [showStartupTooltip, setShowStartupTooltip] = useState(false);
+  // Info button + tooltip managed in infoStore
   const infoButtonRef = useRef<any>(null);
-  const [tooltipPosition, setTooltipPosition] = useState<{
-    top: number;
-    left: number;
-  } | null>(null);
   // Track previous miles, seeded with current store value to avoid first-render hide
   const prevMilesRef = useRef<number>(miles || 0);
-  // Begin observing miles changes only after info animation completes
-  const [observeMilesChanges, setObserveMilesChanges] = useState(false);
+  // Observe miles changes moved to infoStore
   // (No extra activation guards; equality-based activation below)
   // Animated path progress mirrored into React state for gating
   const [animatedProgress, setAnimatedProgress] = useState(
@@ -226,17 +227,14 @@ export default function MapScreen() {
     // Only change InfoButton visibility when miles actually change
     if (current !== prev) {
       // Prefer exact match with small float tolerance; fallback to crossing detection
-      const isExact = (a: number, b: number) => Math.abs(a - b) < 1e-6;
-      const idx = checkpointsData.findIndex(cp =>
-        isExact(cp.CUMULATIVE_MILES, current),
-      );
+      const exactIdx = useProgressStore.getState().isExactlyOnCheckpoint();
 
-      if (idx !== -1) {
-        const reached = checkpointsData[idx];
+      if (exactIdx !== -1) {
+        const reached = checkpointsData[exactIdx];
         if (currentItem?.name !== reached.name || itemType !== 'checkpoint') {
           showInfo(reached, 'checkpoint');
         }
-        setCurrentCheckpointIndex(idx);
+        setCurrentCheckpointIndex(exactIdx);
         if (!showInfoButtonOnce) setShowInfoButtonOnce(true);
       } else {
         // Hide InfoButton when miles change away from any checkpoint
@@ -254,6 +252,7 @@ export default function MapScreen() {
     currentItem,
     itemType,
     showInfoButtonOnce,
+    setShowInfoButtonOnce,
     isModalVisible,
   ]);
 
@@ -262,23 +261,23 @@ export default function MapScreen() {
     // Respect manual selection while the modal is open
     if (isModalVisible) return;
     const currentMiles = miles || 0;
-
-    // Find the current active checkpoint (last checkpoint the user has reached/passed)
-    let currentCheckpoint: CheckpointType | null = null;
-    let checkpointIndex: number | null = null;
-    for (let i = checkpointsData.length - 1; i >= 0; i--) {
-      const checkpoint = checkpointsData[i];
-      if (currentMiles >= checkpoint.CUMULATIVE_MILES) {
-        currentCheckpoint = checkpoint;
-        checkpointIndex = i;
-        break;
-      }
-    }
-
-    // If no checkpoint reached yet, show Hobbiton (the start)
+    const idx = useProgressStore.getState().getCheckpointIndexForMiles();
+    const checkpointIndex: number | null = idx >= 0 ? idx : null;
+    const currentCheckpoint: CheckpointType | null =
+      checkpointIndex !== null ? checkpointsData[checkpointIndex] : null;
+    // If no checkpoint reached yet and miles is 0, show Hobbiton (the start)
     if (!currentCheckpoint && currentMiles === 0) {
-      currentCheckpoint = checkpointsData.find(cp => cp.isStart) || null;
-      checkpointIndex = checkpointsData.findIndex(cp => cp.isStart);
+      const startIdx = checkpointsData.findIndex(cp => cp.isStart);
+      setCurrentCheckpointIndex(startIdx);
+      if (
+        currentItem?.name !== checkpointsData[startIdx]?.name ||
+        itemType !== 'checkpoint'
+      ) {
+        showInfo(checkpointsData[startIdx], 'checkpoint');
+      }
+    } else {
+      // Update checkpoint index state
+      setCurrentCheckpointIndex(checkpointIndex);
     }
 
     // Update checkpoint index state
@@ -323,6 +322,7 @@ export default function MapScreen() {
     showInfo,
     showInfoButtonOnce,
     observeMilesChanges,
+    setShowInfoButtonOnce,
     isModalVisible,
   ]);
 
@@ -335,14 +335,20 @@ export default function MapScreen() {
       setObserveMilesChanges(false);
       setTooltipPosition(null);
     }
-  }, [showWelcome]);
+  }, [
+    showWelcome,
+    setShowInfoButtonOnce,
+    setShowStartupTooltip,
+    setObserveMilesChanges,
+    setTooltipPosition,
+  ]);
 
   // Hide tooltips when the info modal opens (user acted)
   useEffect(() => {
     if (isModalVisible && showStartupTooltip) {
       setShowStartupTooltip(false);
     }
-  }, [isModalVisible, showStartupTooltip]);
+  }, [isModalVisible, showStartupTooltip, setShowStartupTooltip]);
 
   // Measure anchor (InfoButton or activated trivia) and position tooltip under it
   useEffect(() => {
@@ -360,7 +366,7 @@ export default function MapScreen() {
     };
     // Measure on next frame to ensure layout committed after animation
     requestAnimationFrame(measure);
-  }, [showStartupTooltip]);
+  }, [showStartupTooltip, setTooltipPosition]);
 
   // Re-measure on dimension changes while tooltip is visible
   useEffect(() => {
@@ -376,7 +382,7 @@ export default function MapScreen() {
         });
       } catch {}
     });
-  }, [width, height, showStartupTooltip]);
+  }, [width, height, showStartupTooltip, setTooltipPosition]);
 
   // Lift the Test Miles overlay above the keyboard when it opens
   useEffect(() => {
