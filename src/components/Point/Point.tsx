@@ -49,7 +49,12 @@ function Point({
     interpolateColor(
       activationSV.value,
       [0, 1],
-      [theme.colors.checkpointLocked, theme.colors.checkpointUnlocked],
+      [
+        type === 'checkpoint'
+          ? theme.colors.checkpointLocked
+          : theme.colors.triviaLocked,
+        theme.colors.checkpointUnlocked,
+      ],
     ),
   );
 

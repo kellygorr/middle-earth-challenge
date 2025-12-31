@@ -8,12 +8,12 @@ import {
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../stores/settingsStore';
-import { typography, typographyThemed } from '../styles/typography';
-import { spacing } from '../styles/global';
-import { useAnimatedModal } from '../hooks/useAnimatedModal';
-import { motion } from '../styles/motion';
-import Button from './Buttons';
+import { useTheme } from '../../stores/settingsStore';
+import { typography, typographyThemed } from '../../styles/typography';
+import { spacing } from '../../styles/global';
+import { useAnimatedModal } from '../../hooks/useAnimatedModal';
+import { motion } from '../../styles/motion';
+import Button from '../Buttons';
 
 interface WelcomeModalProps {
   visible: boolean;

@@ -9,7 +9,6 @@ interface InfoStore {
   isModalVisible: boolean;
   itemType: 'checkpoint' | 'trivia' | null;
   // Info button + tooltip state
-  showInfoButtonOnce: boolean;
   showStartupTooltip: boolean;
   tooltipPosition: { top: number; left: number } | null;
   observeMilesChanges: boolean;
@@ -18,11 +17,11 @@ interface InfoStore {
   lastMilesAtSelection: number | null;
 
   // Actions
+  setCurrentItem: (item: PointType, type: 'checkpoint' | 'trivia') => void;
   showInfo: (item: PointType, type: 'checkpoint' | 'trivia') => void;
   hideInfo: () => void;
   openModal: () => void;
   closeModal: () => void;
-  setShowInfoButtonOnce: (show: boolean) => void;
   setShowStartupTooltip: (show: boolean) => void;
   setTooltipPosition: (pos: { top: number; left: number } | null) => void;
   setObserveMilesChanges: (observe: boolean) => void;
@@ -36,7 +35,6 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
   currentItem: null,
   isModalVisible: false,
   itemType: null,
-  showInfoButtonOnce: false,
   showStartupTooltip: false,
   tooltipPosition: null,
   observeMilesChanges: false,
@@ -44,6 +42,11 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
   lastMilesAtSelection: null,
 
   // Actions
+  setCurrentItem: (item, type) =>
+    set({
+      currentItem: item,
+      itemType: type,
+    }),
   showInfo: (item, type) =>
     set({
       currentItem: item,
@@ -73,13 +76,11 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
     set({ isModalVisible: false });
   },
 
-  setShowInfoButtonOnce: show => set({ showInfoButtonOnce: show }),
   setShowStartupTooltip: show => set({ showStartupTooltip: show }),
   setTooltipPosition: pos => set({ tooltipPosition: pos }),
   setObserveMilesChanges: observe => set({ observeMilesChanges: observe }),
   resetInfoUI: () =>
     set({
-      showInfoButtonOnce: false,
       showStartupTooltip: false,
       tooltipPosition: null,
       observeMilesChanges: false,

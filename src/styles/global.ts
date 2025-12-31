@@ -57,3 +57,10 @@ export const iconSizes = {
   large: 32,
   xlarge: 40,
 } as const;
+
+// Standardized touch target sizes for icon buttons
+export const iconButtonSizes = {
+  small: 40, // aligns with recommended 40-44
+  medium: 48, // close to previous 50
+  large: 56,
+} as const;

@@ -14,13 +14,13 @@ import Animated, {
   interpolateColor,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme, useSettingsStore } from '../stores/settingsStore';
-import { typographyThemed } from '../styles/typography';
-import { spacing, iconSizes, shadows } from '../styles/global';
-import { useAnimatedModal } from '../hooks/useAnimatedModal';
-import { motion } from '../styles/motion';
-import Button from './Buttons';
-import { HomeButton, CloseButton } from './ButtonIcons';
+import { useTheme, useSettingsStore } from '../../stores/settingsStore';
+import { typographyThemed } from '../../styles/typography';
+import { spacing, iconSizes, shadows } from '../../styles/global';
+import { useAnimatedModal } from '../../hooks/useAnimatedModal';
+import { motion } from '../../styles/motion';
+import Button from '../Buttons';
+import { HomeButton, CloseButton } from '../ButtonIcons';
 
 interface SettingsModalProps {
   visible: boolean;

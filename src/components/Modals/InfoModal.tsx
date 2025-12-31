@@ -16,17 +16,17 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useTheme } from '../stores/settingsStore';
-import { useInfoStore } from '../stores/infoStore';
-import { useProgressStore } from '../stores/progressStore';
-import { typography, typographyThemed } from '../styles/typography';
-import { spacing, borderRadius, shadows } from '../styles/global';
-import { useAnimatedModal } from '../hooks/useAnimatedModal';
-import { motion } from '../styles/motion';
+import { useTheme } from '../../stores/settingsStore';
+import { useInfoStore } from '../../stores/infoStore';
+import { useProgressStore } from '../../stores/progressStore';
+import { typography, typographyThemed } from '../../styles/typography';
+import { spacing, borderRadius, shadows } from '../../styles/global';
+import { useAnimatedModal } from '../../hooks/useAnimatedModal';
+import { motion } from '../../styles/motion';
 // TOTAL_JOURNEY_MILES not needed; journey progress computed via store selectors
-import CelebrationBorder from './CelebrationBorder';
-import { CloseButton } from './ButtonIcons';
-import JourneyProgressBar from './JourneyProgressBar';
+import CelebrationBorder from '../CelebrationBorder';
+import { CloseButton } from '../ButtonIcons';
+import JourneyProgressBar from '../JourneyProgressBar';
 // PointType import not needed here after store-based lookups
 
 // Centralized timings and flags
@@ -83,6 +83,8 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     state => state.shouldShowCheckpointCelebration,
   );
   const getPointFromIndex = useProgressStore(state => state.getPointFromIndex);
+  const getPreviousTrivia = useProgressStore(state => state.getPreviousTrivia);
+  const setCurrentItem = useInfoStore(state => state.setCurrentItem);
   // const getCurrentCheckpoint = useProgressStore(
   //   state => state.getCurrentCheckpoint,
   // );
@@ -246,7 +248,8 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                       ? `Checkpoint #${n}`
                       : 'Checkpoint';
                   }
-                  return typeof n === 'number' ? `Trivia #${n}` : 'Trivia';
+                  // Modal title should just say 'Trivia'
+                  return 'Trivia';
                 })()}
               </Text>
 
@@ -315,7 +318,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   {!isLockedCheckpoint && currentItem.description?.text && (
                     <Text
                       style={[
-                        typographyThemed(theme).bodySecondary,
+                        typographyThemed(theme).bodyPrimary,
                         styles.description,
                       ]}
                     >
@@ -335,6 +338,55 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   )}
 
                   {/* Previous trivia list removed during cleanup */}
+                  {itemType === 'checkpoint' &&
+                    !isLockedCheckpoint &&
+                    (() => {
+                      const idx = Number(currentItem.index ?? -1);
+                      if (!Number.isFinite(idx) || idx <= 0) return null;
+                      const previousTrivia = getPreviousTrivia(idx);
+                      if (!previousTrivia || previousTrivia.length === 0) {
+                        return null;
+                      }
+                      return (
+                        <View style={styles.triviaSection}>
+                          <Text
+                            style={[
+                              typographyThemed(theme).captionPrimaryBold,
+                              styles.triviaTitle,
+                            ]}
+                          >
+                            Unlocked Trivia
+                          </Text>
+                          <View style={styles.triviaList}>
+                            {previousTrivia.map((t, i) => (
+                              <Pressable
+                                key={`${t.name}:${i}`}
+                                style={styles.triviaItemRow}
+                                onPress={() => setCurrentItem(t, 'trivia')}
+                              >
+                                <Text
+                                  style={[
+                                    typographyThemed(theme).bodySecondary,
+                                    styles.triviaItemName,
+                                  ]}
+                                >
+                                  {t.name}
+                                </Text>
+                                <Text
+                                  style={[
+                                    typographyThemed(theme).bodySecondary,
+                                    styles.triviaItemMile,
+                                  ]}
+                                >
+                                  {t.CUMULATIVE_MILES}
+                                  <Text style={styles.milesSuffix}> miles</Text>
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+                      );
+                    })()}
                 </ScrollView>
 
                 {/* Miles section */}
@@ -353,15 +405,14 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   const checkpointMiles = milesVal;
                   const leftColumn =
                     Number.isFinite(checkpointMiles) && checkpointMiles > 0;
-                  const nextCheckpointMiles = ((): number | null => {
+                  const nextCheckpointMiles = (() => {
                     const m = Number(nextCheckpoint?.CUMULATIVE_MILES ?? NaN);
                     return Number.isFinite(m) ? m : null;
                   })();
-                  const milesToNextCheckpoint = nextCheckpointMiles
-                    ? Math.max(1, nextCheckpointMiles - checkpointMiles)
-                    : null;
-
-                  if (milesToNextCheckpoint === null) return null;
+                  const milesToNextCheckpoint =
+                    nextCheckpointMiles !== null
+                      ? Math.max(1, nextCheckpointMiles - checkpointMiles)
+                      : null;
                   const remaining =
                     !isCheckpointView && nextCheckpointMiles !== null
                       ? getRemainingMilesTo(nextCheckpointMiles)
@@ -385,7 +436,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                               !leftColumn ? styles.hidden : null,
                             ]}
                           >
-                            Checkpoint
+                            {isCheckpointView ? 'Checkpoint' : 'Total miles'}
                           </Text>
                         </View>
                         <View
@@ -471,7 +522,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                             >
                               {isCheckpointView && isLockedCheckpoint
                                 ? '-' + remaining
-                                : milesToNextCheckpoint}
+                                : milesToNextCheckpoint ?? remaining}
                               <Text
                                 style={[
                                   styles.milesSuffix,

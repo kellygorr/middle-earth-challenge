@@ -1,29 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, StatusBar, Text, TextInput } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, StatusBar } from 'react-native';
 import {
   GestureHandlerRootView,
   GestureDetector,
 } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
-import SettingsModal from '../components/SettingsModal';
-import { SettingsButton, RecenterButton } from '../components/ButtonIcons';
+// Modals are rendered globally in App.tsx
+import {
+  SettingsButton,
+  RecenterButton,
+  PlusButton,
+} from '../components/ButtonIcons';
 import { iconSizes } from '../styles/global';
 // PositionedPoint now used via PointLayer
 import PointLayer from '../components/Point/PointLayer';
 import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 import Button, { InfoButton, TooltipButton } from '../components/Buttons';
-import InfoModal from '../components/InfoModal';
-import { spacing, borderRadius } from '../styles/global';
+import DevMiles from '../components/DevMiles';
+import { spacing, borderRadius, iconButtonSizes } from '../styles/global';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useInfoStore } from '../stores/infoStore';
 import { useProgressStore } from '../stores/progressStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
 import triviaDataRaw from '../constants/trivia.json';
-import {
-  TOTAL_JOURNEY_MILES,
-  SVG_WIDTH,
-  SVG_HEIGHT,
-} from '../constants/gameConstants';
+import { SVG_WIDTH, SVG_HEIGHT } from '../constants/gameConstants';
 // pathProgress mapping handled within PointLayer
 // typography not used in this screen
 import { PointType } from '../types';
@@ -46,9 +46,8 @@ const triviaData = triviaDataRaw as PointType[];
 export default function MapScreen() {
   const theme = useTheme();
   const { width, height } = useReactiveDimensions(); // reactive
-  const showSettings = useSettingsStore(state => state.showSettings);
   const setShowSettings = useSettingsStore(state => state.setShowSettings);
-  const [testMiles, setTestMiles] = useState('0');
+
   const keyboardOffset = useKeyboardOffset(20);
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const devMode = useSettingsStore(state => state.devMode);
@@ -65,7 +64,6 @@ export default function MapScreen() {
     currentItem,
     itemType,
     isModalVisible,
-    closeModal,
     showInfo,
     openModal,
     showStartupTooltip,
@@ -78,7 +76,10 @@ export default function MapScreen() {
 
   // Miles from progress store (source of truth)
   const miles = useProgressStore(state => state.miles);
-  const setMiles = useProgressStore(state => state.setMiles);
+
+  const setShowManualMilesModal = useSettingsStore(
+    state => state.setShowManualMilesModal,
+  );
 
   const firstCheckpoint = checkpointsData[0];
   const {
@@ -345,7 +346,22 @@ export default function MapScreen() {
       </Animated.View>
 
       {/* Recenter Button */}
-      <Animated.View style={[styles.recenterButton, recenterButtonStyle]}>
+      <Animated.View
+        style={[
+          styles.recenterButton,
+          recenterButtonStyle,
+          { bottom: spacing.md + iconButtonSizes.medium + spacing.sm },
+          devMode
+            ? {
+                bottom:
+                  keyboardOffset +
+                  spacing.xxxl +
+                  iconButtonSizes.medium +
+                  spacing.sm,
+              }
+            : null,
+        ]}
+      >
         <RecenterButton
           onPress={handleRecenter}
           size={iconSizes.medium}
@@ -353,71 +369,22 @@ export default function MapScreen() {
         />
       </Animated.View>
 
-      {/* Info Modal */}
-      <InfoModal visible={isModalVisible} onDismiss={closeModal} />
+      {/* Add Miles Button (always visible, independent overlay) */}
+      <View
+        style={[
+          styles.addMilesButton,
+          devMode ? { bottom: keyboardOffset + spacing.xxxl } : null,
+        ]}
+      >
+        <PlusButton
+          onPress={() => setShowManualMilesModal(true)}
+          size={iconSizes.medium}
+          color={theme.colors.textInverted}
+        />
+      </View>
 
-      {/* Settings Modal */}
-      <SettingsModal
-        visible={showSettings}
-        onDismiss={() => setShowSettings(false)}
-      />
-
-      {/* Test Input (Developer mode) */}
-      {devMode && (
-        <View
-          style={[
-            styles.testInputContainer,
-            {
-              bottom: keyboardOffset,
-              backgroundColor: theme.colors.modalOverlay,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.testInputLabel,
-              { color: theme.colors.textInverted },
-            ]}
-          >
-            Test Miles:
-          </Text>
-          <TextInput
-            style={[
-              styles.testInput,
-              {
-                backgroundColor: theme.colors.surface,
-                color: theme.colors.textPrimary,
-              },
-            ]}
-            value={testMiles}
-            onChangeText={t => {
-              setTestMiles(t);
-            }}
-            keyboardType="numeric"
-            placeholder="0"
-            placeholderTextColor={theme.colors.textSecondary}
-          />
-          <Text
-            style={[
-              styles.testInputLabel,
-              { color: theme.colors.textInverted },
-            ]}
-          >
-            / {TOTAL_JOURNEY_MILES}
-          </Text>
-          <Button
-            onPress={() => {
-              const parsed = parseFloat(testMiles);
-              setMiles(isNaN(parsed) ? 0 : parsed);
-            }}
-            variant="brand"
-            size="default"
-            isMediumText={false}
-          >
-            Walk
-          </Button>
-        </View>
-      )}
+      {/* Dev Miles (Developer mode) */}
+      {devMode && <DevMiles keyboardOffset={keyboardOffset} />}
     </GestureHandlerRootView>
   );
 }
@@ -440,10 +407,10 @@ export const styles = StyleSheet.create({
   },
   settingsButton: {
     position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 50,
-    height: 50,
+    top: spacing.xl2,
+    right: spacing.md,
+    width: iconButtonSizes.medium,
+    height: iconButtonSizes.medium,
     borderRadius: borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -461,51 +428,26 @@ export const styles = StyleSheet.create({
   },
   labelsButton: {
     position: 'absolute',
-    top: 120,
-    right: 20,
-  },
-  labelContainer: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    top: spacing.xl2 + iconButtonSizes.medium + spacing.sm,
+    right: spacing.md,
   },
   recenterButton: {
     position: 'absolute',
-    bottom: 50,
-    right: 20,
-    width: 50,
-    height: 50,
+    right: spacing.md,
+    width: iconButtonSizes.medium,
+    height: iconButtonSizes.medium,
     borderRadius: borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  recenterButtonTouch: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  testInputContainer: {
+  addMilesButton: {
     position: 'absolute',
-    bottom: 20,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
+    bottom: spacing.md,
+    right: spacing.md,
+    width: iconButtonSizes.medium,
+    height: iconButtonSizes.medium,
+    borderRadius: borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  testInputLabel: { color: '#fff', fontSize: 14, marginHorizontal: 8 },
-  testInput: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-    minWidth: 80,
-    fontSize: 16,
-    textAlign: 'center',
-    color: '#000',
   },
 });

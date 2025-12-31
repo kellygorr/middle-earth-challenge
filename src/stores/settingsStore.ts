@@ -7,6 +7,7 @@ interface SettingsStore extends UserSettings {
   showWelcome: boolean;
   isLoaded: boolean;
   showSettings: boolean;
+  showManualMilesModal: boolean;
   // Actions
   setLabelSize: (size: LabelSize) => void;
   setTheme: (theme: ThemeName) => void;
@@ -17,6 +18,7 @@ interface SettingsStore extends UserSettings {
   setReducedMapTitles: (reduced: boolean) => void;
   setDevMode: (enabled: boolean) => void;
   setShowSettings: (show: boolean) => void;
+  setShowManualMilesModal: (show: boolean) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -33,6 +35,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   devMode: true,
   isLoaded: false,
   showSettings: false,
+  showManualMilesModal: false,
 
   // Actions - each setter also persists to database
   setLabelSize: size => {
@@ -63,6 +66,8 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   setShowWelcome: show => set({ showWelcome: show }), // Not persisted - always shows on load
 
   setShowSettings: show => set({ showSettings: show }), // UI state only; not persisted
+
+  setShowManualMilesModal: show => set({ showManualMilesModal: show }), // UI state only; not persisted
 
   setReducedMapTitles: reduced => {
     set({ reducedMapTitles: reduced });

@@ -5,8 +5,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 
 import MapScreen from './src/screens/MapScreen';
-import WelcomeModal from './src/components/WelcomeModal';
+import {
+  WelcomeModal,
+  SettingsModal,
+  ManualMilesModal,
+  InfoModal,
+} from './src/components/Modals';
 import { useSettingsStore } from './src/stores/settingsStore';
+import { useInfoStore } from './src/stores/infoStore';
 import { database } from './src/services/database';
 
 const Stack = createStackNavigator();
@@ -16,6 +22,16 @@ function App(): React.JSX.Element {
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
   const loadSettings = useSettingsStore(state => state.loadSettings);
+  const showSettings = useSettingsStore(state => state.showSettings);
+  const setShowSettings = useSettingsStore(state => state.setShowSettings);
+  const showManualMilesModal = useSettingsStore(
+    state => state.showManualMilesModal,
+  );
+  const setShowManualMilesModal = useSettingsStore(
+    state => state.setShowManualMilesModal,
+  );
+  const isInfoVisible = useInfoStore(state => state.isModalVisible);
+  const closeInfoModal = useInfoStore(state => state.closeModal);
 
   useEffect(() => {
     const initApp = async () => {
@@ -53,11 +69,20 @@ function App(): React.JSX.Element {
         </Stack.Navigator>
       </NavigationContainer>
 
-      {/* Welcome Modal */}
+      {/* Global Modals */}
       <WelcomeModal
         visible={showWelcome}
         onDismiss={() => setShowWelcome(false)}
       />
+      <SettingsModal
+        visible={showSettings}
+        onDismiss={() => setShowSettings(false)}
+      />
+      <ManualMilesModal
+        visible={showManualMilesModal}
+        onDismiss={() => setShowManualMilesModal(false)}
+      />
+      <InfoModal visible={isInfoVisible} onDismiss={closeInfoModal} />
     </SafeAreaProvider>
   );
 }

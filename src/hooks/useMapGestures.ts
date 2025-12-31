@@ -115,7 +115,6 @@ export function useMapGestures({
   // Recenter button animated style
   const recenterButtonStyle = useAnimatedStyle(() => ({
     opacity: recenterOpacity.value,
-    backgroundColor: '#000000',
   }));
 
   // Pinch gesture for zooming

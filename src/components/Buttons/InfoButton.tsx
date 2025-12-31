@@ -21,7 +21,8 @@ const InfoButton = forwardRef<any, InfoButtonProps>(
       if (type === 'checkpoint') {
         return typeof n === 'number' ? `Checkpoint #${n}` : 'Checkpoint';
       }
-      return typeof n === 'number' ? `Trivia #${n}` : 'Trivia';
+      // Trivia button should show the trivia's name
+      return item.name || 'Trivia';
     };
 
     return (

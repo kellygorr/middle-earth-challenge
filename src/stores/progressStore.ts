@@ -25,18 +25,8 @@ interface ProgressStore {
   // Selectors / derived values
   getProgressMiles: () => number;
   getProgressPercentage: () => number;
-  getCheckpointIndexForCumulativeMiles: (cumulativeMiles: number) => number;
-  // Generic point alias (checkpoint or trivia)
-  getIndexForPoint: (item: PointType | null | undefined) => number;
   getCheckpointIndexForMiles: () => number;
   getLatestCompletedCheckpointNumber: () => number; // 1-based
-  getCheckpointProgressFor: (checkpointIndex: number) => {
-    percentage: number;
-    nextCheckpointNumber: number | null;
-    milesToNext: number | null;
-    spanMiles: number | null;
-    currentCumulativeMiles: number | null;
-  };
   getRemainingMilesTo: (targetMiles: number) => number;
   isExactlyOnCheckpoint: () => number; // returns exact index or -1
   isLatestCheckpoint: (checkpointIndex: number) => boolean;
@@ -54,6 +44,8 @@ interface ProgressStore {
     index: number,
     type?: 'checkpoint' | 'trivia',
   ) => PointType | null;
+  // Trivia in previous segment between checkpoints[currentIndex-1] and checkpoints[currentIndex]
+  getPreviousTrivia: (currentIndex: number) => PointType[];
 }
 
 export const useProgressStore = create<ProgressStore>((set, get) => ({
@@ -104,23 +96,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     return Math.round((progressMiles / TOTAL_JOURNEY_MILES) * 100);
   },
 
-  getCheckpointIndexForCumulativeMiles: cumulativeMiles => {
-    const idx = (checkpoints as any[]).findIndex(
-      cp => (cp?.CUMULATIVE_MILES ?? -Infinity) === cumulativeMiles,
-    );
-    return idx >= 0 ? idx : 0;
-  },
-
-  // Generic point index lookup (checkpoint or trivia, by CUMULATIVE_MILES)
-  getIndexForPoint: item => {
-    if (!item) return -1;
-    const cm = Number((item as any)?.CUMULATIVE_MILES ?? NaN);
-    if (!Number.isFinite(cm)) return -1;
-    const idx = (checkpoints as any[]).findIndex(
-      cp => (cp?.CUMULATIVE_MILES ?? -Infinity) === cm,
-    );
-    return idx >= 0 ? idx : -1;
-  },
+  // Removed unused selectors: getCheckpointIndexForCumulativeMiles, getIndexForPoint
 
   getCheckpointIndexForMiles: () => {
     const totalMiles = get().miles ?? 0;
@@ -142,33 +118,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     return Math.max(byCompletions, byMiles);
   },
 
-  getCheckpointProgressFor: checkpointIndex => {
-    const miles = get().miles ?? 0;
-    const cps = checkpoints as any[];
-    const nextIdx = checkpointIndex + 1;
-    if (checkpointIndex >= 0 && nextIdx < cps.length) {
-      const currentCM = cps[checkpointIndex]?.CUMULATIVE_MILES ?? 0;
-      const nextCM = cps[nextIdx]?.CUMULATIVE_MILES ?? currentCM;
-      const span = Math.max(1, nextCM - currentCM);
-      const through = Math.max(0, Math.min(miles - currentCM, span));
-      const percentage = Math.round((through / span) * 100);
-      const milesToNext = Math.max(0, nextCM - miles);
-      return {
-        percentage,
-        nextCheckpointNumber: nextIdx + 1,
-        milesToNext,
-        spanMiles: span,
-        currentCumulativeMiles: currentCM,
-      };
-    }
-    return {
-      percentage: 100,
-      nextCheckpointNumber: null,
-      milesToNext: null,
-      spanMiles: null,
-      currentCumulativeMiles: null,
-    };
-  },
+  // Removed unused selector: getCheckpointProgressFor
 
   getRemainingMilesTo: targetMiles => {
     const miles = get().miles ?? 0;
@@ -209,6 +159,25 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     if (index >= src.length) return null;
     const item = src[index] as PointType;
     return item ? ({ ...(item as PointType), index } as PointType) : null;
+  },
+
+  getPreviousTrivia: currentIndex => {
+    const cps = checkpoints as any[];
+    const trs = trivia as any[];
+    const idx = Number(currentIndex);
+    if (!Number.isFinite(idx) || idx <= 0 || idx >= cps.length) return [];
+    const prevMiles = Number(cps[idx - 1]?.CUMULATIVE_MILES ?? NaN);
+    const currMiles = Number(cps[idx]?.CUMULATIVE_MILES ?? NaN);
+    if (!Number.isFinite(prevMiles) || !Number.isFinite(currMiles)) return [];
+    const results: PointType[] = [];
+    for (const t of trs) {
+      const m = Number((t as any)?.CUMULATIVE_MILES ?? NaN);
+      if (!Number.isFinite(m)) continue;
+      if (m <= prevMiles) continue;
+      if (m >= currMiles) break; // trivia assumed sorted ascending by miles
+      results.push(t as PointType);
+    }
+    return results;
   },
 
   getCurrentCheckpoint: () => {

@@ -20,8 +20,6 @@ export interface Theme {
 
     // Trivia markers
     triviaLocked: string;
-    triviaUnlocked: string;
-    triviaBorder: string;
 
     // UI colors
     background: string;
@@ -105,16 +103,12 @@ export const classicTheme: Theme = {
 
     // Checkpoint markers
     checkpointLocked: '#afa99cff',
+    triviaLocked: 'transparent',
     checkpointUnlocked: '#6a4c34ff',
     checkpointLabel: '#ffffff',
     checkpointLabelInactive: '#757575',
     checkpointTextBackground: '#000000',
     infoModalInactive: '#6e6e6eff',
-
-    // Trivia markers
-    triviaLocked: '#8B7355',
-    triviaUnlocked: '#CD7F32',
-    triviaBorder: '#5C4033',
 
     // UI colors
     background: '#F5EFE0',
@@ -178,16 +172,12 @@ export const minimalistTheme: Theme = {
 
     // Checkpoint markers
     checkpointLocked: '#c7c0b2ff',
+    triviaLocked: 'transparent',
     checkpointUnlocked: '#D4AF37',
     checkpointLabel: '#ffffff',
     checkpointLabelInactive: '#757575',
     checkpointTextBackground: '#000000',
     infoModalInactive: '#6e6e6eff',
-
-    // Trivia markers
-    triviaLocked: '#CFD8DC',
-    triviaUnlocked: '#CD7F32',
-    triviaBorder: '#A66829',
 
     // UI colors
     background: '#FAFAFA',
