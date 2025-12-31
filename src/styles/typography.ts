@@ -107,4 +107,9 @@ export const typographyThemed = (theme: Theme) => ({
     color: theme.colors.textSecondary,
     textAlign: 'left',
   } as TextStyle,
+  captionInverted: {
+    ...typography.caption,
+    color: theme.colors.textInverted,
+    textAlign: 'left',
+  } as TextStyle,
 });

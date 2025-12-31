@@ -27,12 +27,12 @@ interface MiddleEarthMapSkiaProps {
   colorize?: boolean;
   reducedTitles?: boolean;
   defaultColor?: string;
-  gamePathColor?: string;
+  activePathColor?: string;
   gamePathData?: string;
-  gamePathInactiveColor?: string;
+  inactivePathColor?: string;
   zoomScale?: SharedValue<number>;
-  journeyProgress?: SharedValue<number>;
-  initialPathProgress?: SharedValue<number>;
+  gameProgress?: SharedValue<number>;
+  initialBasePathProgress?: SharedValue<number>;
   layerColors?: {
     legend?: string;
     titles?: string;
@@ -52,12 +52,12 @@ export default function MiddleEarthMapSkia({
   colorize = false,
   reducedTitles = true,
   defaultColor = DEFAULT_COLOR,
-  gamePathColor = 'red',
-  gamePathInactiveColor = '#C4B5A0',
+  activePathColor = 'red',
+  inactivePathColor = '#C4B5A0',
   gamePathData = GAME_PATH,
   zoomScale,
-  journeyProgress,
-  initialPathProgress,
+  gameProgress,
+  initialBasePathProgress,
   layerColors = {},
 }: MiddleEarthMapSkiaProps) {
   // Render canvas at higher resolution, display at original size
@@ -143,17 +143,17 @@ export default function MiddleEarthMapSkia({
 
   // Base path progress (initial reveal animation) - 0 to 1
   const basePathEnd = useDerivedValue(() => {
-    return initialPathProgress?.value ?? 1;
-  }, [initialPathProgress]);
+    return initialBasePathProgress?.value ?? 1;
+  }, [initialBasePathProgress]);
 
   // Zoom-aware forward adjustment: push end slightly when zoomed in
-  const journeyPathEndAdjusted = useDerivedValue(() => {
-    const base = journeyProgress?.value ?? 0;
+  const gameProgressAdjusted = useDerivedValue(() => {
+    const base = gameProgress?.value ?? 0;
     const zoom = zoomScale?.value ?? 1;
     const K = 0.004; // tuning constant
     const delta = zoom > 1 ? (K * (zoom - 1)) / zoom : 0; // 0 at normal zoom
     return Math.max(0, Math.min(base + delta, 1));
-  }, [journeyProgress, zoomScale]);
+  }, [gameProgress, zoomScale]);
 
   const containerStyle = useMemo(
     () => ({ width, height, overflow: 'hidden' as const }),
@@ -224,7 +224,7 @@ export default function MiddleEarthMapSkia({
           {gamePath && (
             <Path
               path={gamePath}
-              color={gamePathInactiveColor}
+              color={inactivePathColor}
               style="stroke"
               strokeWidth={strokeWidth}
               strokeCap="butt"
@@ -238,13 +238,13 @@ export default function MiddleEarthMapSkia({
           {gamePath && (
             <Path
               path={gamePath}
-              color={gamePathColor}
+              color={activePathColor}
               style="stroke"
               strokeWidth={strokeWidth}
               strokeCap="butt"
               strokeJoin="round"
               start={0}
-              end={journeyPathEndAdjusted}
+              end={gameProgressAdjusted}
             />
           )}
         </Group>

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, StatusBar } from 'react-native';
+import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
 import {
   GestureHandlerRootView,
   GestureDetector,
@@ -19,6 +19,7 @@ import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import DevMiles from '../components/DevMiles';
 import { spacing, borderRadius, iconButtonSizes } from '../styles/global';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
+import { useInitializationStore } from '../stores/initializationStore';
 import { useInfoStore } from '../stores/infoStore';
 import { useProgressStore } from '../stores/progressStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
@@ -33,7 +34,7 @@ import { useInitialAnimation } from '../hooks/useInitialAnimation';
 import { useReactiveDimensions } from '../hooks/useReactiveDimensions';
 
 import { useUniformMapLayout } from '../hooks/useUniformMapLayout';
-import { useJourneyProgressAnimation } from '../hooks/useJourneyProgressAnimation';
+import { useGameProgressAnimation } from '../hooks/useGameProgressAnimation';
 import { useTooltipPositioning } from '../hooks/useTooltipPositioning';
 import { useKeyboardOffset } from '../hooks/useKeyboardOffset';
 // InfoButton visibility derived via infoStore selector
@@ -50,6 +51,9 @@ export default function MapScreen() {
 
   const keyboardOffset = useKeyboardOffset(20);
   const showWelcome = useSettingsStore(state => state.showWelcome);
+  const phase = useInitializationStore(state => state.phase);
+  const setPhase = useInitializationStore(state => state.setPhase);
+  const gameProgressAnimEnabled = phase === 'active';
   const devMode = useSettingsStore(state => state.devMode);
   const showPointLabels = useSettingsStore(state => state.showPointLabels);
   const setShowPointLabels = useSettingsStore(
@@ -66,6 +70,7 @@ export default function MapScreen() {
     isModalVisible,
     showInfo,
     openModal,
+    clearStickyInfo,
     showStartupTooltip,
     tooltipPosition,
     observeMilesChanges,
@@ -119,11 +124,12 @@ export default function MapScreen() {
     mapHeight, // uniformly scaled height (may exceed screen in landscape)
     screenWidth: width,
     screenHeight: height,
+    onMapInteraction: clearStickyInfo,
   });
 
   // Initial animation
   const {
-    initialPathProgress,
+    initialBasePathProgress,
     settingsEnterStyle,
     labelsEnterStyle,
     infoEnterStyle,
@@ -143,6 +149,8 @@ export default function MapScreen() {
         autoOpenRef.current = true;
         setObserveMilesChanges(true);
       }
+      // Enable game progress animation after path reveal completes
+      setPhase('active');
     },
   });
 
@@ -153,8 +161,11 @@ export default function MapScreen() {
   // Removed prevMilesRef; selection is store-driven
   // Observe miles changes moved to infoStore
   // (No extra activation guards; equality-based activation below)
-  const { journeyProgressValue, animatedProgress } =
-    useJourneyProgressAnimation(miles, [observeMilesChanges]);
+  const { gameProgressValue, animatedProgress } = useGameProgressAnimation(
+    miles,
+    gameProgressAnimEnabled,
+    [observeMilesChanges],
+  );
 
   const shouldShowInfoButton = useInfoStore(state =>
     state.getShouldShowInfoButton(animatedProgress),
@@ -195,12 +206,18 @@ export default function MapScreen() {
       autoOpenRef.current = false;
       setObserveMilesChanges(false);
       setTooltipPosition(null);
+      // Reset to ready phase while welcome is visible
+      if (phase !== 'loading' && phase !== 'ready') {
+        setPhase('ready');
+      }
     }
   }, [
     showWelcome,
     setShowStartupTooltip,
     setObserveMilesChanges,
     setTooltipPosition,
+    phase,
+    setPhase,
   ]);
 
   // Hide tooltips when the info modal opens (user acted)
@@ -236,6 +253,7 @@ export default function MapScreen() {
       ]}
       onStartShouldSetResponderCapture={() => {
         if (showStartupTooltip) setShowStartupTooltip(false);
+        Keyboard.dismiss();
         return false;
       }}
     >
@@ -254,12 +272,12 @@ export default function MapScreen() {
               colorize={colorizeMap}
               reducedTitles={reducedMapTitles}
               defaultColor={theme.colors.mapDefaultColor}
-              gamePathColor={theme.colors.checkpointUnlocked}
-              gamePathInactiveColor={theme.colors.pathInactive}
+              activePathColor={theme.colors.checkpointUnlocked}
+              inactivePathColor={theme.colors.pathInactive}
               gamePathData={GAME_PATH}
               zoomScale={scale}
-              journeyProgress={journeyProgressValue}
-              initialPathProgress={initialPathProgress}
+              gameProgress={gameProgressValue}
+              initialBasePathProgress={initialBasePathProgress}
               layerColors={{
                 legend: theme.colors.svgLegend,
                 titles: theme.colors.svgTitles,
@@ -299,7 +317,10 @@ export default function MapScreen() {
       {/* Settings Button */}
       <Animated.View style={[styles.settingsButton, settingsEnterStyle]}>
         <SettingsButton
-          onPress={() => setShowSettings(true)}
+          onPress={() => {
+            clearStickyInfo();
+            setShowSettings(true);
+          }}
           size={iconSizes.medium}
           color={theme.colors.buttonPrimaryText}
         />
@@ -336,7 +357,10 @@ export default function MapScreen() {
       {/* Labels Toggle */}
       <Animated.View style={[styles.labelsButton, labelsEnterStyle]}>
         <Button
-          onPress={() => setShowPointLabels(!showPointLabels)}
+          onPress={() => {
+            clearStickyInfo();
+            setShowPointLabels(!showPointLabels);
+          }}
           variant="primary"
           size="small"
           isMediumText={labelSize === 'large'}
@@ -363,28 +387,38 @@ export default function MapScreen() {
         ]}
       >
         <RecenterButton
-          onPress={handleRecenter}
+          onPress={() => {
+            clearStickyInfo();
+            handleRecenter();
+          }}
           size={iconSizes.medium}
           color={theme.colors.mapBackground}
         />
       </Animated.View>
 
       {/* Add Miles Button (always visible, independent overlay) */}
-      <View
+      <Animated.View
         style={[
           styles.addMilesButton,
           devMode ? { bottom: keyboardOffset + spacing.xxxl } : null,
+          settingsEnterStyle,
         ]}
       >
         <PlusButton
-          onPress={() => setShowManualMilesModal(true)}
+          onPress={() => {
+            clearStickyInfo();
+            setShowManualMilesModal(true);
+          }}
           size={iconSizes.medium}
           color={theme.colors.textInverted}
         />
-      </View>
+      </Animated.View>
 
       {/* Dev Miles (Developer mode) */}
-      {devMode && <DevMiles keyboardOffset={keyboardOffset} />}
+      {devMode && !showWelcome && <DevMiles keyboardOffset={keyboardOffset} />}
+
+      {/* Loading overlay - hides map until ready */}
+      {phase === 'loading' && <View style={styles.loadingOverlay} />}
     </GestureHandlerRootView>
   );
 }
@@ -449,5 +483,9 @@ export const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
   },
 });

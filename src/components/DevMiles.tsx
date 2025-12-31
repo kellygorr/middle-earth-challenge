@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useTheme } from '../stores/settingsStore';
 import { spacing, borderRadius } from '../styles/global';
@@ -13,8 +13,17 @@ interface DevMilesProps {
 
 export default function DevMiles({ keyboardOffset }: DevMilesProps) {
   const theme = useTheme();
-  const setMiles = useProgressStore(state => state.setMiles);
+  const setTestOverrideMiles = useProgressStore(state => state.setTestMiles);
+  const isTestOverride = useProgressStore(state => state.isTestOverride);
   const [testMiles, setTestMiles] = useState('0');
+  const inputRef = useRef<TextInput>(null);
+
+  // Clear the test miles input whenever the test override is no longer active
+  useEffect(() => {
+    if (!isTestOverride) {
+      setTestMiles('');
+    }
+  }, [isTestOverride]);
 
   return (
     <View
@@ -31,6 +40,7 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
           Test Miles
         </Text>
         <TextInput
+          ref={inputRef}
           style={[
             styles.input,
             {
@@ -53,7 +63,7 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
       <Button
         onPress={() => {
           const parsed = parseFloat(testMiles);
-          setMiles(isNaN(parsed) ? 0 : parsed);
+          setTestOverrideMiles(isNaN(parsed) ? 0 : parsed);
         }}
         variant="primary"
         size="default"

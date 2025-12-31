@@ -50,6 +50,25 @@ class Database {
     } catch {
       // Best-effort; ignore if pragma or alter fails
     }
+
+    // Daily distances table
+    this.db.executeSync(`
+      CREATE TABLE IF NOT EXISTS daily_distances (
+        id TEXT PRIMARY KEY,
+        save_id TEXT NOT NULL,
+        date INTEGER NOT NULL, -- Unix timestamp (ms)
+        miles REAL NOT NULL
+      )
+    `);
+
+    // Progress snapshot table (single row per save id)
+    this.db.executeSync(`
+      CREATE TABLE IF NOT EXISTS progress_snapshot (
+        id TEXT PRIMARY KEY,
+        miles REAL NOT NULL DEFAULT 0,
+        last_updated INTEGER NOT NULL DEFAULT 0
+      )
+    `);
   }
 
   private async initializeDefaultSettings(): Promise<void> {
@@ -156,6 +175,68 @@ class Database {
       this.db.close();
       this.db = null;
     }
+  }
+
+  // Daily distances operations
+  async addDailyDistance(entry: {
+    id: string;
+    saveId: string;
+    date: number;
+    miles: number;
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.executeSync(
+      `INSERT OR REPLACE INTO daily_distances (id, save_id, date, miles) VALUES (?, ?, ?, ?)`,
+      [entry.id, entry.saveId, entry.date, entry.miles],
+    );
+  }
+
+  async getDailyDistances(saveId: string): Promise<
+    {
+      id: string;
+      saveId: string;
+      date: number;
+      miles: number;
+    }[]
+  > {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.executeSync(
+      `SELECT id, save_id as saveId, date, miles FROM daily_distances WHERE save_id = ? ORDER BY date ASC`,
+      [saveId],
+    );
+    const rows = result.rows || [];
+    return rows.map((r: any) => ({
+      id: String(r.id),
+      saveId: String(r.saveId),
+      date: Number(r.date),
+      miles: Number(r.miles),
+    }));
+  }
+
+  async removeDailyDistance(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.executeSync(`DELETE FROM daily_distances WHERE id = ?`, [id]);
+  }
+
+  async setMilesSnapshot(id: string, miles: number): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    const ts = Date.now();
+    this.db.executeSync(
+      `INSERT OR REPLACE INTO progress_snapshot (id, miles, last_updated) VALUES (?, ?, ?)`,
+      [id, miles, ts],
+    );
+  }
+
+  async getMilesSnapshot(id: string): Promise<number | null> {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.executeSync(
+      `SELECT miles FROM progress_snapshot WHERE id = ? LIMIT 1`,
+      [id],
+    );
+    const row = result.rows?.[0];
+    if (!row) return null;
+    const miles = Number((row as any).miles);
+    return Number.isFinite(miles) ? miles : null;
   }
 }
 

@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { CheckpointCompletion, TriviaUnlock, PointType } from '../types';
+import {
+  CheckpointCompletion,
+  TriviaUnlock,
+  PointType,
+  DailyDistance,
+} from '../types';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 import trivia from '../constants/trivia.json';
@@ -9,15 +14,24 @@ interface ProgressStore {
   miles: number;
   checkpointCompletions: CheckpointCompletion[];
   triviaUnlocks: TriviaUnlock[];
+  dailyDistances: DailyDistance[];
   lastSyncDate: string | null;
   isSyncing: boolean;
+  // Dev/test override state
+  isTestOverride: boolean;
+  testOverrideBaseMiles: number | null;
 
   // Actions
   setMiles: (miles: number) => void;
+  setTestMiles: (miles: number) => void;
+  clearTestOverride: () => void;
   setCheckpointCompletions: (completions: CheckpointCompletion[]) => void;
   addCheckpointCompletion: (completion: CheckpointCompletion) => void;
   setTriviaUnlocks: (unlocks: TriviaUnlock[]) => void;
   addTriviaUnlock: (unlock: TriviaUnlock) => void;
+  addDailyDistance: (entry: DailyDistance) => void;
+  removeDailyDistance: (id: string) => void;
+  setDailyDistances: (entries: DailyDistance[]) => void;
   setLastSyncDate: (date: string) => void;
   setIsSyncing: (syncing: boolean) => void;
   resetProgress: () => void;
@@ -53,11 +67,25 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   miles: 0,
   checkpointCompletions: [],
   triviaUnlocks: [],
+  dailyDistances: [],
   lastSyncDate: null,
   isSyncing: false,
+  isTestOverride: false,
+  testOverrideBaseMiles: null,
 
   // Actions
   setMiles: miles => set({ miles }),
+  setTestMiles: miles =>
+    set(state => ({
+      miles,
+      isTestOverride: true,
+      testOverrideBaseMiles:
+        state.isTestOverride && typeof state.testOverrideBaseMiles === 'number'
+          ? state.testOverrideBaseMiles
+          : state.miles ?? 0,
+    })),
+  clearTestOverride: () =>
+    set({ isTestOverride: false, testOverrideBaseMiles: null }),
   setCheckpointCompletions: completions =>
     set({ checkpointCompletions: completions }),
 
@@ -73,6 +101,16 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       triviaUnlocks: [...state.triviaUnlocks, unlock],
     })),
 
+  addDailyDistance: entry =>
+    set(state => ({ dailyDistances: [entry, ...state.dailyDistances] })),
+
+  removeDailyDistance: id =>
+    set(state => ({
+      dailyDistances: state.dailyDistances.filter(d => d.id !== id),
+    })),
+
+  setDailyDistances: entries => set({ dailyDistances: entries }),
+
   setLastSyncDate: date => set({ lastSyncDate: date }),
 
   setIsSyncing: syncing => set({ isSyncing: syncing }),
@@ -82,8 +120,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       miles: 0,
       checkpointCompletions: [],
       triviaUnlocks: [],
+      dailyDistances: [],
       lastSyncDate: null,
       isSyncing: false,
+      isTestOverride: false,
+      testOverrideBaseMiles: null,
     }),
 
   // Selectors / derived values

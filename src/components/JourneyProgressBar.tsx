@@ -8,10 +8,12 @@ import { useProgressStore } from '../stores/progressStore';
 
 interface JourneyProgressBarProps {
   isLocked: boolean;
+  darkMode?: boolean;
 }
 
 export default function JourneyProgressBar({
   isLocked,
+  darkMode = false,
 }: JourneyProgressBarProps) {
   const theme = useTheme();
   const progressPercentage = useProgressStore(
@@ -39,25 +41,20 @@ export default function JourneyProgressBar({
   const firstName = (checkpoints[0] as any)?.name ?? '';
   const lastName = (checkpoints[checkpoints.length - 1] as any)?.name ?? '';
 
+  // Text style based on darkMode
+  const labelStyle = darkMode
+    ? typographyThemed(theme).captionInverted
+    : typographyThemed(theme).captionPrimary;
+
   return (
     <View style={styles.container}>
       <View style={styles.progressRow}>
         <View style={styles.progressLeft}>
           <View style={styles.progressLabelRow}>
-            <Text
-              style={[
-                typographyThemed(theme).captionPrimary,
-                styles.progressSideLabel,
-              ]}
-            >
+            <Text style={[labelStyle, styles.progressSideLabel]}>
               {firstName}
             </Text>
-            <Text
-              style={[
-                typographyThemed(theme).captionPrimary,
-                styles.progressSideLabel,
-              ]}
-            >
+            <Text style={[labelStyle, styles.progressSideLabel]}>
               {lastName}
             </Text>
           </View>
@@ -65,7 +62,11 @@ export default function JourneyProgressBar({
             <View
               style={[
                 styles.progressBarBackground,
-                { backgroundColor: theme.colors.pathInactive },
+                {
+                  backgroundColor: darkMode
+                    ? theme.colors.modalOverlay2
+                    : theme.colors.pathInactive,
+                },
               ]}
               onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
             >
@@ -92,6 +93,8 @@ export default function JourneyProgressBar({
               {
                 backgroundColor: isLocked
                   ? theme.colors.infoModalInactive
+                  : darkMode
+                  ? theme.colors.modalOverlay2
                   : theme.colors.checkpointTextBackground,
               },
             ]}

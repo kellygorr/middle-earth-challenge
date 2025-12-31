@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import Animated, {
+import {
   useSharedValue,
   withTiming,
   useAnimatedReaction,
@@ -8,16 +8,23 @@ import Animated, {
 import { mapBookMilesToPathProgress } from '../utils/pathProgress';
 import { motion } from '../styles/motion';
 
-export function useJourneyProgressAnimation(
+export function useGameProgressAnimation(
   miles: number | undefined,
+  enabled: boolean = true,
   extraDeps: any[] = [],
 ) {
-  const initialProgress = miles ? mapBookMilesToPathProgress(miles) : 0;
-  const journeyProgressValue = useSharedValue(initialProgress);
+  const initialProgress =
+    enabled && miles ? mapBookMilesToPathProgress(miles) : 0;
+  const gameProgressValue = useSharedValue(initialProgress);
   const [animatedProgress, setAnimatedProgress] = useState(initialProgress);
-  const prevAnimMilesRef = useRef<number>(miles || 0);
+  const prevAnimMilesRef = useRef<number>(enabled ? miles || 0 : 0);
 
   useEffect(() => {
+    if (!enabled) {
+      // Hide progress until enabled (e.g., after welcome + path reveal)
+      gameProgressValue.value = 0;
+      return;
+    }
     const currentMiles = miles || 0;
     const target = mapBookMilesToPathProgress(currentMiles);
     const delta = Math.abs(currentMiles - (prevAnimMilesRef.current || 0));
@@ -34,21 +41,21 @@ export function useJourneyProgressAnimation(
         ? motion.easing.standard
         : motion.easing.inOut;
 
-    journeyProgressValue.value = withTiming(target, {
+    gameProgressValue.value = withTiming(target, {
       duration: durationMs,
       easing: easingCurve,
     });
     prevAnimMilesRef.current = currentMiles;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [miles, journeyProgressValue, ...extraDeps]);
+  }, [miles, enabled, gameProgressValue, ...extraDeps]);
 
   useAnimatedReaction(
-    () => journeyProgressValue.value,
+    () => gameProgressValue.value,
     val => {
       runOnJS(setAnimatedProgress)(val);
     },
-    [journeyProgressValue],
+    [gameProgressValue],
   );
 
-  return { journeyProgressValue, animatedProgress } as const;
+  return { gameProgressValue, animatedProgress } as const;
 }

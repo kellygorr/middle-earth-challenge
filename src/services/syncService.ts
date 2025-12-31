@@ -2,7 +2,12 @@ import { database } from './database';
 import { fitnessService } from './fitnessService';
 import { useSaveStore } from '../stores/saveStore';
 import { useProgressStore } from '../stores/progressStore';
-import { getCurrentSegment, getSegmentProgress, JOURNEY_SEGMENTS, TOTAL_JOURNEY_MILES } from '../constants/journey';
+import {
+  getCurrentSegment,
+  getSegmentProgress,
+  JOURNEY_SEGMENTS,
+  TOTAL_JOURNEY_MILES,
+} from '../constants/journey';
 import checkpointsData from '../constants/checkpoints.json';
 
 /**
@@ -28,7 +33,7 @@ class SyncService {
   async sync(): Promise<SyncResult> {
     try {
       const { activeSave, journeyProgress } = useSaveStore.getState();
-      
+
       if (!activeSave || !journeyProgress) {
         return {
           success: false,
@@ -54,7 +59,7 @@ class SyncService {
       const oldTotalMiles = journeyProgress.totalMiles;
       const newTotalMiles = Math.min(
         oldTotalMiles + newDistance,
-        TOTAL_JOURNEY_MILES
+        TOTAL_JOURNEY_MILES,
       );
       const milesAdded = newTotalMiles - oldTotalMiles;
 
@@ -76,11 +81,15 @@ class SyncService {
         completedCheckpointNumber = journeyProgress.currentCheckpoint;
 
         // Calculate stats for completed checkpoint
-        const completedSegment = JOURNEY_SEGMENTS[completedCheckpointNumber - 1];
-        const saveStartDate = new Date(activeSave.startDate || activeSave.createdDate);
+        const completedSegment =
+          JOURNEY_SEGMENTS[completedCheckpointNumber - 1];
+        const saveStartDate = new Date(
+          activeSave.startDate || activeSave.createdDate,
+        );
         const completionDate = new Date();
         const daysToComplete = Math.ceil(
-          (completionDate.getTime() - saveStartDate.getTime()) / (1000 * 60 * 60 * 24)
+          (completionDate.getTime() - saveStartDate.getTime()) /
+            (1000 * 60 * 60 * 24),
         );
         const avgMilesPerDay = completedSegment.miles / daysToComplete;
 
@@ -122,15 +131,22 @@ class SyncService {
       });
 
       // Update daily distance
-      const today = new Date().toISOString().split('T')[0];
+      const ts = Date.now();
       await database.addDailyDistance({
-        saveId: activeSave.id,
-        date: today,
+        id: `sync_${ts}`,
+        saveId: 'default',
+        date: ts,
         miles: milesAdded,
       });
 
+      // Update miles snapshot
+      await database.setMilesSnapshot('default', newTotalMiles);
+
       // Check if journey completed
-      if (newTotalMiles >= TOTAL_JOURNEY_MILES && activeSave.status !== 'completed') {
+      if (
+        newTotalMiles >= TOTAL_JOURNEY_MILES &&
+        activeSave.status !== 'completed'
+      ) {
         await database.updateJourneyProgress(activeSave.id, {
           totalMiles: TOTAL_JOURNEY_MILES,
         });
@@ -176,7 +192,7 @@ class SyncService {
     try {
       // TODO: Implement with react-native-background-fetch
       // const BackgroundFetch = require('react-native-background-fetch');
-      // 
+      //
       // await BackgroundFetch.configure(
       //   {
       //     minimumFetchInterval: 15, // 15 minutes
@@ -206,7 +222,7 @@ class SyncService {
    * Useful during active workouts
    */
   startRealTimeSync(): void {
-    fitnessService.startRealTimeUpdates(async (distance) => {
+    fitnessService.startRealTimeUpdates(async distance => {
       console.log('Real-time distance update:', distance);
       // Trigger a sync
       await this.sync();

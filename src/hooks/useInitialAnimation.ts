@@ -20,7 +20,7 @@ interface UseInitialAnimationOptions {
 
 interface UseInitialAnimationReturn {
   // Path reveal progress (0 to 1)
-  initialPathProgress: SharedValue<number>;
+  initialBasePathProgress: SharedValue<number>;
 
   // Button opacity animated styles
   settingsEnterStyle: ReturnType<typeof useAnimatedStyle>;
@@ -36,7 +36,7 @@ export function useInitialAnimation({
   onInfoAnimationComplete,
 }: UseInitialAnimationOptions): UseInitialAnimationReturn {
   // Initial path reveal animation (0 to 1)
-  const initialPathProgress = useSharedValue(showWelcome ? 0 : 1);
+  const initialBasePathProgress = useSharedValue(showWelcome ? 0 : 1);
 
   // UI button opacities
   const settingsOpacity = useSharedValue(showWelcome ? 0 : 1);
@@ -91,7 +91,7 @@ export function useInitialAnimation({
       }
 
       // Path reveal animation
-      initialPathProgress.value = withDelay(
+      initialBasePathProgress.value = withDelay(
         motion.pathReveal.delay,
         withTiming(1, { duration: motion.pathReveal.duration }),
       );
@@ -146,11 +146,11 @@ export function useInitialAnimation({
       resetToOrigin();
 
       // Hide path so it can re-run on next dismissal
-      initialPathProgress.value = 0;
+      initialBasePathProgress.value = 0;
     }
   }, [
     showWelcome,
-    initialPathProgress,
+    initialBasePathProgress,
     settingsOpacity,
     labelsOpacity,
     infoOpacity,
@@ -164,7 +164,7 @@ export function useInitialAnimation({
   ]);
 
   return {
-    initialPathProgress,
+    initialBasePathProgress,
     settingsEnterStyle,
     labelsEnterStyle,
     infoEnterStyle,

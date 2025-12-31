@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { StyleSheet, View, Animated } from 'react-native';
 
 import MapScreen from './src/screens/MapScreen';
 import {
@@ -13,12 +13,45 @@ import {
 } from './src/components/Modals';
 import { useSettingsStore } from './src/stores/settingsStore';
 import { useInfoStore } from './src/stores/infoStore';
+import { useInitializationStore } from './src/stores/initializationStore';
 import { database } from './src/services/database';
+import { useProgressStore } from './src/stores/progressStore';
 
 const Stack = createStackNavigator();
 
+// Splash overlay - root level, fades out when loading completes
+function SplashOverlay({ loading }: { loading: boolean }) {
+  const [visible, setVisible] = useState(true);
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!loading) {
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 400,
+        delay: 200,
+        useNativeDriver: true,
+      }).start(() => setVisible(false));
+    }
+  }, [loading, opacity]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFillObject,
+        { backgroundColor: '#000000', opacity },
+      ]}
+    />
+  );
+}
+
 function App(): React.JSX.Element {
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const setPhase = useInitializationStore(state => state.setPhase);
+
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
   const loadSettings = useSettingsStore(state => state.loadSettings);
@@ -32,67 +65,85 @@ function App(): React.JSX.Element {
   );
   const isInfoVisible = useInfoStore(state => state.isModalVisible);
   const closeInfoModal = useInfoStore(state => state.closeModal);
+  const setDailyDistances = useProgressStore(state => state.setDailyDistances);
+  const setMiles = useProgressStore(state => state.setMiles);
 
   useEffect(() => {
     const initApp = async () => {
       try {
         await database.init();
         await loadSettings();
+        // Restore miles from snapshot; fallback to distances if snapshot missing
+        const saveId = 'default';
+        const snapshot = await database.getMilesSnapshot(saveId);
+        if (snapshot !== null) {
+          setMiles(snapshot);
+          const entries = await database.getDailyDistances(saveId);
+          setDailyDistances(entries);
+        } else {
+          const entries = await database.getDailyDistances(saveId);
+          setDailyDistances(entries);
+          const totalMiles = (entries || []).reduce(
+            (sum, e) => sum + (e?.miles ?? 0),
+            0,
+          );
+          setMiles(totalMiles);
+          await database.setMilesSnapshot(saveId, totalMiles);
+        }
       } catch (error) {
         console.error('Failed to initialize app:', error);
       } finally {
-        setIsInitialized(true);
+        // Loading complete
+        setLoading(false);
+        setPhase('ready');
       }
     };
 
     initApp();
-  }, [loadSettings]);
-
-  // Show loading screen while initializing
-  if (!isInitialized) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8B4513" />
-      </View>
-    );
-  }
+  }, [loadSettings, setDailyDistances, setMiles, setPhase]);
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <Stack.Navigator
-          screenOptions={{
-            headerShown: false,
-          }}
-        >
-          <Stack.Screen name="Map" component={MapScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
+      <View style={styles.container}>
+        <NavigationContainer>
+          <Stack.Navigator
+            screenOptions={{
+              headerShown: false,
+            }}
+          >
+            <Stack.Screen name="Map" component={MapScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
 
-      {/* Global Modals */}
-      <WelcomeModal
-        visible={showWelcome}
-        onDismiss={() => setShowWelcome(false)}
-      />
-      <SettingsModal
-        visible={showSettings}
-        onDismiss={() => setShowSettings(false)}
-      />
-      <ManualMilesModal
-        visible={showManualMilesModal}
-        onDismiss={() => setShowManualMilesModal(false)}
-      />
-      <InfoModal visible={isInfoVisible} onDismiss={closeInfoModal} />
+        {/* Global Modals */}
+        <WelcomeModal
+          visible={showWelcome}
+          onDismiss={() => {
+            setShowWelcome(false);
+            // Transition to revealing phase when welcome is dismissed
+            setPhase('revealing');
+          }}
+        />
+        <SettingsModal
+          visible={showSettings}
+          onDismiss={() => setShowSettings(false)}
+        />
+        <ManualMilesModal
+          visible={showManualMilesModal}
+          onDismiss={() => setShowManualMilesModal(false)}
+        />
+        <InfoModal visible={isInfoVisible} onDismiss={closeInfoModal} />
+
+        {/* Splash - rendered LAST, hides everything until loading completes */}
+        <SplashOverlay loading={loading} />
+      </View>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F4E8D0',
   },
 });
 

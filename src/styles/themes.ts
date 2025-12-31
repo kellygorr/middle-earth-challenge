@@ -3,6 +3,7 @@ export interface Theme {
   colors: {
     // Map styling
     mapBackground: string;
+    mapBackgroundInverted: string;
     mapDefaultColor: string;
 
     // Path colors
@@ -27,6 +28,7 @@ export interface Theme {
     primary: string;
     secondary: string;
     accent: string;
+    divider: string;
 
     // Text colors
     textPrimary: string;
@@ -37,6 +39,7 @@ export interface Theme {
     // Modal/Celebration colors
     modalBackground: string;
     modalOverlay: string;
+    modalOverlay2: string;
     celebrationAccent: string;
     modalHeaderText: string;
     modalCelebrationGold: string;
@@ -94,6 +97,7 @@ export const classicTheme: Theme = {
   colors: {
     // Map styling
     mapBackground: '#e6e2daff',
+    mapBackgroundInverted: '#000000',
     mapDefaultColor: '#231f20',
 
     // Path colors
@@ -116,6 +120,7 @@ export const classicTheme: Theme = {
     primary: '#6a4c34ff',
     secondary: '#A0826D',
     accent: '#6a4c34ff',
+    divider: 'rgba(0, 0, 0, 0.12)',
 
     // Text colors
     textPrimary: '#3f321fff',
@@ -126,6 +131,7 @@ export const classicTheme: Theme = {
     // Modal/Celebration colors
     modalBackground: '#e6e2daff',
     modalOverlay: 'rgba(53, 41, 28, 0.75)',
+    modalOverlay2: 'rgba(53, 41, 28, 0.45)',
     celebrationAccent: '#6a4c34ff',
     modalHeaderText: '#FFFFFF',
     modalCelebrationGold: 'rgba(120, 94, 10, 0.75)',
@@ -163,6 +169,7 @@ export const minimalistTheme: Theme = {
   colors: {
     // Map styling
     mapBackground: '#FFFFFF',
+    mapBackgroundInverted: '#000000',
     mapDefaultColor: '#231f20',
 
     // Path colors
@@ -185,6 +192,7 @@ export const minimalistTheme: Theme = {
     primary: '#D4AF37',
     secondary: '#546E7A',
     accent: '#2C3E50',
+    divider: 'rgba(0, 0, 0, 0.12)',
 
     // Text colors
     textPrimary: '#212121',
@@ -195,6 +203,7 @@ export const minimalistTheme: Theme = {
     // Modal/Celebration colors
     modalBackground: '#FFFFFF',
     modalOverlay: 'rgba(0, 0, 0, 0.75)',
+    modalOverlay2: 'rgba(0, 0, 0, 0.45)',
     celebrationAccent: '#D4AF37',
     modalHeaderText: '#FFFFFF',
     modalCelebrationGold: 'rgba(120, 94, 10, 0.75)',

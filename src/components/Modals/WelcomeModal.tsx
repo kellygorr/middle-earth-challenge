@@ -14,6 +14,8 @@ import { spacing } from '../../styles/global';
 import { useAnimatedModal } from '../../hooks/useAnimatedModal';
 import { motion } from '../../styles/motion';
 import Button from '../Buttons';
+import { useProgressStore } from '../../stores/progressStore';
+import JourneyProgressBar from '../JourneyProgressBar';
 
 interface WelcomeModalProps {
   visible: boolean;
@@ -25,6 +27,7 @@ export default function WelcomeModal({
   onDismiss,
 }: WelcomeModalProps) {
   const theme = useTheme();
+  const miles = useProgressStore(state => state.miles) || 0;
 
   const { internalVisible, animatedBackgroundStyle, animatedContentStyle } =
     useAnimatedModal(visible, {
@@ -77,10 +80,17 @@ export default function WelcomeModal({
                 1,235 miles from Bag End to Mount Doom
               </Text>
               <Button onPress={onDismiss} variant="brand" size="large">
-                Begin Journey
+                {miles > 0 ? 'Continue Journey' : 'Begin Journey'}
               </Button>
             </View>
           </Animated.View>
+          {miles > 0 && (
+            <Animated.View
+              style={[styles.bottomProgressContainer, animatedContentStyle]}
+            >
+              <JourneyProgressBar isLocked={false} darkMode />
+            </Animated.View>
+          )}
         </SafeAreaView>
       </Animated.View>
     </Modal>
@@ -115,5 +125,11 @@ const styles = StyleSheet.create({
   subtitle: {
     ...typography.subtitleLarge,
     marginBottom: spacing.xxl,
+  },
+  bottomProgressContainer: {
+    position: 'absolute',
+    bottom: spacing.xl,
+    left: spacing.xl,
+    right: spacing.xl,
   },
 });

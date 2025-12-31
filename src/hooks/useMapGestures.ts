@@ -5,6 +5,7 @@ import {
   useDerivedValue,
   withTiming,
   SharedValue,
+  runOnJS,
 } from 'react-native-reanimated';
 import { useEffect } from 'react';
 import { motion } from '../styles/motion';
@@ -20,6 +21,7 @@ interface UseMapGesturesOptions {
   mapHeight: number;
   screenWidth: number;
   screenHeight: number;
+  onMapInteraction?: () => void;
 }
 
 interface UseMapGesturesReturn {
@@ -52,6 +54,7 @@ export function useMapGestures({
   mapHeight,
   screenWidth: screenW,
   screenHeight: screenH,
+  onMapInteraction,
 }: UseMapGesturesOptions): UseMapGesturesReturn {
   // Transform shared values
   const scale = useSharedValue(1);
@@ -152,6 +155,11 @@ export function useMapGestures({
 
   // Pan gesture for dragging
   const panGesture = Gesture.Pan()
+    .onStart(() => {
+      if (onMapInteraction) {
+        runOnJS(onMapInteraction)();
+      }
+    })
     .onUpdate(e => {
       const newX = savedTranslateX.value + e.translationX;
       const newY = savedTranslateY.value + e.translationY;

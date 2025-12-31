@@ -20,7 +20,7 @@ import { useTheme } from '../../stores/settingsStore';
 import { useInfoStore } from '../../stores/infoStore';
 import { useProgressStore } from '../../stores/progressStore';
 import { typography, typographyThemed } from '../../styles/typography';
-import { spacing, borderRadius, shadows } from '../../styles/global';
+import { spacing, borderRadius, shadows, iconSizes } from '../../styles/global';
 import { useAnimatedModal } from '../../hooks/useAnimatedModal';
 import { motion } from '../../styles/motion';
 // TOTAL_JOURNEY_MILES not needed; journey progress computed via store selectors
@@ -261,18 +261,11 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                 ]}
               >
                 {/* Close button */}
-                <Pressable style={styles.closeButton} onPress={handleDismiss}>
-                  {({ pressed }) => (
-                    <CloseButton
-                      size={32}
-                      color={
-                        pressed
-                          ? theme.colors.buttonPressed
-                          : theme.colors.textPrimary
-                      }
-                    />
-                  )}
-                </Pressable>
+                <CloseButton
+                  style={styles.closeButton}
+                  size={iconSizes.medium}
+                  onPress={handleDismiss}
+                />
 
                 {/* Scrollable Content */}
                 <ScrollView

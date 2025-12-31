@@ -59,7 +59,7 @@ export interface CheckpointCompletion {
 export interface DailyDistance {
   id: string;
   saveId: string;
-  date: string; // YYYY-MM-DD
+  date: number; // Unix timestamp (ms)
   miles: number;
 }
 

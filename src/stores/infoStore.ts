@@ -22,6 +22,7 @@ interface InfoStore {
   hideInfo: () => void;
   openModal: () => void;
   closeModal: () => void;
+  clearStickyInfo: () => void;
   setShowStartupTooltip: (show: boolean) => void;
   setTooltipPosition: (pos: { top: number; left: number } | null) => void;
   setObserveMilesChanges: (observe: boolean) => void;
@@ -74,6 +75,19 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
 
   closeModal: () => {
     set({ isModalVisible: false });
+  },
+
+  clearStickyInfo: () => {
+    const { stickyUntilMilesChange } = get();
+    // Only clear if we're in sticky mode (previewing a non-active point)
+    if (stickyUntilMilesChange) {
+      set({
+        currentItem: null,
+        itemType: null,
+        stickyUntilMilesChange: false,
+        lastMilesAtSelection: null,
+      });
+    }
   },
 
   setShowStartupTooltip: show => set({ showStartupTooltip: show }),

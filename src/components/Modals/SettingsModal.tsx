@@ -7,7 +7,6 @@ import {
   Switch,
   ScrollView,
   TouchableWithoutFeedback,
-  Pressable,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -114,30 +113,16 @@ export default function SettingsModal({
             </Text>
 
             <Animated.View style={[styles.modalContainer, animatedCardStyle]}>
-              <Pressable style={styles.homeButton} onPress={handleHomePress}>
-                {({ pressed }) => (
-                  <HomeButton
-                    size={iconSizes.large}
-                    color={
-                      pressed
-                        ? theme.colors.buttonPressed
-                        : theme.colors.textPrimary
-                    }
-                  />
-                )}
-              </Pressable>
-              <Pressable style={styles.closeButton} onPress={onDismiss}>
-                {({ pressed }) => (
-                  <CloseButton
-                    size={32}
-                    color={
-                      pressed
-                        ? theme.colors.buttonPressed
-                        : theme.colors.textPrimary
-                    }
-                  />
-                )}
-              </Pressable>
+              <HomeButton
+                style={styles.homeButton}
+                size={iconSizes.large}
+                onPress={handleHomePress}
+              />
+              <CloseButton
+                style={styles.closeButton}
+                size={iconSizes.medium}
+                onPress={onDismiss}
+              />
               <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
@@ -198,7 +183,7 @@ export default function SettingsModal({
                     style={[
                       styles.settingRow,
                       styles.settingRowWithBorder,
-                      { borderBottomColor: theme.colors.textSecondary },
+                      { borderBottomColor: theme.colors.divider },
                     ]}
                   >
                     <Text
@@ -227,7 +212,7 @@ export default function SettingsModal({
                     style={[
                       styles.settingRow,
                       styles.settingRowWithBorder,
-                      { borderBottomColor: theme.colors.textSecondary },
+                      { borderBottomColor: theme.colors.divider },
                     ]}
                   >
                     <Text
@@ -287,7 +272,7 @@ export default function SettingsModal({
                     style={[
                       styles.settingRow,
                       styles.settingRowWithBorder,
-                      { borderBottomColor: theme.colors.textSecondary },
+                      { borderBottomColor: theme.colors.divider },
                     ]}
                   >
                     <Text
