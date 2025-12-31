@@ -1,7 +1,7 @@
 import type { ThemeName } from '../styles/themes';
 
-// Checkpoint/Trivia unified type
-export interface CheckpointType {
+// Point (Checkpoint/Trivia) unified type
+export interface PointType {
   id?: number | string; // Optional, can be derived from name
   type?: 'checkpoint' | 'trivia';
   name: string;
@@ -77,7 +77,7 @@ export interface UserSettings {
   labelSize: LabelSize;
   currentTheme: ThemeName;
   showTriviaMarkers: boolean;
-  showCheckpointLabels: boolean;
+  showPointLabels: boolean;
   colorizeMap: boolean;
   reducedMapTitles: boolean;
   devMode: boolean;

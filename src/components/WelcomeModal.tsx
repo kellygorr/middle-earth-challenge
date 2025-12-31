@@ -6,9 +6,13 @@ import {
   Modal,
   TouchableWithoutFeedback,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../stores/settingsStore';
 import { typography, typographyThemed } from '../styles/typography';
 import { spacing } from '../styles/global';
+import { useAnimatedModal } from '../hooks/useAnimatedModal';
+import { motion } from '../styles/motion';
 import Button from './Buttons';
 
 interface WelcomeModalProps {
@@ -22,22 +26,39 @@ export default function WelcomeModal({
 }: WelcomeModalProps) {
   const theme = useTheme();
 
+  const { internalVisible, animatedBackgroundStyle, animatedContentStyle } =
+    useAnimatedModal(visible, {
+      translateDistance: 0, // fade-only for welcome
+      entranceDelay: motion.modal.entranceDelay,
+      entranceDuration: motion.modal.entranceDuration,
+      exitDuration: motion.modal.exitDuration,
+      easing: motion.easing.standard,
+    });
+
   return (
     <Modal
-      visible={visible}
+      visible={internalVisible}
       transparent={true}
-      animationType="fade"
+      animationType="none"
       onRequestClose={onDismiss}
       statusBarTranslucent={true}
     >
-      <TouchableWithoutFeedback onPress={onDismiss}>
-        <View
-          style={[
-            styles.container,
-            { backgroundColor: theme.colors.modalOverlay },
-          ]}
+      <Animated.View
+        style={[
+          styles.overlay,
+          { backgroundColor: theme.colors.modalOverlay },
+          animatedBackgroundStyle,
+        ]}
+      >
+        <TouchableWithoutFeedback onPress={onDismiss}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
+        <SafeAreaView
+          style={styles.safeArea}
+          edges={['top', 'bottom']}
+          pointerEvents="box-none"
         >
-          <TouchableWithoutFeedback>
+          <Animated.View style={[styles.contentWrapper, animatedContentStyle]}>
             <View style={styles.welcomeContainer}>
               <Text
                 style={[
@@ -59,17 +80,28 @@ export default function WelcomeModal({
                 Begin Journey
               </Button>
             </View>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+          </Animated.View>
+        </SafeAreaView>
+      </Animated.View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  overlay: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  safeArea: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contentWrapper: {
+    width: '100%',
+    maxWidth: 500,
     alignItems: 'center',
   },
   welcomeContainer: {

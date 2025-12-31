@@ -1,9 +1,11 @@
 import { create } from 'zustand';
-import { CheckpointType } from '../types';
+import { PointType } from '../types';
+import { mapBookMilesToPathProgress } from '../utils/pathProgress';
+import { useProgressStore } from './progressStore';
 
 interface InfoStore {
   // State
-  currentItem: CheckpointType | null;
+  currentItem: PointType | null;
   isModalVisible: boolean;
   itemType: 'checkpoint' | 'trivia' | null;
   // Info button + tooltip state
@@ -13,7 +15,7 @@ interface InfoStore {
   observeMilesChanges: boolean;
 
   // Actions
-  showInfo: (item: CheckpointType, type: 'checkpoint' | 'trivia') => void;
+  showInfo: (item: PointType, type: 'checkpoint' | 'trivia') => void;
   hideInfo: () => void;
   openModal: () => void;
   closeModal: () => void;
@@ -22,6 +24,8 @@ interface InfoStore {
   setTooltipPosition: (pos: { top: number; left: number } | null) => void;
   setObserveMilesChanges: (observe: boolean) => void;
   resetInfoUI: () => void;
+  // Derived selectors
+  getShouldShowInfoButton: (animatedProgress: number) => boolean;
 }
 
 export const useInfoStore = create<InfoStore>((set, get) => ({
@@ -71,4 +75,22 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       tooltipPosition: null,
       observeMilesChanges: false,
     }),
+  // Derived selectors
+  getShouldShowInfoButton: (animatedProgress: number) => {
+    const { currentItem, itemType } = get();
+    if (!currentItem) return false;
+    const miles = useProgressStore.getState().miles || 0;
+    const isCheckpointItem =
+      itemType === 'checkpoint' && 'CUMULATIVE_MILES' in (currentItem || {});
+    const isTriviaItem = itemType === 'trivia';
+    const eps = 1e-6;
+
+    if (isCheckpointItem) {
+      const m = (currentItem as any).CUMULATIVE_MILES ?? 0;
+      const threshold = mapBookMilesToPathProgress(m);
+      const isExact = Math.abs(miles - m) < eps;
+      return isExact && animatedProgress + eps >= threshold;
+    }
+    return isTriviaItem;
+  },
 }));

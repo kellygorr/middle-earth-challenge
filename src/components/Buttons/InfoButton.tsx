@@ -3,10 +3,10 @@ import { Pressable } from 'react-native';
 import Button from './Button';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useInfoStore } from '../../stores/infoStore';
-import { CheckpointType } from '../../types';
+import { PointType } from '../../types';
 
 interface InfoButtonProps {
-  item: CheckpointType;
+  item: PointType;
   type: 'checkpoint' | 'trivia';
   checkpointIndex?: number; // For checkpoint numbering
 }

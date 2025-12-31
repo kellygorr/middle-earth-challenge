@@ -96,7 +96,7 @@ class Database {
       labelSize: row.label_size as LabelSize,
       currentTheme: row.current_theme as ThemeName,
       showTriviaMarkers: row.show_trivia_markers === 1,
-      showCheckpointLabels: row.show_checkpoint_labels === 1,
+      showPointLabels: row.show_checkpoint_labels === 1,
       colorizeMap: row.colorize_map === 1,
       reducedMapTitles: row.reduced_map_titles === 1,
       devMode:
@@ -126,9 +126,9 @@ class Database {
       fields.push('show_trivia_markers = ?');
       values.push(updates.showTriviaMarkers ? 1 : 0);
     }
-    if (updates.showCheckpointLabels !== undefined) {
+    if (updates.showPointLabels !== undefined) {
       fields.push('show_checkpoint_labels = ?');
-      values.push(updates.showCheckpointLabels ? 1 : 0);
+      values.push(updates.showPointLabels ? 1 : 0);
     }
     if (updates.colorizeMap !== undefined) {
       fields.push('colorize_map = ?');

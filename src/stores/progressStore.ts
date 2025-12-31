@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CheckpointCompletion, TriviaUnlock } from '../types';
+import { CheckpointCompletion, TriviaUnlock, PointType } from '../types';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 import trivia from '../constants/trivia.json';
@@ -26,6 +26,8 @@ interface ProgressStore {
   getProgressMiles: () => number;
   getProgressPercentage: () => number;
   getCheckpointIndexForCumulativeMiles: (cumulativeMiles: number) => number;
+  // Generic point alias (checkpoint or trivia)
+  getIndexForPoint: (item: PointType | null | undefined) => number;
   getCheckpointIndexForMiles: () => number;
   getLatestCompletedCheckpointNumber: () => number; // 1-based
   getCheckpointProgressFor: (checkpointIndex: number) => {
@@ -41,6 +43,13 @@ interface ProgressStore {
   getSegmentTriviaForCheckpointIndex: (checkpointIndex: number) => any[];
   isLockedCheckpoint: (targetMiles: number) => boolean;
   shouldShowCheckpointCelebration: (checkpointIndex: number) => boolean;
+  // New selectors
+  getCurrentCheckpoint: () => PointType | null;
+  getCurrentTrivia: () => PointType | null;
+  getActiveInfoItem: () => {
+    item: PointType;
+    type: 'checkpoint' | 'trivia';
+  } | null;
 }
 
 export const useProgressStore = create<ProgressStore>((set, get) => ({
@@ -96,6 +105,17 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       cp => (cp?.CUMULATIVE_MILES ?? -Infinity) === cumulativeMiles,
     );
     return idx >= 0 ? idx : 0;
+  },
+
+  // Generic point index lookup (checkpoint or trivia, by CUMULATIVE_MILES)
+  getIndexForPoint: item => {
+    if (!item) return -1;
+    const cm = Number((item as any)?.CUMULATIVE_MILES ?? NaN);
+    if (!Number.isFinite(cm)) return -1;
+    const idx = (checkpoints as any[]).findIndex(
+      cp => (cp?.CUMULATIVE_MILES ?? -Infinity) === cm,
+    );
+    return idx >= 0 ? idx : -1;
   },
 
   getCheckpointIndexForMiles: () => {
@@ -193,5 +213,44 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   isLockedCheckpoint: targetMiles => {
     const miles = get().miles ?? 0;
     return miles < (targetMiles ?? 0);
+  },
+
+  // New selectors
+  getCurrentCheckpoint: () => {
+    const cps = checkpoints as any[];
+    const miles = get().miles ?? 0;
+    const idx = get().getCheckpointIndexForMiles();
+    if (idx >= 0) return (cps[idx] as PointType) ?? null;
+    if (miles === 0) {
+      const startIdx = cps.findIndex(cp => !!cp?.isStart);
+      return startIdx >= 0 ? (cps[startIdx] as PointType) ?? null : null;
+    }
+    return null;
+  },
+
+  getCurrentTrivia: () => {
+    const miles = get().miles ?? 0;
+    const eps = 1e-6;
+    const items = trivia as any[];
+    for (const t of items) {
+      const activationMiles = Number(t?.CUMULATIVE_MILES ?? -Infinity);
+      if (Math.abs(miles - activationMiles) < eps) {
+        return (t as PointType) ?? null;
+      }
+    }
+    return null;
+  },
+
+  getActiveInfoItem: () => {
+    const currentTrivia = get().getCurrentTrivia();
+    const exactlyOnCheckpoint = get().isExactlyOnCheckpoint() !== -1;
+    if (currentTrivia && !exactlyOnCheckpoint) {
+      return { item: currentTrivia, type: 'trivia' };
+    }
+    const currentCheckpoint = get().getCurrentCheckpoint();
+    if (currentCheckpoint) {
+      return { item: currentCheckpoint, type: 'checkpoint' };
+    }
+    return null;
   },
 }));

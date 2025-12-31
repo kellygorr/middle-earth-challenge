@@ -10,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 
-interface CheckpointProps {
+interface PointProps {
   x: number;
   y: number;
   name: string;
@@ -22,14 +22,14 @@ interface CheckpointProps {
   onPress?: () => void;
 }
 
-function Checkpoint({
+function Point({
   name,
   isActive,
   showLabel,
   labelPosition = 'right',
   type = 'checkpoint',
   onPress,
-}: CheckpointProps) {
+}: PointProps) {
   const theme = useTheme();
   const labelSize = useSettingsStore(state => state.labelSize);
 
@@ -73,7 +73,7 @@ function Checkpoint({
       ]}
       pointerEvents="box-none"
     >
-      {/* Checkpoint circles - will be wrapped with animation later */}
+      {/* Point circles - will be wrapped with animation later */}
       <TouchableOpacity
         style={styles.circleContainer}
         onPress={onPress}
@@ -121,7 +121,7 @@ function Checkpoint({
   );
 }
 
-export default memo(Checkpoint);
+export default memo(Point);
 
 const styles = StyleSheet.create({
   container: {

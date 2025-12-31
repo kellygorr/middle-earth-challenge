@@ -15,7 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
-import { typography, typographyThemed } from '../styles/typography';
+import { typographyThemed } from '../styles/typography';
 import { spacing, iconSizes, shadows } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
@@ -98,12 +98,7 @@ export default function SettingsModal({
           <View style={StyleSheet.absoluteFill} />
         </TouchableWithoutFeedback>
         <SafeAreaView
-          style={{
-            flex: 1,
-            width: '100%',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
+          style={styles.safeArea}
           edges={['top', 'bottom']}
           pointerEvents="box-none"
         >
@@ -200,10 +195,17 @@ export default function SettingsModal({
 
                   {/* Label Size */}
                   <View
-                    style={[styles.settingRow, styles.settingRowWithBorder]}
+                    style={[
+                      styles.settingRow,
+                      styles.settingRowWithBorder,
+                      { borderBottomColor: theme.colors.textSecondary },
+                    ]}
                   >
                     <Text
-                      style={[typographyThemed(theme).bodyPrimary, { flex: 1 }]}
+                      style={[
+                        typographyThemed(theme).bodyPrimary,
+                        styles.flex1,
+                      ]}
                     >
                       Large labels
                     </Text>
@@ -222,12 +224,16 @@ export default function SettingsModal({
 
                   {/* Show Trivia Markers */}
                   <View
-                    style={[styles.settingRow, styles.settingRowWithBorder]}
+                    style={[
+                      styles.settingRow,
+                      styles.settingRowWithBorder,
+                      { borderBottomColor: theme.colors.textSecondary },
+                    ]}
                   >
                     <Text
                       style={[
-                        typography.body,
-                        { color: theme.colors.textPrimary, flex: 1 },
+                        typographyThemed(theme).bodyPrimary,
+                        styles.flex1,
                       ]}
                     >
                       Trivia markers
@@ -246,7 +252,10 @@ export default function SettingsModal({
                   {/* Developer Mode */}
                   <View style={styles.settingRow}>
                     <Text
-                      style={[typographyThemed(theme).bodyPrimary, { flex: 1 }]}
+                      style={[
+                        typographyThemed(theme).bodyPrimary,
+                        styles.flex1,
+                      ]}
                     >
                       Developer mode
                     </Text>
@@ -275,10 +284,17 @@ export default function SettingsModal({
 
                   {/* Map Colors */}
                   <View
-                    style={[styles.settingRow, styles.settingRowWithBorder]}
+                    style={[
+                      styles.settingRow,
+                      styles.settingRowWithBorder,
+                      { borderBottomColor: theme.colors.textSecondary },
+                    ]}
                   >
                     <Text
-                      style={[typographyThemed(theme).bodyPrimary, { flex: 1 }]}
+                      style={[
+                        typographyThemed(theme).bodyPrimary,
+                        styles.flex1,
+                      ]}
                     >
                       Map colors
                     </Text>
@@ -296,7 +312,10 @@ export default function SettingsModal({
                   {/* Reduced Map Titles */}
                   <View style={styles.settingRow}>
                     <Text
-                      style={[typographyThemed(theme).bodyPrimary, { flex: 1 }]}
+                      style={[
+                        typographyThemed(theme).bodyPrimary,
+                        styles.flex1,
+                      ]}
                     >
                       Reduced map titles
                     </Text>
@@ -326,6 +345,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,
+  },
+  safeArea: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   contentWrapper: {
     width: '100%',
@@ -381,6 +406,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   themeButtonWrapper: {
+    flex: 1,
+  },
+  flex1: {
     flex: 1,
   },
   settingRow: {

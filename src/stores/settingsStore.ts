@@ -6,15 +6,17 @@ import { database } from '../services/database';
 interface SettingsStore extends UserSettings {
   showWelcome: boolean;
   isLoaded: boolean;
+  showSettings: boolean;
   // Actions
   setLabelSize: (size: LabelSize) => void;
   setTheme: (theme: ThemeName) => void;
   setShowTriviaMarkers: (show: boolean) => void;
-  setShowCheckpointLabels: (show: boolean) => void;
+  setShowPointLabels: (show: boolean) => void;
   setColorizeMap: (colorize: boolean) => void;
   setShowWelcome: (show: boolean) => void;
   setReducedMapTitles: (reduced: boolean) => void;
   setDevMode: (enabled: boolean) => void;
+  setShowSettings: (show: boolean) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -24,12 +26,13 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   labelSize: 'regular',
   currentTheme: 'classic',
   showTriviaMarkers: true,
-  showCheckpointLabels: true,
+  showPointLabels: true,
   colorizeMap: false,
   showWelcome: true,
   reducedMapTitles: true,
   devMode: true,
   isLoaded: false,
+  showSettings: false,
 
   // Actions - each setter also persists to database
   setLabelSize: size => {
@@ -47,9 +50,9 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     database.updateUserSettings({ showTriviaMarkers: show });
   },
 
-  setShowCheckpointLabels: show => {
-    set({ showCheckpointLabels: show });
-    database.updateUserSettings({ showCheckpointLabels: show });
+  setShowPointLabels: show => {
+    set({ showPointLabels: show });
+    database.updateUserSettings({ showPointLabels: show });
   },
 
   setColorizeMap: colorize => {
@@ -58,6 +61,8 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   },
 
   setShowWelcome: show => set({ showWelcome: show }), // Not persisted - always shows on load
+
+  setShowSettings: show => set({ showSettings: show }), // UI state only; not persisted
 
   setReducedMapTitles: reduced => {
     set({ reducedMapTitles: reduced });
@@ -77,7 +82,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
         labelSize: settings.labelSize,
         currentTheme: settings.currentTheme,
         showTriviaMarkers: settings.showTriviaMarkers,
-        showCheckpointLabels: settings.showCheckpointLabels,
+        showPointLabels: settings.showPointLabels,
         colorizeMap: settings.colorizeMap,
         reducedMapTitles: settings.reducedMapTitles,
         devMode:
