@@ -40,7 +40,6 @@ interface ProgressStore {
   getRemainingMilesTo: (targetMiles: number) => number;
   isExactlyOnCheckpoint: () => number; // returns exact index or -1
   isLatestCheckpoint: (checkpointIndex: number) => boolean;
-  getSegmentTriviaForCheckpointIndex: (checkpointIndex: number) => any[];
   isLockedCheckpoint: (targetMiles: number) => boolean;
   shouldShowCheckpointCelebration: (checkpointIndex: number) => boolean;
   // New selectors
@@ -50,6 +49,11 @@ interface ProgressStore {
     item: PointType;
     type: 'checkpoint' | 'trivia';
   } | null;
+
+  getPointFromIndex: (
+    index: number,
+    type?: 'checkpoint' | 'trivia',
+  ) => PointType | null;
 }
 
 export const useProgressStore = create<ProgressStore>((set, get) => ({
@@ -192,30 +196,21 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     return checkpointIndex === latestIdx && latestIdx >= 1;
   },
 
-  getSegmentTriviaForCheckpointIndex: checkpointIndex => {
-    const cps = checkpoints as any[];
-    const currentCM = cps[checkpointIndex]?.CUMULATIVE_MILES ?? 0;
-    const prevCM =
-      checkpointIndex > 0
-        ? cps[checkpointIndex - 1]?.CUMULATIVE_MILES ?? 0
-        : -Infinity;
-    const items = (trivia as any[]).filter(t => {
-      const mile = Number(t?.CUMULATIVE_MILES ?? -Infinity);
-      return mile > prevCM && mile <= currentCM;
-    });
-    items.sort(
-      (a, b) =>
-        Number(a?.CUMULATIVE_MILES ?? 0) - Number(b?.CUMULATIVE_MILES ?? 0),
-    );
-    return items;
-  },
-
   isLockedCheckpoint: targetMiles => {
     const miles = get().miles ?? 0;
     return miles < (targetMiles ?? 0);
   },
 
   // New selectors
+
+  getPointFromIndex: (index, type = 'checkpoint') => {
+    if (typeof index !== 'number' || index < 0) return null;
+    const src = type === 'trivia' ? (trivia as any[]) : (checkpoints as any[]);
+    if (index >= src.length) return null;
+    const item = src[index] as PointType;
+    return item ? ({ ...(item as PointType), index } as PointType) : null;
+  },
+
   getCurrentCheckpoint: () => {
     const cps = checkpoints as any[];
     const miles = get().miles ?? 0;
@@ -245,11 +240,29 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     const currentTrivia = get().getCurrentTrivia();
     const exactlyOnCheckpoint = get().isExactlyOnCheckpoint() !== -1;
     if (currentTrivia && !exactlyOnCheckpoint) {
-      return { item: currentTrivia, type: 'trivia' };
+      const items = trivia as any[];
+      const tMiles = currentTrivia?.CUMULATIVE_MILES ?? -Infinity;
+      const tIdx = items.findIndex(
+        it => (it?.CUMULATIVE_MILES ?? -Infinity) === tMiles,
+      );
+      const enriched = {
+        ...(currentTrivia as PointType),
+        index: tIdx >= 0 ? tIdx : undefined,
+      } as PointType;
+      return { item: enriched, type: 'trivia' };
     }
     const currentCheckpoint = get().getCurrentCheckpoint();
     if (currentCheckpoint) {
-      return { item: currentCheckpoint, type: 'checkpoint' };
+      const cps = checkpoints as any[];
+      const cMiles = currentCheckpoint?.CUMULATIVE_MILES ?? -Infinity;
+      const cIdx = cps.findIndex(
+        it => (it?.CUMULATIVE_MILES ?? -Infinity) === cMiles,
+      );
+      const enriched = {
+        ...(currentCheckpoint as PointType),
+        index: cIdx >= 0 ? cIdx : undefined,
+      } as PointType;
+      return { item: enriched, type: 'checkpoint' };
     }
     return null;
   },

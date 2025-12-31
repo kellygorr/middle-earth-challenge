@@ -27,6 +27,7 @@ import { motion } from '../styles/motion';
 import CelebrationBorder from './CelebrationBorder';
 import { CloseButton } from './ButtonIcons';
 import JourneyProgressBar from './JourneyProgressBar';
+// PointType import not needed here after store-based lookups
 
 // Centralized timings and flags
 const CELEBRATION_MAX_MS = motion.checkpointCelebration.maxRunMs;
@@ -39,7 +40,7 @@ interface InfoModalProps {
 export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   const theme = useTheme();
   const { currentItem, itemType } = useInfoStore();
-  const { checkpointCompletions, miles } = useProgressStore();
+  const { checkpointCompletions } = useProgressStore();
   // Locked checkpoint mode: show limited info when tapping a future checkpoint
   const isLockedCheckpoint =
     itemType === 'checkpoint' &&
@@ -47,7 +48,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     'CUMULATIVE_MILES' in currentItem &&
     useProgressStore
       .getState()
-      .isLockedCheckpoint((currentItem as any).CUMULATIVE_MILES || 0);
+      .isLockedCheckpoint(currentItem.CUMULATIVE_MILES || 0);
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const safeHeight = Math.max(0, windowHeight - insets.top - insets.bottom);
@@ -72,24 +73,19 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   }, []);
 
   // Use store selectors for checkpoint indexes and progress
-  const getCheckpointIndexForCumulativeMiles = useProgressStore(
-    state => state.getCheckpointIndexForCumulativeMiles,
-  );
   const getLatestCompletedCheckpointNumber = useProgressStore(
     state => state.getLatestCompletedCheckpointNumber,
-  );
-  const getCheckpointProgressFor = useProgressStore(
-    state => state.getCheckpointProgressFor,
   );
   const getRemainingMilesTo = useProgressStore(
     state => state.getRemainingMilesTo,
   );
-  const getSegmentTriviaForCheckpointIndex = useProgressStore(
-    state => state.getSegmentTriviaForCheckpointIndex,
-  );
   const shouldShowCheckpointCelebration = useProgressStore(
     state => state.shouldShowCheckpointCelebration,
   );
+  const getPointFromIndex = useProgressStore(state => state.getPointFromIndex);
+  // const getCurrentCheckpoint = useProgressStore(
+  //   state => state.getCurrentCheckpoint,
+  // );
 
   // Celebration will run when the current checkpoint equals the latest completed (excluding the first)
 
@@ -148,11 +144,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
 
     // Celebrate only the user's latest completed checkpoint,
     // excluding the first checkpoint (no celebration for new game).
-    const currentIdx = isCheckpoint
-      ? getCheckpointIndexForCumulativeMiles(
-          (currentItem as any).CUMULATIVE_MILES,
-        )
-      : -1;
+    const currentIdx = isCheckpoint ? currentItem.index ?? -1 : -1;
     const isLatestCheckpoint =
       isCheckpoint && shouldShowCheckpointCelebration(currentIdx);
 
@@ -189,7 +181,6 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     itemType,
     currentItem,
     checkpointCompletions,
-    getCheckpointIndexForCumulativeMiles,
     shouldShowCheckpointCelebration,
     reduceMotionEnabled,
     getLatestCompletedCheckpointNumber,
@@ -198,11 +189,6 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   if (!currentItem || !itemType) {
     return null;
   }
-
-  // Checkpoint progress moved to store selector; Journey progress handled by JourneyProgressBar
-
-  // Trivia between previous and current checkpoint (inclusive of current)
-  // Segment trivia retrieval moved to progressStore
 
   return (
     <>
@@ -251,13 +237,17 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   styles.title,
                 ]}
               >
-                {itemType === 'checkpoint'
-                  ? `Checkpoint #${
-                      getCheckpointIndexForCumulativeMiles(
-                        (currentItem as any).CUMULATIVE_MILES,
-                      ) + 1
-                    }`
-                  : currentItem.name}
+                {(() => {
+                  const idx = currentItem.index;
+                  const n =
+                    typeof idx === 'number' && idx >= 0 ? idx + 1 : undefined;
+                  if (itemType === 'checkpoint') {
+                    return typeof n === 'number'
+                      ? `Checkpoint #${n}`
+                      : 'Checkpoint';
+                  }
+                  return typeof n === 'number' ? `Trivia #${n}` : 'Trivia';
+                })()}
               </Text>
 
               <Animated.View
@@ -344,216 +334,166 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                     </View>
                   )}
 
-                  {/* Miles marker for trivia */}
-                  {itemType === 'trivia' &&
-                    'CUMULATIVE_MILES' in currentItem && (
-                      <View style={styles.milesContainer}>
-                        <Text
-                          style={[typographyThemed(theme).captionSecondary]}
-                        >
-                          {currentItem.CUMULATIVE_MILES} miles
-                        </Text>
-                      </View>
-                    )}
-                  {/* Previous trivia (under description/image) */}
-                  {itemType === 'checkpoint' &&
-                    (() => {
-                      // Show previous trivia only after this checkpoint is completed/reached
-                      const isCompleted =
-                        'CUMULATIVE_MILES' in currentItem &&
-                        (miles || 0) >= (currentItem.CUMULATIVE_MILES || 0);
-                      if (!isCompleted) return null;
-                      const segmentTrivia = getSegmentTriviaForCheckpointIndex(
-                        getCheckpointIndexForCumulativeMiles(
-                          (currentItem as any).CUMULATIVE_MILES,
-                        ),
-                      );
-                      return segmentTrivia.length ? (
-                        <View style={styles.triviaSection}>
-                          <Text
-                            style={[
-                              typographyThemed(theme).captionPrimary,
-                              styles.triviaTitle,
-                            ]}
-                          >
-                            Trivia
-                          </Text>
-                          <View style={styles.triviaList}>
-                            {segmentTrivia.map(t => (
-                              <View key={t.name} style={styles.triviaItemRow}>
-                                <Text
-                                  style={[
-                                    typographyThemed(theme).bodyPrimary,
-                                    styles.triviaItemName,
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  {t.name}
-                                </Text>
-                                {'CUMULATIVE_MILES' in t && (
-                                  <Text
-                                    style={[
-                                      typographyThemed(theme).captionSecondary,
-                                      styles.triviaItemMile,
-                                    ]}
-                                  >
-                                    {t.CUMULATIVE_MILES} miles
-                                  </Text>
-                                )}
-                              </View>
-                            ))}
-                          </View>
-                        </View>
-                      ) : null;
-                    })()}
+                  {/* Previous trivia list removed during cleanup */}
                 </ScrollView>
 
                 {/* Miles section */}
-                {itemType === 'checkpoint' &&
-                  (() => {
-                    const currentIdx = getCheckpointIndexForCumulativeMiles(
-                      (currentItem as any).CUMULATIVE_MILES,
-                    );
-                    const cp = getCheckpointProgressFor(currentIdx);
-                    if (typeof cp.spanMiles !== 'number') return null;
-                    const showLeft =
-                      typeof cp.currentCumulativeMiles === 'number' &&
-                      cp.currentCumulativeMiles > 0;
-                    const targetMiles = (currentItem as any)
-                      .CUMULATIVE_MILES as number;
-                    const remaining = getRemainingMilesTo(targetMiles);
-                    return (
-                      <View style={styles.milesToNextSection}>
+                {(() => {
+                  const isCheckpointView = itemType === 'checkpoint';
+                  const milesVal = currentItem.CUMULATIVE_MILES as number;
+                  const index = currentItem.index ?? -1;
+                  if (index < 0) return null;
+                  const nextCheckpoint = getPointFromIndex(
+                    index + 1,
+                    'checkpoint',
+                  );
+                  const nextCheckpointName = nextCheckpoint?.name ?? null;
+                  // Keep lookup for potential future use; no longer needed for miles-to-next
+                  // const currentCheckpoint = getCurrentCheckpoint();
+                  const checkpointMiles = milesVal;
+                  const leftColumn =
+                    Number.isFinite(checkpointMiles) && checkpointMiles > 0;
+                  const nextCheckpointMiles = ((): number | null => {
+                    const m = Number(nextCheckpoint?.CUMULATIVE_MILES ?? NaN);
+                    return Number.isFinite(m) ? m : null;
+                  })();
+                  const milesToNextCheckpoint = nextCheckpointMiles
+                    ? Math.max(1, nextCheckpointMiles - checkpointMiles)
+                    : null;
+
+                  if (milesToNextCheckpoint === null) return null;
+                  const remaining =
+                    !isCheckpointView && nextCheckpointMiles !== null
+                      ? getRemainingMilesTo(nextCheckpointMiles)
+                      : getRemainingMilesTo(milesVal);
+                  return (
+                    <View style={styles.milesToNextSection}>
+                      <View
+                        style={[styles.milesTwoColRow, styles.milesTitleRow]}
+                      >
                         <View
-                          style={[styles.milesTwoColRow, styles.milesTitleRow]}
+                          style={styles.milesCol}
+                          pointerEvents={leftColumn ? 'auto' : 'none'}
+                        >
+                          <Text
+                            style={[
+                              typographyThemed(theme).captionPrimaryBold,
+                              styles.milesToNextTitle,
+                              isCheckpointView && isLockedCheckpoint
+                                ? { color: theme.colors.infoModalInactive }
+                                : null,
+                              !leftColumn ? styles.hidden : null,
+                            ]}
+                          >
+                            Checkpoint
+                          </Text>
+                        </View>
+                        <View
+                          style={[styles.milesCol, { marginLeft: spacing.md }]}
+                        >
+                          <Text
+                            style={[
+                              typographyThemed(theme).captionPrimaryBold,
+                              styles.milesToNextTitle,
+                              isCheckpointView && isLockedCheckpoint
+                                ? { color: theme.colors.infoModalInactive }
+                                : null,
+                            ]}
+                          >
+                            {isCheckpointView && isLockedCheckpoint
+                              ? 'Remaining'
+                              : nextCheckpointName || 'Next checkpoint'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View
+                        style={[
+                          styles.milesTwoColRow,
+                          { marginTop: spacing.xs },
+                        ]}
+                      >
+                        <View
+                          style={styles.milesCol}
+                          pointerEvents={leftColumn ? 'auto' : 'none'}
                         >
                           <View
-                            style={styles.milesCol}
-                            pointerEvents={showLeft ? 'auto' : 'none'}
-                          >
-                            <Text
-                              style={[
-                                typographyThemed(theme).captionPrimaryBold,
-                                styles.milesToNextTitle,
-                                !showLeft ? styles.hidden : null,
-                              ]}
-                            >
-                              Checkpoint
-                            </Text>
-                          </View>
-                          <View
                             style={[
-                              styles.milesCol,
-                              { marginLeft: spacing.md },
+                              styles.milesToNextPill,
+                              {
+                                backgroundColor:
+                                  isCheckpointView && isLockedCheckpoint
+                                    ? theme.colors.infoModalInactive
+                                    : theme.colors.checkpointTextBackground,
+                              },
+                              !leftColumn ? styles.hidden : null,
                             ]}
                           >
                             <Text
                               style={[
-                                typographyThemed(theme).captionPrimaryBold,
-                                styles.milesToNextTitle,
-                                isLockedCheckpoint
-                                  ? { color: theme.colors.infoModalInactive }
-                                  : null,
+                                typography.titleLarge,
+                                styles.milesToNextValue,
+                                { color: theme.colors.checkpointLabel },
                               ]}
                             >
-                              {isLockedCheckpoint
-                                ? 'Remaining'
-                                : 'Next checkpoint'}
+                              {checkpointMiles}
+                              <Text
+                                style={[
+                                  styles.milesSuffix,
+                                  { color: theme.colors.checkpointLabel },
+                                ]}
+                              >
+                                miles
+                              </Text>
                             </Text>
                           </View>
                         </View>
-
                         <View
-                          style={[
-                            styles.milesTwoColRow,
-                            { marginTop: spacing.xs },
-                          ]}
+                          style={[styles.milesCol, { marginLeft: spacing.md }]}
                         >
                           <View
-                            style={styles.milesCol}
-                            pointerEvents={showLeft ? 'auto' : 'none'}
-                          >
-                            <View
-                              style={[
-                                styles.milesToNextPill,
-                                {
-                                  backgroundColor:
-                                    theme.colors.checkpointTextBackground,
-                                },
-                                !showLeft ? styles.hidden : null,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  typography.titleLarge,
-                                  styles.milesToNextValue,
-                                  { color: theme.colors.checkpointLabel },
-                                ]}
-                              >
-                                {cp.currentCumulativeMiles}
-                                <Text
-                                  style={[
-                                    styles.milesSuffix,
-                                    { color: theme.colors.checkpointLabel },
-                                  ]}
-                                >
-                                  miles
-                                </Text>
-                              </Text>
-                            </View>
-                          </View>
-                          <View
                             style={[
-                              styles.milesCol,
-                              { marginLeft: spacing.md },
-                            ]}
-                          >
-                            <View
-                              style={[
-                                styles.milesToNextPill,
-                                {
-                                  backgroundColor: isLockedCheckpoint
+                              styles.milesToNextPill,
+                              {
+                                backgroundColor:
+                                  isCheckpointView && isLockedCheckpoint
                                     ? theme.colors.infoModalInactive
                                     : theme.colors.checkpointTextBackground,
-                                },
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                typography.titleLarge,
+                                styles.milesToNextValue,
+                                { color: theme.colors.checkpointLabel },
                               ]}
                             >
+                              {isCheckpointView && isLockedCheckpoint
+                                ? '-' + remaining
+                                : milesToNextCheckpoint}
                               <Text
                                 style={[
-                                  typography.titleLarge,
-                                  styles.milesToNextValue,
+                                  styles.milesSuffix,
                                   { color: theme.colors.checkpointLabel },
                                 ]}
                               >
-                                {isLockedCheckpoint
-                                  ? '-' + remaining
-                                  : cp.spanMiles}
-                                <Text
-                                  style={[
-                                    styles.milesSuffix,
-                                    { color: theme.colors.checkpointLabel },
-                                  ]}
-                                >
-                                  miles
-                                </Text>
+                                miles
                               </Text>
-                            </View>
+                            </Text>
                           </View>
                         </View>
                       </View>
-                    );
-                  })()}
+                    </View>
+                  );
+                })()}
 
                 {/* Progress - Journey at bottom of modal */}
-                {itemType === 'checkpoint' && (
-                  <View style={styles.bottomProgressSection}>
-                    {(() => {
-                      return (
-                        <JourneyProgressBar isLocked={!!isLockedCheckpoint} />
-                      );
-                    })()}
-                  </View>
-                )}
+                <View style={styles.bottomProgressSection}>
+                  <JourneyProgressBar
+                    isLocked={itemType === 'checkpoint' && !!isLockedCheckpoint}
+                  />
+                </View>
               </Animated.View>
             </Animated.View>
           </SafeAreaView>

@@ -1,12 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  StyleSheet,
-  StatusBar,
-  Pressable,
-  Text,
-  TextInput,
-} from 'react-native';
+import { View, StyleSheet, StatusBar, Text, TextInput } from 'react-native';
 import {
   GestureHandlerRootView,
   GestureDetector,
@@ -304,23 +297,11 @@ export default function MapScreen() {
 
       {/* Settings Button */}
       <Animated.View style={[styles.settingsButton, settingsEnterStyle]}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.recenterButtonTouch,
-            {
-              backgroundColor: pressed
-                ? theme.colors.buttonPressed
-                : theme.colors.buttonPrimaryBackground,
-              borderRadius: borderRadius.full,
-            },
-          ]}
+        <SettingsButton
           onPress={() => setShowSettings(true)}
-        >
-          <SettingsButton
-            size={iconSizes.medium}
-            color={theme.colors.buttonPrimaryText}
-          />
-        </Pressable>
+          size={iconSizes.medium}
+          color={theme.colors.buttonPrimaryText}
+        />
       </Animated.View>
 
       {/* Info System - Checkpoint/Trivia Info (derived via store selector) */}
@@ -329,16 +310,7 @@ export default function MapScreen() {
           style={[styles.infoContainer, infoEnterStyle]}
           pointerEvents="box-none"
         >
-          <InfoButton
-            ref={infoButtonRef}
-            item={currentItem}
-            type={itemType!}
-            checkpointIndex={
-              itemType === 'checkpoint'
-                ? useProgressStore.getState().getIndexForPoint(currentItem)
-                : undefined
-            }
-          />
+          <InfoButton ref={infoButtonRef} item={currentItem} type={itemType!} />
           {showStartupTooltip && tooltipPosition && (
             <View
               style={[
@@ -374,23 +346,11 @@ export default function MapScreen() {
 
       {/* Recenter Button */}
       <Animated.View style={[styles.recenterButton, recenterButtonStyle]}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.recenterButtonTouch,
-            {
-              backgroundColor: pressed
-                ? theme.colors.buttonPressed
-                : theme.colors.buttonPrimaryBackground,
-              borderRadius: borderRadius.full,
-            },
-          ]}
+        <RecenterButton
           onPress={handleRecenter}
-        >
-          <RecenterButton
-            size={iconSizes.medium}
-            color={theme.colors.mapBackground}
-          />
-        </Pressable>
+          size={iconSizes.medium}
+          color={theme.colors.mapBackground}
+        />
       </Animated.View>
 
       {/* Info Modal */}

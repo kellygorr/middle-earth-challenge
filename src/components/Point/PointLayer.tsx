@@ -34,50 +34,49 @@ export default function PointLayer({
   animatedProgress,
   onItemPress,
 }: Props) {
-  const items = [...trivia, ...checkpoints];
+  // Only enrich checkpoints with index; trivia passes through unchanged.
+
+  const renderPoint = (
+    item: PointType,
+    kind: 'checkpoint' | 'trivia',
+    index?: number,
+  ) => {
+    const baseX = item.x * uniformScale - mapOffsetX;
+    const baseY = item.y * uniformScale - mapOffsetY;
+
+    const activationProgress = mapBookMilesToPathProgress(
+      item.CUMULATIVE_MILES ?? 0,
+    );
+    const isActive =
+      kind === 'checkpoint' && item.isStart
+        ? true
+        : animatedProgress + 1e-6 >= activationProgress;
+
+    const enriched: PointType = { ...item, index };
+
+    return (
+      <PositionedPoint
+        key={`${kind}:${item.name}`}
+        item={enriched}
+        isActive={isActive}
+        type={kind}
+        baseX={baseX}
+        baseY={baseY}
+        centerX={centerX}
+        centerY={centerY}
+        translateX={translateX}
+        translateY={translateY}
+        scale={scale}
+        showLabel={kind === 'checkpoint' && showPointLabels}
+        onPress={() => onItemPress(enriched, kind)}
+      />
+    );
+  };
 
   return (
     <>
-      {items.map(item => {
-        const baseX = item.x * uniformScale - mapOffsetX;
-        const baseY = item.y * uniformScale - mapOffsetY;
-        const isCheckpoint = 'checkpointActivationMiles' in item;
-        const type = isCheckpoint ? 'checkpoint' : 'trivia';
-
-        let isActive = false;
-        if (isCheckpoint) {
-          const centerMiles = item.CUMULATIVE_MILES ?? 0;
-          const centerProgress = mapBookMilesToPathProgress(centerMiles);
-          isActive = item.isStart
-            ? true
-            : animatedProgress + 1e-6 >= centerProgress;
-        } else {
-          const activationProgress = mapBookMilesToPathProgress(
-            item.CUMULATIVE_MILES,
-          );
-          isActive = animatedProgress + 1e-6 >= activationProgress;
-        }
-
-        if (!isCheckpoint && !isActive) return null;
-
-        return (
-          <PositionedPoint
-            key={item.name}
-            item={item}
-            isActive={isActive}
-            type={type}
-            baseX={baseX}
-            baseY={baseY}
-            centerX={centerX}
-            centerY={centerY}
-            translateX={translateX}
-            translateY={translateY}
-            scale={scale}
-            showLabel={isCheckpoint && showPointLabels}
-            onPress={() => onItemPress(item, type)}
-          />
-        );
-      })}
+      {trivia.map(tr => renderPoint(tr, 'trivia'))}
+      {checkpoints.map((cp, i) => renderPoint(cp, 'checkpoint', i))}
     </>
   );
 }

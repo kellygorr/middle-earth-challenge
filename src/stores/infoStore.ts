@@ -13,6 +13,9 @@ interface InfoStore {
   showStartupTooltip: boolean;
   tooltipPosition: { top: number; left: number } | null;
   observeMilesChanges: boolean;
+  // Sticky visibility: keep InfoButton visible until miles change
+  stickyUntilMilesChange: boolean;
+  lastMilesAtSelection: number | null;
 
   // Actions
   showInfo: (item: PointType, type: 'checkpoint' | 'trivia') => void;
@@ -37,6 +40,8 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
   showStartupTooltip: false,
   tooltipPosition: null,
   observeMilesChanges: false,
+  stickyUntilMilesChange: false,
+  lastMilesAtSelection: null,
 
   // Actions
   showInfo: (item, type) =>
@@ -44,6 +49,8 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       currentItem: item,
       itemType: type,
       isModalVisible: false, // Start with modal closed
+      stickyUntilMilesChange: true,
+      lastMilesAtSelection: useProgressStore.getState().miles || 0,
     }),
 
   hideInfo: () =>
@@ -51,6 +58,8 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       currentItem: null,
       itemType: null,
       isModalVisible: false,
+      stickyUntilMilesChange: false,
+      lastMilesAtSelection: null,
     }),
 
   openModal: () => {
@@ -74,19 +83,35 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       showStartupTooltip: false,
       tooltipPosition: null,
       observeMilesChanges: false,
+      stickyUntilMilesChange: false,
+      lastMilesAtSelection: null,
     }),
   // Derived selectors
   getShouldShowInfoButton: (animatedProgress: number) => {
-    const { currentItem, itemType } = get();
+    const {
+      currentItem,
+      itemType,
+      isModalVisible,
+      stickyUntilMilesChange,
+      lastMilesAtSelection,
+    } = get();
     if (!currentItem) return false;
     const miles = useProgressStore.getState().miles || 0;
-    const isCheckpointItem =
-      itemType === 'checkpoint' && 'CUMULATIVE_MILES' in (currentItem || {});
+    const isCheckpointItem = itemType === 'checkpoint';
     const isTriviaItem = itemType === 'trivia';
     const eps = 1e-6;
 
+    // Show the original InfoButton whenever the modal is open
+    if (isModalVisible) return true;
+
+    // Keep InfoButton visible after closing until miles change
+    if (stickyUntilMilesChange && lastMilesAtSelection != null) {
+      const unchanged = Math.abs(miles - lastMilesAtSelection) < eps;
+      if (unchanged) return true;
+    }
+
     if (isCheckpointItem) {
-      const m = (currentItem as any).CUMULATIVE_MILES ?? 0;
+      const m = currentItem.CUMULATIVE_MILES ?? 0;
       const threshold = mapBookMilesToPathProgress(m);
       const isExact = Math.abs(miles - m) < eps;
       return isExact && animatedProgress + eps >= threshold;

@@ -1,16 +1,22 @@
 import React from 'react';
+import { Pressable, StyleSheet } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
+import { useTheme } from '../../stores/settingsStore';
+import { borderRadius } from '../../styles/global';
 
 interface RecenterButtonProps {
   size?: number;
   color?: string;
+  onPress?: () => void;
 }
 
 export default function RecenterButton({
   size = 24,
   color = '#FFFFFF',
+  onPress,
 }: RecenterButtonProps) {
-  return (
+  const theme = useTheme();
+  const Icon = (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       {/* Outer circle */}
       <Circle
@@ -33,4 +39,32 @@ export default function RecenterButton({
       <Line x1="19" y1="12" x2="23" y2="12" stroke={color} strokeWidth="2" />
     </Svg>
   );
+
+  if (!onPress) return Icon;
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.touch,
+        {
+          backgroundColor: pressed
+            ? theme.colors.buttonPressed
+            : theme.colors.buttonPrimaryBackground,
+          borderRadius: borderRadius.full,
+        },
+      ]}
+      onPress={onPress}
+    >
+      {Icon}
+    </Pressable>
+  );
 }
+
+const styles = StyleSheet.create({
+  touch: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

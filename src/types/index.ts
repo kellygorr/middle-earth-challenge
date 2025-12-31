@@ -3,6 +3,7 @@ import type { ThemeName } from '../styles/themes';
 // Point (Checkpoint/Trivia) unified type
 export interface PointType {
   id?: number | string; // Optional, can be derived from name
+  index?: number; // index in checkpoints/trivia array (0-based)
   type?: 'checkpoint' | 'trivia';
   name: string;
   x: number;
@@ -19,6 +20,7 @@ export interface PointType {
   isActive?: boolean;
   checkpointActivationMiles?: number;
   postCheckpointOffsetMiles?: number;
+  // Derived indices added at render time
 }
 
 // Save types
