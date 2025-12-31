@@ -23,8 +23,9 @@ import { useAnimatedModal } from '../../hooks/useAnimatedModal';
 import { motion } from '../../styles/motion';
 import Button from '../Buttons';
 import { useProgressStore } from '../../stores/progressStore';
-import { CloseButton } from '../ButtonIcons';
-import { DailyDistance } from '../../types';
+import { CloseButton, EditButton } from '../ButtonIcons';
+import DateStepper from '../DateStepper';
+import { DistanceEntry } from '../../types';
 import { formatDateLabel } from '../../utils/date';
 import { database } from '../../services/database';
 
@@ -46,15 +47,18 @@ export default function ManualMilesModal({
   onDismiss,
 }: ManualMilesModalProps) {
   const theme = useTheme();
-  const [input, setInput] = useState('');
-  const [pendingEntries, setPendingEntries] = useState<DailyDistance[]>([]);
-  const [pendingDeletions, setPendingDeletions] = useState<DailyDistance[]>([]);
+  const [addInput, setAddInput] = useState('');
+  const [editInput, setEditInput] = useState('');
+  const [pendingEntries, setPendingEntries] = useState<DistanceEntry[]>([]);
+  const [pendingDeletions, setPendingDeletions] = useState<DistanceEntry[]>([]);
+  const [editingItem, setEditingItem] = useState<DistanceEntry | null>(null);
+  const [editDate, setEditDate] = useState<number>(Date.now());
   const [isInputFocused, setIsInputFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const setMiles = useProgressStore(state => state.setMiles);
-  const dailyDistances = useProgressStore(state => state.dailyDistances);
-  const addDailyDistance = useProgressStore(state => state.addDailyDistance);
-  const totalManualMiles = (dailyDistances || []).reduce(
+  const distanceEntries = useProgressStore(state => state.distanceEntries);
+  const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
+  const totalManualMiles = (distanceEntries || []).reduce(
     (sum, d) => sum + (d?.miles ?? 0),
     0,
   );
@@ -83,22 +87,90 @@ export default function ManualMilesModal({
   }));
 
   const handleAdd = () => {
-    const delta = parseFloat(input);
+    const delta = parseFloat(addInput);
     if (isNaN(delta) || delta <= 0) {
       return;
     }
     const saveId = 'default';
     const timestamp = Date.now();
-    const entry: DailyDistance = {
+    const entry: DistanceEntry = {
       id: `pending_${Date.now()}`,
       saveId,
       date: timestamp,
       miles: delta,
     };
     setPendingEntries(prev => [entry, ...prev]);
-    setInput('');
+    setAddInput('');
     inputRef.current?.blur();
     Keyboard.dismiss();
+  };
+
+  const handleEdit = () => {
+    if (!editingItem) return;
+    const newMiles = parseFloat(editInput);
+    if (isNaN(newMiles) || newMiles <= 0) return;
+
+    if (String(editingItem.id).startsWith('pending_')) {
+      // Update pending entry
+      setPendingEntries(prev =>
+        prev.map(e =>
+          e.id === editingItem.id
+            ? { ...e, miles: newMiles, date: editDate }
+            : e,
+        ),
+      );
+    } else {
+      // For existing entries: mark old for deletion, add new pending with updated miles/date
+      setPendingDeletions(prev => [editingItem, ...prev]);
+      const updatedEntry: DistanceEntry = {
+        id: `pending_${Date.now()}`,
+        saveId: editingItem.saveId,
+        date: editDate,
+        miles: newMiles,
+      };
+      setPendingEntries(prev => [updatedEntry, ...prev]);
+    }
+
+    setEditingItem(null);
+    setEditInput('');
+    Keyboard.dismiss();
+  };
+
+  const handleDelete = () => {
+    if (!editingItem) return;
+
+    if (String(editingItem.id).startsWith('pending_')) {
+      setPendingEntries(prev => prev.filter(e => e.id !== editingItem.id));
+    } else {
+      setPendingDeletions(prev => [editingItem, ...prev]);
+    }
+
+    setEditingItem(null);
+    setEditInput('');
+    Keyboard.dismiss();
+  };
+
+  const startEditing = (item: DistanceEntry) => {
+    // Toggle: if already editing this item, cancel
+    if (editingItem?.id === item.id) {
+      cancelEditing();
+      return;
+    }
+    setEditingItem(item);
+    setEditInput(item.miles.toString());
+    setEditDate(item.date as number);
+  };
+
+  const cancelEditing = () => {
+    setEditingItem(null);
+    setEditInput('');
+  };
+
+  const handleDateChange = (newDate: number) => {
+    if (!editingItem) return;
+    // Just track the new date - apply it when Update button is pressed
+    // This prevents the list from re-sorting while editing
+    setEditDate(newDate);
   };
 
   const commitAndDismiss = async () => {
@@ -117,9 +189,9 @@ export default function ManualMilesModal({
     // Apply deletions to store entries
     if (pendingDeletions.length > 0) {
       for (const d of pendingDeletions) {
-        useProgressStore.getState().removeDailyDistance(d.id);
+        useProgressStore.getState().removeDistanceEntry(d.id);
         try {
-          await database.removeDailyDistance(d.id);
+          await database.removeDistanceEntry(d.id);
         } catch (e) {
           console.warn('Failed to remove distance from DB:', e);
         }
@@ -130,9 +202,9 @@ export default function ManualMilesModal({
       for (let idx = 0; idx < pendingEntries.length; idx++) {
         const e = pendingEntries[idx];
         const persisted = { ...e, id: `manual_${Date.now()}_${idx}` };
-        addDailyDistance(persisted);
+        addDistanceEntry(persisted);
         try {
-          await database.addDailyDistance({
+          await database.addDistanceEntry({
             id: persisted.id,
             saveId: persisted.saveId,
             date: persisted.date as number,
@@ -215,13 +287,13 @@ export default function ManualMilesModal({
                         styles.sectionTitle,
                       ]}
                     >
-                      Recent Miles
+                      All Enteries
                     </Text>
                     {pendingEntries.length > 0 ||
-                    (dailyDistances && dailyDistances.length > 0) ? (
+                    (distanceEntries && distanceEntries.length > 0) ? (
                       <FlatList
                         data={[
-                          ...(dailyDistances || []).filter(
+                          ...(distanceEntries || []).filter(
                             d => !pendingDeletions.some(pd => pd.id === d.id),
                           ),
                           ...pendingEntries,
@@ -235,37 +307,86 @@ export default function ManualMilesModal({
                         })}
                         keyExtractor={item => item.id}
                         renderItem={({ item }) => (
-                          <View style={styles.listItem}>
-                            <Text style={typographyThemed(theme).bodyPrimary}>
-                              {formatDateLabel(item.date)}
-                            </Text>
-                            <View style={styles.listItemRight}>
+                          <View>
+                            <View style={styles.listItem}>
                               <Text style={typographyThemed(theme).bodyPrimary}>
-                                {item.miles.toFixed(2)}
+                                {formatDateLabel(
+                                  editingItem?.id === item.id
+                                    ? editDate
+                                    : item.date,
+                                )}
                               </Text>
-                              <CloseButton
-                                size={iconSizes.small}
-                                color={theme.colors.textSecondary}
-                                pressedColor={theme.colors.textPrimary}
-                                onPress={() => {
-                                  if (String(item.id).startsWith('pending_')) {
-                                    setPendingEntries(prev =>
-                                      prev.filter(e => e.id !== item.id),
-                                    );
-                                  } else {
-                                    setPendingDeletions(prev => [
-                                      item as DailyDistance,
-                                      ...prev,
-                                    ]);
-                                  }
-                                }}
-                                style={styles.trashButton}
-                              />
+                              <View style={styles.listItemRight}>
+                                <Text
+                                  style={typographyThemed(theme).bodyPrimary}
+                                >
+                                  {item.miles.toFixed(2)}
+                                </Text>
+                                <EditButton
+                                  size={iconSizes.medium}
+                                  color={theme.colors.textSecondary}
+                                  pressedColor={theme.colors.textPrimary}
+                                  onPress={() => startEditing(item)}
+                                  style={styles.editButton}
+                                />
+                              </View>
                             </View>
+                            {editingItem?.id === item.id && (
+                              <View style={styles.editSection}>
+                                <View style={styles.editFieldsRow}>
+                                  <DateStepper
+                                    date={editDate}
+                                    onDateChange={handleDateChange}
+                                  />
+                                  <TextInput
+                                    style={[
+                                      styles.input,
+                                      styles.editInputField,
+                                      {
+                                        backgroundColor: theme.colors.surface,
+                                        color: theme.colors.textPrimary,
+                                        borderWidth: 1,
+                                        borderColor: theme.colors.divider,
+                                      },
+                                    ]}
+                                    value={editInput}
+                                    onChangeText={setEditInput}
+                                    keyboardType="numeric"
+                                    autoFocus
+                                    selectTextOnFocus
+                                    placeholderTextColor={
+                                      theme.colors.textSecondary
+                                    }
+                                  />
+                                  <Text
+                                    style={typographyThemed(theme).bodyPrimary}
+                                  >
+                                    miles
+                                  </Text>
+                                </View>
+                                <View style={styles.editButtonsRow}>
+                                  <Button
+                                    onPress={handleEdit}
+                                    variant="brand"
+                                    size="default"
+                                  >
+                                    Update
+                                  </Button>
+                                  <Button
+                                    onPress={handleDelete}
+                                    variant="primary"
+                                    size="default"
+                                  >
+                                    Delete
+                                  </Button>
+                                </View>
+                              </View>
+                            )}
                           </View>
                         )}
                         ItemSeparatorComponent={Separator}
                         showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
                       />
                     ) : (
                       <View style={styles.emptyState}>
@@ -281,7 +402,7 @@ export default function ManualMilesModal({
                 <View style={styles.dividerRow}>
                   <View style={styles.dividerLine} />
                   {(pendingEntries.length > 0 ||
-                    (dailyDistances && dailyDistances.length > 0)) && (
+                    (distanceEntries && distanceEntries.length > 0)) && (
                     <Text
                       style={[
                         typographyThemed(theme).bodySecondary,
@@ -315,11 +436,15 @@ export default function ManualMilesModal({
                         borderColor: theme.colors.divider,
                       },
                     ]}
-                    value={input}
-                    onChangeText={setInput}
+                    value={addInput}
+                    onChangeText={setAddInput}
                     keyboardType="numeric"
                     placeholder={isInputFocused ? '' : '0'}
-                    onFocus={() => setIsInputFocused(true)}
+                    onFocus={() => {
+                      setIsInputFocused(true);
+                      // Cancel any edit mode when focusing the add input
+                      if (editingItem) cancelEditing();
+                    }}
                     onBlur={() => setIsInputFocused(false)}
                     placeholderTextColor={theme.colors.textSecondary}
                   />
@@ -442,15 +567,45 @@ const styles = StyleSheet.create({
   listItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: spacing.xs,
+  },
+  listItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   listItemRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
-  trashButton: {
-    marginLeft: spacing.xs,
+  deleteButton: {
+    // No extra margin needed
+  },
+  editButton: {
+    // No extra margin needed
+  },
+  editSection: {
+    paddingVertical: spacing.sm,
+  },
+  editFieldsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  editButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  editInputField: {
+    minWidth: 80,
+    textAlign: 'right',
+    flex: 1,
   },
   separator: {
     height: 1,

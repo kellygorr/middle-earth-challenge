@@ -3,3 +3,5 @@ export { default as RecenterButton } from './RecenterButton';
 export { default as SettingsButton } from './SettingsButton';
 export { default as CloseButton } from './CloseButton';
 export { default as PlusButton } from './PlusButton';
+export { default as EditButton } from './EditButton';
+export { default as ChevronButton } from './ChevronButton';

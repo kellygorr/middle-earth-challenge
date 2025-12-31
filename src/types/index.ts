@@ -31,32 +31,10 @@ export interface Save {
   lastAccessedDate: string;
   isActive: boolean;
   status: 'in_progress' | 'completed';
-  startDate?: string;
-  endDate?: string;
 }
 
-// Journey progress types
-export interface JourneyProgress {
-  id: string;
-  saveId: string;
-  currentCheckpoint: number; // 1-7 (which segment they're on)
-  totalMiles: number;
-  currentCheckpointMiles: number; // Miles completed in current segment
-  lastSyncDate: string;
-}
-
-// Checkpoint completion types
-export interface CheckpointCompletion {
-  id: string;
-  saveId: string;
-  checkpointNumber: number;
-  completedDate: string;
-  daysToComplete: number;
-  avgMilesPerDay: number;
-}
-
-// Daily distance types
-export interface DailyDistance {
+// Distance entry types
+export interface DistanceEntry {
   id: string;
   saveId: string;
   date: number; // Unix timestamp (ms)

@@ -40,7 +40,6 @@ interface InfoModalProps {
 export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   const theme = useTheme();
   const { currentItem, itemType } = useInfoStore();
-  const { checkpointCompletions } = useProgressStore();
   // Locked checkpoint mode: show limited info when tapping a future checkpoint
   const isLockedCheckpoint =
     itemType === 'checkpoint' &&
@@ -182,7 +181,6 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     internalVisible,
     itemType,
     currentItem,
-    checkpointCompletions,
     shouldShowCheckpointCelebration,
     reduceMotionEnabled,
     getLatestCompletedCheckpointNumber,

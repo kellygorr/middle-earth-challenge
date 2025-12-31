@@ -1,18 +1,10 @@
-import { database } from './database';
 import { fitnessService } from './fitnessService';
-import { useSaveStore } from '../stores/saveStore';
-import { useProgressStore } from '../stores/progressStore';
-import {
-  getCurrentSegment,
-  getSegmentProgress,
-  JOURNEY_SEGMENTS,
-  TOTAL_JOURNEY_MILES,
-} from '../constants/journey';
-import checkpointsData from '../constants/checkpoints.json';
 
 /**
  * Sync service - Coordinates fitness data synchronization with the database
  * Handles background sync and real-time updates
+ *
+ * TODO: Implement fitness sync when watch/phone data integration is ready
  */
 
 export interface SyncResult {
@@ -28,156 +20,17 @@ class SyncService {
 
   /**
    * Perform a full sync of fitness data
-   * Updates journey progress and detects checkpoint completions
+   * TODO: Implement when fitness integration is ready
    */
   async sync(): Promise<SyncResult> {
-    try {
-      const { activeSave, journeyProgress } = useSaveStore.getState();
-
-      if (!activeSave || !journeyProgress) {
-        return {
-          success: false,
-          milesAdded: 0,
-          checkpointCompleted: false,
-          error: 'No active save',
-        };
-      }
-
-      // Get fitness data since last sync
-      const lastSyncDate = new Date(journeyProgress.lastSyncDate);
-      const newDistance = await fitnessService.getDistanceSince(lastSyncDate);
-
-      if (newDistance <= 0) {
-        return {
-          success: true,
-          milesAdded: 0,
-          checkpointCompleted: false,
-        };
-      }
-
-      // Calculate new totals
-      const oldTotalMiles = journeyProgress.totalMiles;
-      const newTotalMiles = Math.min(
-        oldTotalMiles + newDistance,
-        TOTAL_JOURNEY_MILES,
-      );
-      const milesAdded = newTotalMiles - oldTotalMiles;
-
-      // Get current segment
-      const currentSegment = getCurrentSegment(newTotalMiles);
-      const milesIntoSegment = newTotalMiles - currentSegment.startMiles;
-      const segmentNumber = currentSegment.id;
-
-      // Check if checkpoint completed
-      let checkpointCompleted = false;
-      let completedCheckpointNumber: number | undefined;
-
-      if (
-        segmentNumber !== journeyProgress.currentCheckpoint &&
-        newTotalMiles > oldTotalMiles
-      ) {
-        // Checkpoint completed!
-        checkpointCompleted = true;
-        completedCheckpointNumber = journeyProgress.currentCheckpoint;
-
-        // Calculate stats for completed checkpoint
-        const completedSegment =
-          JOURNEY_SEGMENTS[completedCheckpointNumber - 1];
-        const saveStartDate = new Date(
-          activeSave.startDate || activeSave.createdDate,
-        );
-        const completionDate = new Date();
-        const daysToComplete = Math.ceil(
-          (completionDate.getTime() - saveStartDate.getTime()) /
-            (1000 * 60 * 60 * 24),
-        );
-        const avgMilesPerDay = completedSegment.miles / daysToComplete;
-
-        // Save checkpoint completion
-        await database.addCheckpointCompletion({
-          saveId: activeSave.id,
-          checkpointNumber: completedCheckpointNumber,
-          completedDate: completionDate.toISOString(),
-          daysToComplete,
-          avgMilesPerDay,
-        });
-
-        // Update progress store
-        useProgressStore.getState().addCheckpointCompletion({
-          id: `completion_${Date.now()}_${completedCheckpointNumber}`,
-          saveId: activeSave.id,
-          checkpointNumber: completedCheckpointNumber,
-          completedDate: completionDate.toISOString(),
-          daysToComplete,
-          avgMilesPerDay,
-        });
-      }
-
-      // Update journey progress in database
-      await database.updateJourneyProgress(activeSave.id, {
-        currentCheckpoint: segmentNumber,
-        totalMiles: newTotalMiles,
-        currentCheckpointMiles: milesIntoSegment,
-        lastSyncDate: new Date().toISOString(),
-      });
-
-      // Update store
-      useSaveStore.getState().setJourneyProgress({
-        ...journeyProgress,
-        currentCheckpoint: segmentNumber,
-        totalMiles: newTotalMiles,
-        currentCheckpointMiles: milesIntoSegment,
-        lastSyncDate: new Date().toISOString(),
-      });
-
-      // Update daily distance
-      const ts = Date.now();
-      await database.addDailyDistance({
-        id: `sync_${ts}`,
-        saveId: 'default',
-        date: ts,
-        miles: milesAdded,
-      });
-
-      // Update miles snapshot
-      await database.setMilesSnapshot('default', newTotalMiles);
-
-      // Check if journey completed
-      if (
-        newTotalMiles >= TOTAL_JOURNEY_MILES &&
-        activeSave.status !== 'completed'
-      ) {
-        await database.updateJourneyProgress(activeSave.id, {
-          totalMiles: TOTAL_JOURNEY_MILES,
-        });
-
-        // Mark save as completed
-        const endDate = new Date().toISOString();
-        // TODO: Update save status in database (would need to add method to database service)
-        useSaveStore.getState().updateSave(activeSave.id, {
-          status: 'completed',
-          endDate,
-        });
-      }
-
-      // Update last sync date
-      useProgressStore.getState().setLastSyncDate(new Date().toISOString());
-
-      return {
-        success: true,
-        milesAdded,
-        checkpointCompleted,
-        checkpointNumber: completedCheckpointNumber,
-      };
-    } catch (error) {
-      console.error('Sync error:', error);
-      return {
-        success: false,
-        milesAdded: 0,
-        checkpointCompleted: false,
-        error: String(error),
-      };
-    }
+    // Placeholder - fitness sync not yet implemented
+    console.log('Fitness sync not yet implemented');
+    return {
+      success: false,
+      milesAdded: 0,
+      checkpointCompleted: false,
+      error: 'Fitness sync not yet implemented',
+    };
   }
 
   /**
@@ -191,25 +44,6 @@ class SyncService {
 
     try {
       // TODO: Implement with react-native-background-fetch
-      // const BackgroundFetch = require('react-native-background-fetch');
-      //
-      // await BackgroundFetch.configure(
-      //   {
-      //     minimumFetchInterval: 15, // 15 minutes
-      //     stopOnTerminate: false,
-      //     startOnBoot: true,
-      //   },
-      //   async (taskId) => {
-      //     console.log('[BackgroundFetch] taskId:', taskId);
-      //     await this.sync();
-      //     BackgroundFetch.finish(taskId);
-      //   },
-      //   (taskId) => {
-      //     console.log('[BackgroundFetch] TIMEOUT:', taskId);
-      //     BackgroundFetch.finish(taskId);
-      //   }
-      // );
-
       console.log('Background sync setup required');
       this.isBackgroundSyncSetup = true;
     } catch (error) {
@@ -224,7 +58,7 @@ class SyncService {
   startRealTimeSync(): void {
     fitnessService.startRealTimeUpdates(async distance => {
       console.log('Real-time distance update:', distance);
-      // Trigger a sync
+      // TODO: Trigger sync when implemented
       await this.sync();
     });
   }

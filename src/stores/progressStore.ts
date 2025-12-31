@@ -1,10 +1,5 @@
 import { create } from 'zustand';
-import {
-  CheckpointCompletion,
-  TriviaUnlock,
-  PointType,
-  DailyDistance,
-} from '../types';
+import { TriviaUnlock, PointType, DistanceEntry } from '../types';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 import trivia from '../constants/trivia.json';
@@ -12,9 +7,8 @@ import trivia from '../constants/trivia.json';
 interface ProgressStore {
   // State
   miles: number;
-  checkpointCompletions: CheckpointCompletion[];
   triviaUnlocks: TriviaUnlock[];
-  dailyDistances: DailyDistance[];
+  distanceEntries: DistanceEntry[];
   lastSyncDate: string | null;
   isSyncing: boolean;
   // Dev/test override state
@@ -25,13 +19,11 @@ interface ProgressStore {
   setMiles: (miles: number) => void;
   setTestMiles: (miles: number) => void;
   clearTestOverride: () => void;
-  setCheckpointCompletions: (completions: CheckpointCompletion[]) => void;
-  addCheckpointCompletion: (completion: CheckpointCompletion) => void;
   setTriviaUnlocks: (unlocks: TriviaUnlock[]) => void;
   addTriviaUnlock: (unlock: TriviaUnlock) => void;
-  addDailyDistance: (entry: DailyDistance) => void;
-  removeDailyDistance: (id: string) => void;
-  setDailyDistances: (entries: DailyDistance[]) => void;
+  addDistanceEntry: (entry: DistanceEntry) => void;
+  removeDistanceEntry: (id: string) => void;
+  setDistanceEntries: (entries: DistanceEntry[]) => void;
   setLastSyncDate: (date: string) => void;
   setIsSyncing: (syncing: boolean) => void;
   resetProgress: () => void;
@@ -65,9 +57,8 @@ interface ProgressStore {
 export const useProgressStore = create<ProgressStore>((set, get) => ({
   // Initial state
   miles: 0,
-  checkpointCompletions: [],
   triviaUnlocks: [],
-  dailyDistances: [],
+  distanceEntries: [],
   lastSyncDate: null,
   isSyncing: false,
   isTestOverride: false,
@@ -86,13 +77,6 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     })),
   clearTestOverride: () =>
     set({ isTestOverride: false, testOverrideBaseMiles: null }),
-  setCheckpointCompletions: completions =>
-    set({ checkpointCompletions: completions }),
-
-  addCheckpointCompletion: completion =>
-    set(state => ({
-      checkpointCompletions: [...state.checkpointCompletions, completion],
-    })),
 
   setTriviaUnlocks: unlocks => set({ triviaUnlocks: unlocks }),
 
@@ -101,15 +85,15 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       triviaUnlocks: [...state.triviaUnlocks, unlock],
     })),
 
-  addDailyDistance: entry =>
-    set(state => ({ dailyDistances: [entry, ...state.dailyDistances] })),
+  addDistanceEntry: entry =>
+    set(state => ({ distanceEntries: [entry, ...state.distanceEntries] })),
 
-  removeDailyDistance: id =>
+  removeDistanceEntry: id =>
     set(state => ({
-      dailyDistances: state.dailyDistances.filter(d => d.id !== id),
+      distanceEntries: state.distanceEntries.filter(d => d.id !== id),
     })),
 
-  setDailyDistances: entries => set({ dailyDistances: entries }),
+  setDistanceEntries: entries => set({ distanceEntries: entries }),
 
   setLastSyncDate: date => set({ lastSyncDate: date }),
 
@@ -118,9 +102,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   resetProgress: () =>
     set({
       miles: 0,
-      checkpointCompletions: [],
       triviaUnlocks: [],
-      dailyDistances: [],
+      distanceEntries: [],
       lastSyncDate: null,
       isSyncing: false,
       isTestOverride: false,
@@ -150,13 +133,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   },
 
   getLatestCompletedCheckpointNumber: () => {
-    const completions = get().checkpointCompletions;
-    const byCompletions = completions.length
-      ? Math.max(...completions.map(c => c.checkpointNumber ?? 0))
-      : 0;
     const byIdx = get().getCheckpointIndexForMiles();
-    const byMiles = byIdx >= 0 ? byIdx + 1 : 0; // 1-based
-    return Math.max(byCompletions, byMiles);
+    return byIdx >= 0 ? byIdx + 1 : 0; // 1-based
   },
 
   // Removed unused selector: getCheckpointProgressFor
@@ -224,8 +202,13 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   getCurrentCheckpoint: () => {
     const cps = checkpoints as any[];
     const miles = get().miles ?? 0;
-    const idx = get().getCheckpointIndexForMiles();
+    const eps = 1e-6;
+    // Only return a checkpoint if we're exactly on it
+    const idx = cps.findIndex(
+      cp => Math.abs((cp?.CUMULATIVE_MILES ?? -Infinity) - miles) < eps,
+    );
     if (idx >= 0) return (cps[idx] as PointType) ?? null;
+    // Also show starting checkpoint if at 0 miles
     if (miles === 0) {
       const startIdx = cps.findIndex(cp => !!cp?.isStart);
       return startIdx >= 0 ? (cps[startIdx] as PointType) ?? null : null;

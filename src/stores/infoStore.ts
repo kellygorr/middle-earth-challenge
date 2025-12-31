@@ -79,6 +79,11 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
 
   clearStickyInfo: () => {
     const { stickyUntilMilesChange } = get();
+    // Don't clear if we're exactly on a checkpoint - the info should stay visible
+    const activeInfo = useProgressStore.getState().getActiveInfoItem();
+    if (activeInfo?.type === 'checkpoint') {
+      return; // User is exactly on checkpoint, don't clear
+    }
     // Only clear if we're in sticky mode (previewing a non-active point)
     if (stickyUntilMilesChange) {
       set({

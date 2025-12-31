@@ -80,7 +80,7 @@ export default function WelcomeModal({
                 1,235 miles from Bag End to Mount Doom
               </Text>
               <Button onPress={onDismiss} variant="brand" size="large">
-                {miles > 0 ? 'Continue Journey' : 'Begin Journey'}
+                {miles > 0 ? 'Continue journey' : 'Begin journey'}
               </Button>
             </View>
           </Animated.View>

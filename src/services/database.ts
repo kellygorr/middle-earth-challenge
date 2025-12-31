@@ -177,8 +177,8 @@ class Database {
     }
   }
 
-  // Daily distances operations
-  async addDailyDistance(entry: {
+  // Distance entry operations
+  async addDistanceEntry(entry: {
     id: string;
     saveId: string;
     date: number;
@@ -191,7 +191,7 @@ class Database {
     );
   }
 
-  async getDailyDistances(saveId: string): Promise<
+  async getDistanceEntries(saveId: string): Promise<
     {
       id: string;
       saveId: string;
@@ -213,7 +213,7 @@ class Database {
     }));
   }
 
-  async removeDailyDistance(id: string): Promise<void> {
+  async removeDistanceEntry(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     this.db.executeSync(`DELETE FROM daily_distances WHERE id = ?`, [id]);
   }

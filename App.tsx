@@ -65,7 +65,9 @@ function App(): React.JSX.Element {
   );
   const isInfoVisible = useInfoStore(state => state.isModalVisible);
   const closeInfoModal = useInfoStore(state => state.closeModal);
-  const setDailyDistances = useProgressStore(state => state.setDailyDistances);
+  const setDistanceEntries = useProgressStore(
+    state => state.setDistanceEntries,
+  );
   const setMiles = useProgressStore(state => state.setMiles);
 
   useEffect(() => {
@@ -78,11 +80,11 @@ function App(): React.JSX.Element {
         const snapshot = await database.getMilesSnapshot(saveId);
         if (snapshot !== null) {
           setMiles(snapshot);
-          const entries = await database.getDailyDistances(saveId);
-          setDailyDistances(entries);
+          const entries = await database.getDistanceEntries(saveId);
+          setDistanceEntries(entries);
         } else {
-          const entries = await database.getDailyDistances(saveId);
-          setDailyDistances(entries);
+          const entries = await database.getDistanceEntries(saveId);
+          setDistanceEntries(entries);
           const totalMiles = (entries || []).reduce(
             (sum, e) => sum + (e?.miles ?? 0),
             0,
@@ -100,7 +102,7 @@ function App(): React.JSX.Element {
     };
 
     initApp();
-  }, [loadSettings, setDailyDistances, setMiles, setPhase]);
+  }, [loadSettings, setDistanceEntries, setMiles, setPhase]);
 
   return (
     <SafeAreaProvider>
