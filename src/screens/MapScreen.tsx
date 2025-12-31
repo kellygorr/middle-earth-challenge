@@ -8,6 +8,7 @@ import Animated from 'react-native-reanimated';
 // Modals are rendered globally in App.tsx
 import {
   SettingsButton,
+  StatsButton,
   RecenterButton,
   PlusButton,
 } from '../components/ButtonIcons';
@@ -19,6 +20,7 @@ import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import DevMiles from '../components/DevMiles';
 import { spacing, borderRadius, iconButtonSizes } from '../styles/global';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
+import { useUIStore } from '../stores/uiStore';
 import { useInitializationStore } from '../stores/initializationStore';
 import { useInfoStore } from '../stores/infoStore';
 import { useProgressStore } from '../stores/progressStore';
@@ -47,7 +49,11 @@ const triviaData = triviaDataRaw as PointType[];
 export default function MapScreen() {
   const theme = useTheme();
   const { width, height } = useReactiveDimensions(); // reactive
-  const setShowSettings = useSettingsStore(state => state.setShowSettings);
+  const setShowSettings = useUIStore(state => state.setShowSettings);
+  const setShowStats = useUIStore(state => state.setShowStats);
+  const setShowManualMilesModal = useUIStore(
+    state => state.setShowManualMilesModal,
+  );
 
   const keyboardOffset = useKeyboardOffset(20);
   const showWelcome = useSettingsStore(state => state.showWelcome);
@@ -81,10 +87,6 @@ export default function MapScreen() {
 
   // Miles from progress store (source of truth)
   const miles = useProgressStore(state => state.miles);
-
-  const setShowManualMilesModal = useSettingsStore(
-    state => state.setShowManualMilesModal,
-  );
 
   const firstCheckpoint = checkpointsData[0];
   const {
@@ -314,6 +316,18 @@ export default function MapScreen() {
         </View>
       </GestureDetector>
 
+      {/* Stats Button */}
+      <Animated.View style={[styles.statsButton, settingsEnterStyle]}>
+        <StatsButton
+          onPress={() => {
+            clearStickyInfo();
+            setShowStats(true);
+          }}
+          size={iconSizes.medium}
+          color={theme.colors.buttonPrimaryText}
+        />
+      </Animated.View>
+
       {/* Settings Button */}
       <Animated.View style={[styles.settingsButton, settingsEnterStyle]}>
         <SettingsButton
@@ -443,6 +457,16 @@ export const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing.xl2,
     right: spacing.md,
+    width: iconButtonSizes.medium,
+    height: iconButtonSizes.medium,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsButton: {
+    position: 'absolute',
+    top: spacing.xl2,
+    right: spacing.md + iconButtonSizes.medium + spacing.sm,
     width: iconButtonSizes.medium,
     height: iconButtonSizes.medium,
     borderRadius: borderRadius.full,

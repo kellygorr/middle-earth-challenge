@@ -8,10 +8,12 @@ import MapScreen from './src/screens/MapScreen';
 import {
   WelcomeModal,
   SettingsModal,
+  StatsModal,
   ManualMilesModal,
   InfoModal,
 } from './src/components/Modals';
 import { useSettingsStore } from './src/stores/settingsStore';
+import { useUIStore } from './src/stores/uiStore';
 import { useInfoStore } from './src/stores/infoStore';
 import { useInitializationStore } from './src/stores/initializationStore';
 import { database } from './src/services/database';
@@ -55,14 +57,17 @@ function App(): React.JSX.Element {
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
   const loadSettings = useSettingsStore(state => state.loadSettings);
-  const showSettings = useSettingsStore(state => state.showSettings);
-  const setShowSettings = useSettingsStore(state => state.setShowSettings);
-  const showManualMilesModal = useSettingsStore(
-    state => state.showManualMilesModal,
-  );
-  const setShowManualMilesModal = useSettingsStore(
+
+  // UI modal state from uiStore
+  const showSettings = useUIStore(state => state.showSettings);
+  const setShowSettings = useUIStore(state => state.setShowSettings);
+  const showStats = useUIStore(state => state.showStats);
+  const setShowStats = useUIStore(state => state.setShowStats);
+  const showManualMilesModal = useUIStore(state => state.showManualMilesModal);
+  const setShowManualMilesModal = useUIStore(
     state => state.setShowManualMilesModal,
   );
+
   const isInfoVisible = useInfoStore(state => state.isModalVisible);
   const closeInfoModal = useInfoStore(state => state.closeModal);
   const setDistanceEntries = useProgressStore(
@@ -130,6 +135,7 @@ function App(): React.JSX.Element {
           visible={showSettings}
           onDismiss={() => setShowSettings(false)}
         />
+        <StatsModal visible={showStats} onDismiss={() => setShowStats(false)} />
         <ManualMilesModal
           visible={showManualMilesModal}
           onDismiss={() => setShowManualMilesModal(false)}
