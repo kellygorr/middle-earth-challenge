@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TextInput,
   FlatList,
   Keyboard,
+  useWindowDimensions,
 } from 'react-native';
 import { useTheme } from '../../stores/settingsStore';
 import { typographyThemed } from '../../styles/typography';
@@ -17,7 +18,7 @@ import { useProgressStore } from '../../stores/progressStore';
 import { EditButton } from '../ButtonIcons';
 import DateStepper from '../DateStepper';
 import { DistanceEntry } from '../../types';
-import { formatDateLabel } from '../../utils/date';
+import { formatDateLabel, formatTime, getYear } from '../../utils/date';
 import { database } from '../../services/database';
 
 const sepStyles = StyleSheet.create({
@@ -38,6 +39,8 @@ export default function ManualMilesModal({
   onDismiss,
 }: ManualMilesModalProps) {
   const theme = useTheme();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
   const [addInput, setAddInput] = useState('');
   const [editInput, setEditInput] = useState('');
   const [pendingEntries, setPendingEntries] = useState<DistanceEntry[]>([]);
@@ -46,6 +49,18 @@ export default function ManualMilesModal({
   const [editDate, setEditDate] = useState<number>(Date.now());
   const [isInputFocused, setIsInputFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const editInputRef = useRef<TextInput>(null);
+
+  // Focus the edit input after a delay to avoid keyboard open/close issue
+  useEffect(() => {
+    if (editingItem && editInputRef.current) {
+      const timer = setTimeout(() => {
+        editInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [editingItem]);
+
   const setMiles = useProgressStore(state => state.setMiles);
   const distanceEntries = useProgressStore(state => state.distanceEntries);
   const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
@@ -89,10 +104,11 @@ export default function ManualMilesModal({
         ),
       );
     } else {
-      // For existing entries: mark old for deletion, add new pending with updated miles/date
+      // For existing entries: mark old for deletion, add new pending with same ID
+      // Preserving the original ID prevents duplicates when syncing again
       setPendingDeletions(prev => [editingItem, ...prev]);
       const updatedEntry: DistanceEntry = {
-        id: `pending_${Date.now()}`,
+        id: editingItem.id, // Keep original ID to prevent sync duplicates
         saveId: editingItem.saveId,
         date: editDate,
         miles: newMiles,
@@ -206,6 +222,7 @@ export default function ManualMilesModal({
 
   return (
     <ModalWrapper
+      key={isLandscape ? 'landscape' : 'portrait'}
       visible={visible}
       onDismiss={commitAndDismiss}
       title="Miles"
@@ -218,8 +235,8 @@ export default function ManualMilesModal({
         <View style={styles.listContainer}>
           {pendingEntries.length > 0 ||
           (distanceEntries && distanceEntries.length > 0) ? (
-            <FlatList
-              data={[
+            (() => {
+              const sortedData = [
                 ...(distanceEntries || []).filter(
                   d => !pendingDeletions.some(pd => pd.id === d.id),
                 ),
@@ -231,82 +248,128 @@ export default function ManualMilesModal({
                 if (ta !== tb) return ta - tb;
                 // Stable tie-breaker if same timestamp
                 return String(a.id).localeCompare(String(b.id));
-              })}
-              keyExtractor={item => item.id}
-              renderItem={({ item }) => (
-                <View>
-                  <View style={styles.listItem}>
-                    <Text style={typographyThemed(theme).bodyPrimary}>
-                      {formatDateLabel(
-                        editingItem?.id === item.id ? editDate : item.date,
+              });
+
+              // Build a set of indices where we need year headers
+              const yearHeaderIndices = new Map<number, number>();
+              let lastYear: number | null = null;
+              sortedData.forEach((item, index) => {
+                const itemYear = getYear(item.date);
+                if (lastYear === null || itemYear !== lastYear) {
+                  yearHeaderIndices.set(index, itemYear);
+                  lastYear = itemYear;
+                }
+              });
+
+              return (
+                <FlatList
+                  data={sortedData}
+                  keyExtractor={item => item.id}
+                  renderItem={({ item, index }) => (
+                    <View>
+                      {yearHeaderIndices.has(index) && (
+                        <View style={styles.yearHeader}>
+                          <Text
+                            style={typographyThemed(theme).captionSecondary}
+                          >
+                            {yearHeaderIndices.get(index)}
+                          </Text>
+                        </View>
                       )}
-                    </Text>
-                    <View style={styles.listItemRight}>
-                      <Text style={typographyThemed(theme).bodyPrimary}>
-                        {item.miles.toFixed(2)}
-                      </Text>
-                      <EditButton
-                        size={iconSizes.medium}
-                        color={theme.colors.textSecondary}
-                        pressedColor={theme.colors.textPrimary}
-                        onPress={() => startEditing(item)}
-                        style={styles.editButton}
-                      />
-                    </View>
-                  </View>
-                  {editingItem?.id === item.id && (
-                    <View style={styles.editSection}>
-                      <View style={styles.editFieldsRow}>
-                        <DateStepper
-                          date={editDate}
-                          onDateChange={handleDateChange}
-                        />
-                        <TextInput
-                          style={[
-                            styles.input,
-                            styles.editInputField,
-                            {
-                              backgroundColor: theme.colors.surface,
-                              color: theme.colors.textPrimary,
-                              borderWidth: 1,
-                              borderColor: theme.colors.divider,
-                            },
-                          ]}
-                          value={editInput}
-                          onChangeText={setEditInput}
-                          keyboardType="numeric"
-                          autoFocus
-                          selectTextOnFocus
-                          placeholderTextColor={theme.colors.textSecondary}
-                        />
-                        <Text style={typographyThemed(theme).bodyPrimary}>
-                          miles
-                        </Text>
+                      <View style={styles.listItem}>
+                        <View style={styles.listItemLeft}>
+                          <Text style={typographyThemed(theme).bodyPrimary}>
+                            {formatDateLabel(item.date)}
+                          </Text>
+                          <Text
+                            style={typographyThemed(theme).captionSecondary}
+                          >
+                            {formatTime(item.date as number)} ·{' '}
+                            {item.source === 'health-connect'
+                              ? 'Health Connect'
+                              : item.source === 'synced'
+                              ? 'Synced'
+                              : 'Manual'}
+                          </Text>
+                        </View>
+                        <View style={styles.listItemRight}>
+                          <Text style={typographyThemed(theme).bodyPrimary}>
+                            {item.miles.toFixed(2)}
+                          </Text>
+                          <EditButton
+                            size={iconSizes.medium}
+                            color={theme.colors.textSecondary}
+                            pressedColor={theme.colors.textPrimary}
+                            onPress={() => startEditing(item)}
+                            style={styles.editButton}
+                          />
+                        </View>
                       </View>
-                      <View style={styles.editButtonsRow}>
-                        <Button
-                          onPress={handleEdit}
-                          variant="brand"
-                          size="default"
-                        >
-                          Update
-                        </Button>
-                        <Button
-                          onPress={handleDelete}
-                          variant="primary"
-                          size="default"
-                        >
-                          Delete
-                        </Button>
-                      </View>
+                      {editingItem?.id === item.id && (
+                        <View style={styles.editSection}>
+                          <DateStepper
+                            date={editDate}
+                            onDateChange={handleDateChange}
+                          />
+                          <View style={styles.editFieldsRow}>
+                            <TextInput
+                              ref={editInputRef}
+                              style={[
+                                styles.input,
+                                styles.editInputField,
+                                {
+                                  backgroundColor: theme.colors.surface,
+                                  color: theme.colors.textPrimary,
+                                  borderWidth: 1,
+                                  borderColor: theme.colors.divider,
+                                },
+                              ]}
+                              value={editInput}
+                              onChangeText={setEditInput}
+                              keyboardType="numeric"
+                              selectTextOnFocus
+                              disableFullscreenUI={true}
+                              placeholderTextColor={theme.colors.textSecondary}
+                            />
+                            <Text style={typographyThemed(theme).bodyPrimary}>
+                              miles
+                            </Text>
+                          </View>
+                          <View style={styles.editButtonsRow}>
+                            <Button
+                              onPress={handleDelete}
+                              variant="primary"
+                              size="default"
+                            >
+                              Delete
+                            </Button>
+                            <View style={styles.editButtonsRight}>
+                              <Button
+                                onPress={handleEdit}
+                                variant="brand"
+                                size="default"
+                              >
+                                Update
+                              </Button>
+                              <Button
+                                onPress={cancelEditing}
+                                variant="outline"
+                                size="default"
+                              >
+                                Close
+                              </Button>
+                            </View>
+                          </View>
+                        </View>
+                      )}
                     </View>
                   )}
-                </View>
-              )}
-              ItemSeparatorComponent={Separator}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            />
+                  ItemSeparatorComponent={Separator}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                />
+              );
+            })()
           ) : (
             <View style={styles.emptyState}>
               <Text
@@ -323,54 +386,63 @@ export default function ManualMilesModal({
         </View>
       </View>
 
-      {/* Divider with total miles (including pending) */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        {(pendingEntries.length > 0 ||
-          (distanceEntries && distanceEntries.length > 0)) && (
-          <Text
-            style={[typographyThemed(theme).bodySecondary, styles.totalText]}
-          >
-            Total:{' '}
-            {(
-              totalManualMiles -
-              pendingDeletions.reduce((s, e) => s + (e?.miles ?? 0), 0) +
-              pendingEntries.reduce((s, e) => s + (e?.miles ?? 0), 0)
-            ).toFixed(2)}{' '}
-            miles
-          </Text>
-        )}
-      </View>
+      {/* Hide total and add section in landscape mode when editing */}
+      {!(isLandscape && editingItem) && (
+        <>
+          {/* Divider with total miles (including pending) */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            {(pendingEntries.length > 0 ||
+              (distanceEntries && distanceEntries.length > 0)) && (
+              <Text
+                style={[
+                  typographyThemed(theme).bodySecondary,
+                  styles.totalText,
+                ]}
+              >
+                Total:{' '}
+                {(
+                  totalManualMiles -
+                  pendingDeletions.reduce((s, e) => s + (e?.miles ?? 0), 0) +
+                  pendingEntries.reduce((s, e) => s + (e?.miles ?? 0), 0)
+                ).toFixed(2)}{' '}
+                miles
+              </Text>
+            )}
+          </View>
 
-      <View style={styles.inlineAddRow}>
-        <TextInput
-          ref={inputRef}
-          style={[
-            styles.input,
-            styles.inlineInput,
-            {
-              backgroundColor: theme.colors.surface,
-              color: theme.colors.textPrimary,
-              borderWidth: 1,
-              borderColor: theme.colors.divider,
-            },
-          ]}
-          value={addInput}
-          onChangeText={setAddInput}
-          keyboardType="numeric"
-          placeholder={isInputFocused ? '' : '0'}
-          onFocus={() => {
-            setIsInputFocused(true);
-            // Cancel any edit mode when focusing the add input
-            if (editingItem) cancelEditing();
-          }}
-          onBlur={() => setIsInputFocused(false)}
-          placeholderTextColor={theme.colors.textSecondary}
-        />
-        <Button onPress={handleAdd} variant="brand" size="default">
-          Add miles
-        </Button>
-      </View>
+          <View style={styles.inlineAddRow}>
+            <TextInput
+              ref={inputRef}
+              style={[
+                styles.input,
+                styles.inlineInput,
+                {
+                  backgroundColor: theme.colors.surface,
+                  color: theme.colors.textPrimary,
+                  borderWidth: 1,
+                  borderColor: theme.colors.divider,
+                },
+              ]}
+              value={addInput}
+              onChangeText={setAddInput}
+              keyboardType="decimal-pad"
+              disableFullscreenUI={true}
+              placeholder={isInputFocused ? '' : '0'}
+              onFocus={() => {
+                setIsInputFocused(true);
+                // Cancel any edit mode when focusing the add input
+                if (editingItem) cancelEditing();
+              }}
+              onBlur={() => setIsInputFocused(false)}
+              placeholderTextColor={theme.colors.textSecondary}
+            />
+            <Button onPress={handleAdd} variant="brand" size="default">
+              Add miles
+            </Button>
+          </View>
+        </>
+      )}
     </ModalWrapper>
   );
 }
@@ -433,6 +505,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.xs,
   },
+  listItemLeft: {
+    flexDirection: 'column',
+  },
+  yearHeader: {
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
   listItemRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -454,7 +533,12 @@ const styles = StyleSheet.create({
   editButtonsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  editButtonsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
   },
   editInputField: {

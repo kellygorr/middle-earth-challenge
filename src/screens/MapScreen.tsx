@@ -60,9 +60,7 @@ export default function MapScreen() {
   const { width, height } = useReactiveDimensions(); // reactive
   const setShowSettings = useUIStore(state => state.setShowSettings);
   const setShowStats = useUIStore(state => state.setShowStats);
-  const setShowManualMilesModal = useUIStore(
-    state => state.setShowManualMilesModal,
-  );
+  const setShowMilesModal = useUIStore(state => state.setShowMilesModal);
 
   const keyboardOffset = useKeyboardOffset(20);
   const showWelcome = useSettingsStore(state => state.showWelcome);
@@ -494,7 +492,7 @@ export default function MapScreen() {
         <PlusButton
           onPress={() => {
             clearStickyInfo();
-            setShowManualMilesModal(true);
+            setShowMilesModal(true);
           }}
           size={iconSizes.medium}
           color={theme.colors.textInverted}

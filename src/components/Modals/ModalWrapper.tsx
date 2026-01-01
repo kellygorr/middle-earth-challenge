@@ -226,10 +226,10 @@ export default function ModalWrapper({
 
 const localStyles = StyleSheet.create({
   keyboardAvoidingView: {
-    width: '100%',
-    maxWidth: modalConstants.maxWidth,
     flex: 1,
-    paddingVertical: spacing.sm,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

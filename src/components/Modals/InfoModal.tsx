@@ -437,8 +437,8 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                           style={styles.trackingOption}
                           onPress={() => {
                             handleDismiss();
-                            // Open manual miles modal
-                            useUIStore.getState().setShowManualMilesModal(true);
+                            // Open miles modal
+                            useUIStore.getState().setShowMilesModal(true);
                           }}
                         >
                           <View style={styles.trackingButtonContainer}>
@@ -572,8 +572,8 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                         : null;
                     const remaining =
                       !isCheckpointView && nextCheckpointMiles !== null
-                        ? getRemainingMilesTo(nextCheckpointMiles)
-                        : getRemainingMilesTo(milesVal);
+                        ? Math.round(getRemainingMilesTo(nextCheckpointMiles))
+                        : Math.round(getRemainingMilesTo(milesVal));
                     return (
                       <View style={styles.milesToNextSection}>
                         <View

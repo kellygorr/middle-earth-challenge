@@ -9,7 +9,7 @@ import {
   WelcomeModal,
   SettingsModal,
   StatsModal,
-  ManualMilesModal,
+  MilesModal,
   InfoModal,
 } from './src/components/Modals';
 import { useSettingsStore } from './src/stores/settingsStore';
@@ -64,10 +64,8 @@ function App(): React.JSX.Element {
   const setShowSettings = useUIStore(state => state.setShowSettings);
   const showStats = useUIStore(state => state.showStats);
   const setShowStats = useUIStore(state => state.setShowStats);
-  const showManualMilesModal = useUIStore(state => state.showManualMilesModal);
-  const setShowManualMilesModal = useUIStore(
-    state => state.setShowManualMilesModal,
-  );
+  const showMilesModal = useUIStore(state => state.showMilesModal);
+  const setShowMilesModal = useUIStore(state => state.setShowMilesModal);
 
   const isInfoVisible = useInfoStore(state => state.isModalVisible);
   const closeInfoModal = useInfoStore(state => state.closeModal);
@@ -141,9 +139,9 @@ function App(): React.JSX.Element {
           onDismiss={() => setShowSettings(false)}
         />
         <StatsModal visible={showStats} onDismiss={() => setShowStats(false)} />
-        <ManualMilesModal
-          visible={showManualMilesModal}
-          onDismiss={() => setShowManualMilesModal(false)}
+        <MilesModal
+          visible={showMilesModal}
+          onDismiss={() => setShowMilesModal(false)}
         />
         <InfoModal visible={isInfoVisible} onDismiss={closeInfoModal} />
 

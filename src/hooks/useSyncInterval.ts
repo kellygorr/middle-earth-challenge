@@ -83,6 +83,17 @@ export function useSyncInterval() {
       const newRecords: typeof records = [];
       const updatedRecords: typeof records = [];
 
+      // Find the most recent record by startTime (only this one could be in-progress)
+      const mostRecentRecordId =
+        records.length > 0
+          ? records.reduce((latest, r) =>
+              new Date(r.startTime).getTime() >
+              new Date(latest.startTime).getTime()
+                ? r
+                : latest,
+            ).id
+          : null;
+
       for (const record of records) {
         const entryId = `hc_${record.id}`;
         const existing = existingEntriesMap.get(entryId);
@@ -90,11 +101,15 @@ export function useSyncInterval() {
 
         if (!existing) {
           newRecords.push(record);
-        } else if (Math.abs(existing.miles - miles) > 0.001) {
-          // Miles changed - this is an updated in-progress activity
+        } else if (
+          Math.abs(existing.miles - miles) > 0.001 &&
+          record.id === mostRecentRecordId
+        ) {
+          // Only update the most recent record (could be in-progress activity)
+          // Older records with different miles were modified by user - preserve them
           updatedRecords.push(record);
         }
-        // else: same miles, no action needed
+        // else: same miles, or older record with user modifications - no action needed
       }
 
       if (newRecords.length === 0 && updatedRecords.length === 0) {
