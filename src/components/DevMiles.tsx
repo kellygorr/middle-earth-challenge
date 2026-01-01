@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  useWindowDimensions,
+} from 'react-native';
 import { useTheme } from '../stores/settingsStore';
 import { spacing, borderRadius } from '../styles/global';
 import { useProgressStore } from '../stores/progressStore';
@@ -13,6 +19,8 @@ interface DevMilesProps {
 
 export default function DevMiles({ keyboardOffset }: DevMilesProps) {
   const theme = useTheme();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
   const setTestOverrideMiles = useProgressStore(state => state.setTestMiles);
   const isTestOverride = useProgressStore(state => state.isTestOverride);
   const [testMiles, setTestMiles] = useState('0');
@@ -32,10 +40,11 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
         {
           bottom: keyboardOffset,
           backgroundColor: theme.colors.modalOverlay,
+          justifyContent: isLandscape ? 'center' : 'space-between',
         },
       ]}
     >
-      <View style={styles.leftGroup}>
+      <View style={[styles.leftGroup, isLandscape && styles.centeredGroup]}>
         <Text style={[styles.label, { color: theme.colors.textInverted }]}>
           Test Miles
         </Text>
@@ -90,6 +99,9 @@ const styles = StyleSheet.create({
   leftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  centeredGroup: {
+    marginRight: spacing.md,
   },
   label: { fontSize: 14, marginHorizontal: spacing.sm },
   input: {

@@ -1,25 +1,12 @@
 import React from 'react';
-import {
-  Modal,
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableWithoutFeedback,
-} from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  interpolateColor,
-} from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useTheme } from '../../stores/settingsStore';
 import { useProgressStore } from '../../stores/progressStore';
 import { useStatsStore, Stats } from '../../stores/statsStore';
 import { typographyThemed } from '../../styles/typography';
-import { spacing, iconSizes, shadows } from '../../styles/global';
-import { useAnimatedModal } from '../../hooks/useAnimatedModal';
-import { motion } from '../../styles/motion';
-import { CloseButton } from '../ButtonIcons';
+import { spacing } from '../../styles/global';
+import { modalStyles } from '../../styles/modalStyles';
+import ModalWrapper from './ModalWrapper';
 import JourneyProgressBar from '../JourneyProgressBar';
 
 interface StatsModalProps {
@@ -58,30 +45,6 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
     : null;
   const dateStarted = getDateStarted(distanceEntries);
 
-  const {
-    internalVisible,
-    animatedBackgroundStyle,
-    animatedContentStyle,
-    contentOpacitySV,
-  } = useAnimatedModal(visible, {
-    entranceDelay: motion.modal.entranceDelay,
-    entranceDuration: motion.modal.entranceDuration,
-    exitDuration: motion.modal.exitDuration,
-    easing: motion.easing.standard,
-    translateDistance: -spacing.lg,
-  });
-
-  // Sync card shadow/background with content fade
-  const animatedCardStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      contentOpacitySV.value,
-      [0, 1],
-      ['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)'],
-    ),
-    shadowOpacity: 0.3 * contentOpacitySV.value,
-    elevation: contentOpacitySV.value > 0.95 ? 8 : 0,
-  }));
-
   const renderStatRow = (
     label: string,
     value: string | number,
@@ -115,11 +78,11 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
       </View>
 
       {/* Activity Section with just date started */}
-      <View style={styles.section}>
+      <View style={modalStyles.section}>
         <Text
           style={[
             typographyThemed(theme).subtitleLargePrimary,
-            styles.sectionTitle,
+            modalStyles.sectionTitle,
           ]}
         >
           Activity
@@ -132,11 +95,11 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
   const renderStats = (statsData: Stats) => (
     <>
       {/* Journey Progress Section */}
-      <View style={styles.section}>
+      <View style={modalStyles.section}>
         <Text
           style={[
             typographyThemed(theme).subtitleLargePrimary,
-            styles.sectionTitle,
+            modalStyles.sectionTitle,
           ]}
         >
           Journey Progress
@@ -167,11 +130,11 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
       </View>
 
       {/* Activity Section */}
-      <View style={styles.section}>
+      <View style={modalStyles.section}>
         <Text
           style={[
             typographyThemed(theme).subtitleLargePrimary,
-            styles.sectionTitle,
+            modalStyles.sectionTitle,
           ]}
         >
           Activity
@@ -209,11 +172,11 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
       </View>
 
       {/* Pace & Projections Section */}
-      <View style={styles.section}>
+      <View style={modalStyles.section}>
         <Text
           style={[
             typographyThemed(theme).subtitleLargePrimary,
-            styles.sectionTitle,
+            modalStyles.sectionTitle,
           ]}
         >
           Pace & Projections
@@ -245,120 +208,30 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
   );
 
   return (
-    <Modal
-      visible={internalVisible}
-      transparent
-      animationType="none"
-      onRequestClose={onDismiss}
-      statusBarTranslucent={true}
+    <ModalWrapper
+      visible={visible}
+      onDismiss={onDismiss}
+      title="Stats"
+      smallHeader
     >
-      <Animated.View
-        style={[
-          styles.overlay,
-          { backgroundColor: theme.colors.modalOverlay },
-          animatedBackgroundStyle,
-        ]}
+      <ScrollView
+        style={modalStyles.scrollView}
+        contentContainerStyle={modalStyles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
       >
-        <TouchableWithoutFeedback onPress={onDismiss}>
-          <View style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
-        <SafeAreaView
-          style={styles.safeArea}
-          edges={['top', 'bottom']}
-          pointerEvents="box-none"
-        >
-          <Animated.View style={[styles.contentWrapper, animatedContentStyle]}>
-            {/* Stats Title - Outside modal */}
-            <Text
-              style={[
-                typographyThemed(theme).titleMediumInverted,
-                styles.title,
-              ]}
-            >
-              Stats
-            </Text>
+        {stats ? renderStats(stats) : renderEmptyState()}
 
-            <Animated.View style={[styles.modalContainer, animatedCardStyle]}>
-              <CloseButton
-                style={styles.closeButton}
-                size={iconSizes.medium}
-                onPress={onDismiss}
-              />
-              <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                bounces={true}
-              >
-                {stats ? renderStats(stats) : renderEmptyState()}
-
-                {/* Journey Progress Bar at bottom */}
-                <View style={styles.progressBarSection}>
-                  <JourneyProgressBar isLocked={false} />
-                </View>
-              </ScrollView>
-            </Animated.View>
-          </Animated.View>
-        </SafeAreaView>
-      </Animated.View>
-    </Modal>
+        {/* Journey Progress Bar at bottom */}
+        <View style={styles.progressBarSection}>
+          <JourneyProgressBar isLocked={false} />
+        </View>
+      </ScrollView>
+    </ModalWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  safeArea: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
-  contentWrapper: {
-    width: '100%',
-    maxWidth: 500,
-    flex: 1,
-    maxHeight: '80%',
-    alignItems: 'flex-start',
-  },
-  title: {
-    marginBottom: spacing.sm,
-  },
-  modalContainer: {
-    width: '100%',
-    flex: 1,
-    minHeight: 400,
-    borderRadius: 16,
-    ...shadows.large,
-    paddingTop: 48,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingTop: 0,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 64,
-    height: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    marginBottom: spacing.md,
-  },
   statRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

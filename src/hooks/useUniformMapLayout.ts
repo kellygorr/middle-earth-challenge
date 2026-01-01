@@ -19,8 +19,12 @@ export function useUniformMapLayout(
   svgHeight: number,
   firstCheckpoint: PointType,
   targetX: number = 50,
-  targetY: number = 300,
+  targetYPortrait: number = 300,
+  targetYLandscape: number = 100,
 ): UniformMapLayout {
+  const isLandscape = width > height;
+  const targetY = isLandscape ? targetYLandscape : targetYPortrait;
+
   const minDimension = Math.min(width, height);
   const minWidthScale = (minDimension * 3) / svgWidth;
   const heightScale = height / svgHeight;

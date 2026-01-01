@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Insets } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 import { useTheme } from '../../stores/settingsStore';
 import { borderRadius } from '../../styles/global';
@@ -8,12 +8,14 @@ interface PlusButtonProps {
   size?: number;
   color?: string;
   onPress?: () => void;
+  hitSlop?: Insets;
 }
 
 export default function PlusButton({
   size = 32,
   color,
   onPress,
+  hitSlop,
 }: PlusButtonProps) {
   const theme = useTheme();
   const strokeColor = color ?? theme.colors.buttonPrimaryText;
@@ -55,6 +57,7 @@ export default function PlusButton({
         },
       ]}
       onPress={onPress}
+      hitSlop={hitSlop}
     >
       {Icon}
     </Pressable>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Insets } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { useTheme } from '../../stores/settingsStore';
 import { borderRadius } from '../../styles/global';
@@ -8,12 +8,14 @@ interface RecenterButtonProps {
   size?: number;
   color?: string;
   onPress?: () => void;
+  hitSlop?: Insets;
 }
 
 export default function RecenterButton({
   size = 24,
   color,
   onPress,
+  hitSlop,
 }: RecenterButtonProps) {
   const theme = useTheme();
   const strokeColor = color ?? theme.colors.buttonPrimaryText;
@@ -83,6 +85,7 @@ export default function RecenterButton({
         },
       ]}
       onPress={onPress}
+      hitSlop={hitSlop}
     >
       {Icon}
     </Pressable>

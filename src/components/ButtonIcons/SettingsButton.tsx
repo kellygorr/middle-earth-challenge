@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Insets } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '../../stores/settingsStore';
 import { borderRadius } from '../../styles/global';
@@ -8,12 +8,14 @@ interface SettingsButtonProps {
   size?: number;
   color?: string;
   onPress?: () => void;
+  hitSlop?: Insets;
 }
 
 export default function SettingsButton({
   size = 32,
   color,
   onPress,
+  hitSlop,
 }: SettingsButtonProps) {
   const theme = useTheme();
   const fillColor = color ?? theme.colors.buttonPrimaryText;
@@ -40,6 +42,7 @@ export default function SettingsButton({
         },
       ]}
       onPress={onPress}
+      hitSlop={hitSlop}
     >
       {Icon}
     </Pressable>

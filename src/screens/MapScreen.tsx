@@ -105,6 +105,7 @@ export default function MapScreen() {
     firstCheckpoint,
     50,
     300,
+    100,
   );
 
   // Map gestures
@@ -337,6 +338,7 @@ export default function MapScreen() {
           }}
           size={iconSizes.medium}
           color={theme.colors.buttonPrimaryText}
+          hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
         />
       </Animated.View>
 
@@ -378,6 +380,7 @@ export default function MapScreen() {
           variant="primary"
           size="small"
           isMediumText={labelSize === 'large'}
+          hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
         >
           Labels
         </Button>
@@ -407,6 +410,7 @@ export default function MapScreen() {
           }}
           size={iconSizes.medium}
           color={theme.colors.mapBackground}
+          hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
         />
       </Animated.View>
 
@@ -425,6 +429,7 @@ export default function MapScreen() {
           }}
           size={iconSizes.medium}
           color={theme.colors.textInverted}
+          hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
         />
       </Animated.View>
 
