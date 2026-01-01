@@ -39,6 +39,7 @@ export interface DistanceEntry {
   saveId: string;
   date: number; // Unix timestamp (ms)
   miles: number;
+  source: 'manual' | 'health-connect' | 'synced';
 }
 
 // Trivia unlock types
@@ -51,6 +52,7 @@ export interface TriviaUnlock {
 
 // User settings types
 export type LabelSize = 'regular' | 'large';
+export type SyncProvider = 'none' | 'health-connect' | 'apple-health';
 
 export interface UserSettings {
   id: string;
@@ -61,6 +63,12 @@ export interface UserSettings {
   colorizeMap: boolean;
   reducedMapTitles: boolean;
   devMode: boolean;
+  // Health sync settings
+  syncEnabled: boolean;
+  syncProvider: SyncProvider; // Which fitness service to sync with
+  syncStartDate: number | null; // Unix timestamp when sync was enabled
+  lastSyncTimestamp: number | null; // Last successful sync timestamp
+  liveSyncEnabled: boolean; // Auto-sync every minute while app is open
 }
 
 // Journey segment definition (from distance.md)
@@ -78,6 +86,14 @@ export interface HealthData {
   distance: number; // in miles
   steps: number;
   date: string;
+}
+
+// Individual health record from Health Connect
+export interface HealthDistanceRecord {
+  id: string; // metadata.id from Health Connect
+  startTime: string; // ISO timestamp
+  endTime: string; // ISO timestamp
+  distanceMeters: number;
 }
 
 // Map position

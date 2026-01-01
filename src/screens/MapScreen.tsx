@@ -1,10 +1,18 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, Keyboard } from 'react-native';
 import {
   GestureHandlerRootView,
   GestureDetector,
 } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 // Modals are rendered globally in App.tsx
 import {
   SettingsButton,
@@ -19,6 +27,7 @@ import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import DevMiles from '../components/DevMiles';
 import { spacing, borderRadius, iconButtonSizes } from '../styles/global';
+
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
 import { useInitializationStore } from '../stores/initializationStore';
@@ -87,6 +96,29 @@ export default function MapScreen() {
 
   // Miles from progress store (source of truth)
   const miles = useProgressStore(state => state.miles);
+  const syncMessage = useProgressStore(state => state.syncMessage);
+
+  // Rotating animation for sync icon - step-based rotation in a circle
+  const syncRotation = useSharedValue(0);
+
+  useEffect(() => {
+    if (syncMessage) {
+      // Step rotation: move 45 degrees every 350ms
+      const interval = setInterval(() => {
+        syncRotation.value = withTiming(syncRotation.value + 45, {
+          duration: 150,
+          easing: Easing.out(Easing.ease),
+        });
+      }, 350);
+      return () => clearInterval(interval);
+    } else {
+      syncRotation.value = 0;
+    }
+  }, [syncMessage, syncRotation]);
+
+  const syncIconStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${syncRotation.value}deg` }],
+  }));
 
   const firstCheckpoint = checkpointsData[0];
   const {
@@ -342,6 +374,43 @@ export default function MapScreen() {
         />
       </Animated.View>
 
+      {/* Sync Message Toast */}
+      {syncMessage && (
+        <Animated.View
+          style={styles.syncMessageContainer}
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(200)}
+        >
+          <View
+            style={[
+              styles.syncMessageContent,
+              { backgroundColor: theme.colors.buttonPrimary },
+            ]}
+          >
+            <Animated.View style={syncIconStyle}>
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d="M12 4V1L8 5L12 9V6C15.31 6 18 8.69 18 12H20C20 7.58 16.42 4 12 4Z"
+                  fill={theme.colors.buttonPrimaryText}
+                />
+                <Path
+                  d="M12 20V23L16 19L12 15V18C8.69 18 6 15.31 6 12H4C4 16.42 7.58 20 12 20Z"
+                  fill={theme.colors.buttonPrimaryText}
+                />
+              </Svg>
+            </Animated.View>
+            <Text
+              style={[
+                styles.syncMessageText,
+                { color: theme.colors.buttonPrimaryText },
+              ]}
+            >
+              {syncMessage}
+            </Text>
+          </View>
+        </Animated.View>
+      )}
+
       {/* Info System - Checkpoint/Trivia Info (derived via store selector) */}
       {currentItem && shouldShowInfoButton && (
         <Animated.View
@@ -512,6 +581,28 @@ export const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  syncMessageContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    pointerEvents: 'none',
+  },
+  syncMessageContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  syncMessageText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { UserSettings, LabelSize } from '../types';
+import { UserSettings, LabelSize, SyncProvider } from '../types';
 import { ThemeName, themes } from '../styles/themes';
 import { database } from '../services/database';
 
@@ -15,6 +15,12 @@ interface SettingsStore extends UserSettings {
   setShowWelcome: (show: boolean) => void;
   setReducedMapTitles: (reduced: boolean) => void;
   setDevMode: (enabled: boolean) => void;
+  // Sync actions
+  setSyncEnabled: (enabled: boolean) => void;
+  setSyncProvider: (provider: SyncProvider) => void;
+  setSyncStartDate: (date: number | null) => void;
+  setLastSyncTimestamp: (timestamp: number | null) => void;
+  setLiveSyncEnabled: (enabled: boolean) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -30,6 +36,12 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   reducedMapTitles: true,
   devMode: true,
   isLoaded: false,
+  // Sync settings
+  syncEnabled: false,
+  syncProvider: 'none',
+  syncStartDate: null,
+  lastSyncTimestamp: null,
+  liveSyncEnabled: false,
 
   // Actions - each setter also persists to database
   setLabelSize: size => {
@@ -69,6 +81,32 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     database.updateUserSettings({ devMode: enabled });
   },
 
+  // Sync actions
+  setSyncEnabled: enabled => {
+    set({ syncEnabled: enabled });
+    database.updateUserSettings({ syncEnabled: enabled });
+  },
+
+  setSyncProvider: provider => {
+    set({ syncProvider: provider });
+    database.updateUserSettings({ syncProvider: provider });
+  },
+
+  setSyncStartDate: date => {
+    set({ syncStartDate: date });
+    database.updateUserSettings({ syncStartDate: date });
+  },
+
+  setLastSyncTimestamp: timestamp => {
+    set({ lastSyncTimestamp: timestamp });
+    database.updateUserSettings({ lastSyncTimestamp: timestamp });
+  },
+
+  setLiveSyncEnabled: enabled => {
+    set({ liveSyncEnabled: enabled });
+    database.updateUserSettings({ liveSyncEnabled: enabled });
+  },
+
   loadSettings: async () => {
     try {
       const settings = await database.getUserSettings();
@@ -84,6 +122,11 @@ export const useSettingsStore = create<SettingsStore>(set => ({
           settings.devMode === undefined || settings.devMode === null
             ? true
             : settings.devMode,
+        syncEnabled: settings.syncEnabled ?? false,
+        syncProvider: settings.syncProvider ?? 'none',
+        syncStartDate: settings.syncStartDate ?? null,
+        lastSyncTimestamp: settings.lastSyncTimestamp ?? null,
+        liveSyncEnabled: settings.liveSyncEnabled ?? false,
         isLoaded: true,
       });
     } catch (error) {

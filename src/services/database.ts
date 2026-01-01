@@ -1,5 +1,5 @@
 import { open, type DB } from '@op-engineering/op-sqlite';
-import { UserSettings, LabelSize } from '../types';
+import { UserSettings, LabelSize, SyncProvider } from '../types';
 import { ThemeName } from '../styles/themes';
 
 class Database {
@@ -27,37 +27,28 @@ class Database {
       CREATE TABLE IF NOT EXISTS user_settings (
         id TEXT PRIMARY KEY,
         label_size TEXT NOT NULL DEFAULT 'regular',
-        current_theme TEXT NOT NULL DEFAULT 'classic',
+        current_theme TEXT NOT NULL DEFAULT 'minimalist',
         show_trivia_markers INTEGER NOT NULL DEFAULT 1,
         show_checkpoint_labels INTEGER NOT NULL DEFAULT 1,
         colorize_map INTEGER NOT NULL DEFAULT 0,
         reduced_map_titles INTEGER NOT NULL DEFAULT 1,
-        dev_mode INTEGER NOT NULL DEFAULT 1
+        dev_mode INTEGER NOT NULL DEFAULT 0,
+        sync_enabled INTEGER NOT NULL DEFAULT 0,
+        sync_provider TEXT NOT NULL DEFAULT 'none',
+        sync_start_date INTEGER,
+        last_sync_timestamp INTEGER,
+        live_sync_enabled INTEGER NOT NULL DEFAULT 0
       )
     `);
 
-    // Ensure dev_mode column exists for older installations
-    try {
-      const result = this.db.executeSync(`PRAGMA table_info(user_settings)`);
-      const hasDevMode = (result.rows || []).some(
-        (r: any) => (r.name || r.COLUMN_NAME || r.column_name) === 'dev_mode',
-      );
-      if (!hasDevMode) {
-        this.db.executeSync(
-          `ALTER TABLE user_settings ADD COLUMN dev_mode INTEGER NOT NULL DEFAULT 1`,
-        );
-      }
-    } catch {
-      // Best-effort; ignore if pragma or alter fails
-    }
-
-    // Daily distances table
+    // Distance entries table
     this.db.executeSync(`
-      CREATE TABLE IF NOT EXISTS daily_distances (
+      CREATE TABLE IF NOT EXISTS distance_entries (
         id TEXT PRIMARY KEY,
         save_id TEXT NOT NULL,
         date INTEGER NOT NULL, -- Unix timestamp (ms)
-        miles REAL NOT NULL
+        miles REAL NOT NULL,
+        source TEXT NOT NULL DEFAULT 'manual' -- 'manual' or 'synced'
       )
     `);
 
@@ -76,8 +67,8 @@ class Database {
 
     // Use INSERT OR IGNORE to avoid UNIQUE constraint errors on race conditions
     this.db.executeSync(
-      `INSERT OR IGNORE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode)
-       VALUES ('default', 'regular', 'classic', 1, 1, 0, 1, 1)`,
+      `INSERT OR IGNORE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp)
+       VALUES ('default', 'regular', 'classic', 1, 1, 0, 1, 0, 0, 'none', NULL, NULL)`,
     );
   }
 
@@ -95,8 +86,8 @@ class Database {
     // If no settings found, create defaults
     if (!row) {
       this.db.executeSync(
-        `INSERT OR REPLACE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode)
-         VALUES ('default', 'regular', 'classic', 1, 1, 0, 1, 1)`,
+        `INSERT OR REPLACE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp)
+         VALUES ('default', 'regular', 'classic', 1, 1, 0, 1, 0, 0, 'none', NULL, NULL)`,
       );
 
       const newResult = this.db.executeSync(
@@ -122,6 +113,11 @@ class Database {
         (row as any).dev_mode === 1 ||
         (row as any).dev_mode === true ||
         (row as any).dev_mode === '1',
+      syncEnabled: (row as any).sync_enabled === 1,
+      syncProvider: ((row as any).sync_provider as SyncProvider) ?? 'none',
+      syncStartDate: (row as any).sync_start_date ?? null,
+      lastSyncTimestamp: (row as any).last_sync_timestamp ?? null,
+      liveSyncEnabled: (row as any).live_sync_enabled === 1,
     };
   }
 
@@ -161,6 +157,26 @@ class Database {
       fields.push('dev_mode = ?');
       values.push(updates.devMode ? 1 : 0);
     }
+    if (updates.syncEnabled !== undefined) {
+      fields.push('sync_enabled = ?');
+      values.push(updates.syncEnabled ? 1 : 0);
+    }
+    if (updates.syncProvider !== undefined) {
+      fields.push('sync_provider = ?');
+      values.push(updates.syncProvider);
+    }
+    if (updates.syncStartDate !== undefined) {
+      fields.push('sync_start_date = ?');
+      values.push(updates.syncStartDate ?? 0);
+    }
+    if (updates.lastSyncTimestamp !== undefined) {
+      fields.push('last_sync_timestamp = ?');
+      values.push(updates.lastSyncTimestamp ?? 0);
+    }
+    if (updates.liveSyncEnabled !== undefined) {
+      fields.push('live_sync_enabled = ?');
+      values.push(updates.liveSyncEnabled ? 1 : 0);
+    }
 
     if (fields.length === 0) return;
 
@@ -183,11 +199,18 @@ class Database {
     saveId: string;
     date: number;
     miles: number;
+    source?: 'manual' | 'health-connect' | 'synced';
   }): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     this.db.executeSync(
-      `INSERT OR REPLACE INTO daily_distances (id, save_id, date, miles) VALUES (?, ?, ?, ?)`,
-      [entry.id, entry.saveId, entry.date, entry.miles],
+      `INSERT OR REPLACE INTO distance_entries (id, save_id, date, miles, source) VALUES (?, ?, ?, ?, ?)`,
+      [
+        entry.id,
+        entry.saveId,
+        entry.date,
+        entry.miles,
+        entry.source || 'manual',
+      ],
     );
   }
 
@@ -197,11 +220,12 @@ class Database {
       saveId: string;
       date: number;
       miles: number;
+      source: 'manual' | 'health-connect' | 'synced';
     }[]
   > {
     if (!this.db) throw new Error('Database not initialized');
     const result = this.db.executeSync(
-      `SELECT id, save_id as saveId, date, miles FROM daily_distances WHERE save_id = ? ORDER BY date ASC`,
+      `SELECT id, save_id as saveId, date, miles, source FROM distance_entries WHERE save_id = ? ORDER BY date ASC`,
       [saveId],
     );
     const rows = result.rows || [];
@@ -210,12 +234,13 @@ class Database {
       saveId: String(r.saveId),
       date: Number(r.date),
       miles: Number(r.miles),
+      source: (r.source || 'manual') as 'manual' | 'health-connect' | 'synced',
     }));
   }
 
   async removeDistanceEntry(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
-    this.db.executeSync(`DELETE FROM daily_distances WHERE id = ?`, [id]);
+    this.db.executeSync(`DELETE FROM distance_entries WHERE id = ?`, [id]);
   }
 
   async setMilesSnapshot(id: string, miles: number): Promise<void> {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Insets } from 'react-native';
+import { Pressable, StyleSheet, Insets, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '../../stores/settingsStore';
 import { borderRadius } from '../../styles/global';
@@ -9,6 +9,7 @@ interface SettingsButtonProps {
   color?: string;
   onPress?: () => void;
   hitSlop?: Insets;
+  variant?: 'primary' | 'brand';
 }
 
 export default function SettingsButton({
@@ -16,9 +17,18 @@ export default function SettingsButton({
   color,
   onPress,
   hitSlop,
+  variant = 'primary',
 }: SettingsButtonProps) {
   const theme = useTheme();
-  const fillColor = color ?? theme.colors.buttonPrimaryText;
+  const fillColor =
+    color ??
+    (variant === 'brand'
+      ? theme.colors.buttonBrandText
+      : theme.colors.buttonPrimaryText);
+  const backgroundColor =
+    variant === 'brand'
+      ? theme.colors.buttonBrandBackground
+      : theme.colors.buttonPrimaryBackground;
   const Icon = (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Path
@@ -28,7 +38,21 @@ export default function SettingsButton({
     </Svg>
   );
 
-  if (!onPress) return Icon;
+  if (!onPress) {
+    return (
+      <View
+        style={[
+          styles.touch,
+          {
+            backgroundColor,
+            borderRadius: borderRadius.full,
+          },
+        ]}
+      >
+        {Icon}
+      </View>
+    );
+  }
 
   return (
     <Pressable
@@ -37,7 +61,7 @@ export default function SettingsButton({
         {
           backgroundColor: pressed
             ? theme.colors.buttonPressed
-            : theme.colors.buttonPrimaryBackground,
+            : backgroundColor,
           borderRadius: borderRadius.full,
         },
       ]}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Insets } from 'react-native';
+import { Pressable, View, StyleSheet, Insets } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 import { useTheme } from '../../stores/settingsStore';
 import { borderRadius } from '../../styles/global';
@@ -43,7 +43,22 @@ export default function PlusButton({
     </Svg>
   );
 
-  if (!onPress) return Icon;
+  // When no onPress, render as a View with background (for display-only use)
+  if (!onPress) {
+    return (
+      <View
+        style={[
+          styles.touch,
+          {
+            backgroundColor: theme.colors.buttonPrimaryBackground,
+            borderRadius: borderRadius.full,
+          },
+        ]}
+      >
+        {Icon}
+      </View>
+    );
+  }
 
   return (
     <Pressable

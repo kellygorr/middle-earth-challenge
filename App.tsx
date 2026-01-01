@@ -13,6 +13,7 @@ import {
   InfoModal,
 } from './src/components/Modals';
 import { useSettingsStore } from './src/stores/settingsStore';
+import { useSyncInterval } from './src/hooks/useSyncInterval';
 import { useUIStore } from './src/stores/uiStore';
 import { useInfoStore } from './src/stores/infoStore';
 import { useInitializationStore } from './src/stores/initializationStore';
@@ -70,6 +71,10 @@ function App(): React.JSX.Element {
 
   const isInfoVisible = useInfoStore(state => state.isModalVisible);
   const closeInfoModal = useInfoStore(state => state.closeModal);
+
+  // Set up periodic sync when health sync is enabled
+  useSyncInterval();
+
   const setDistanceEntries = useProgressStore(
     state => state.setDistanceEntries,
   );

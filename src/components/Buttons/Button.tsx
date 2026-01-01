@@ -61,6 +61,14 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
     // Pressed state animation
     const pressedSV = useSharedValue(0);
     const animatedStyle = useAnimatedStyle(() => {
+      // Disabled state for outline variant: use disabled colors
+      if (disabled && variant === 'outline') {
+        return {
+          backgroundColor: theme.colors.buttonDisabledBg,
+          borderColor: 'transparent',
+        };
+      }
+
       const filledColor =
         variant === 'brand'
           ? theme.colors.buttonBrandBackground
@@ -114,9 +122,11 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       return { transform: [{ rotate: `${rotation}deg` }] };
     });
 
-    const opacityValue = disabled ? 0.5 : 1;
+    const opacityValue = disabled && variant !== 'outline' ? 0.5 : 1;
     const textColor =
-      variant === 'primary'
+      disabled && variant === 'outline'
+        ? theme.colors.buttonDisabledText
+        : variant === 'primary'
         ? theme.colors.buttonPrimaryText
         : variant === 'brand'
         ? theme.colors.buttonBrandText

@@ -37,13 +37,11 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
   const hasEnoughData = useStatsStore(state => state.hasEnoughDataForStats)(
     distanceEntries,
   );
-  const getDateStarted = useStatsStore(state => state.getDateStarted);
   const getStats = useStatsStore(state => state.getStats);
 
   const stats: Stats | null = hasEnoughData
     ? getStats(distanceEntries, miles)
     : null;
-  const dateStarted = getDateStarted(distanceEntries);
 
   const renderStatRow = (
     label: string,
@@ -68,28 +66,13 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
   );
 
   const renderEmptyState = () => (
-    <>
-      <View style={styles.emptyStateMessage}>
-        <Text
-          style={[typographyThemed(theme).bodyPrimary, styles.emptyStateText]}
-        >
-          Make more progress to unlock stats
-        </Text>
-      </View>
-
-      {/* Activity Section with just date started */}
-      <View style={modalStyles.section}>
-        <Text
-          style={[
-            typographyThemed(theme).subtitleLargePrimary,
-            modalStyles.sectionTitle,
-          ]}
-        >
-          Activity
-        </Text>
-        {renderStatRow('Date started', formatDate(dateStarted), true)}
-      </View>
-    </>
+    <View style={styles.emptyStateMessage}>
+      <Text
+        style={[typographyThemed(theme).bodyPrimary, styles.emptyStateText]}
+      >
+        Make more progress to unlock stats
+      </Text>
+    </View>
   );
 
   const renderStats = (statsData: Stats) => (
@@ -216,7 +199,10 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
     >
       <ScrollView
         style={modalStyles.scrollView}
-        contentContainerStyle={modalStyles.scrollContent}
+        contentContainerStyle={[
+          modalStyles.scrollContent,
+          !stats && styles.emptyStateContainer,
+        ]}
         showsVerticalScrollIndicator={false}
         bounces={true}
       >
@@ -245,11 +231,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'right',
   },
+  emptyStateContainer: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+  },
   emptyStateMessage: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing.xl,
-    marginBottom: spacing.md,
   },
   emptyStateText: {
     textAlign: 'center',

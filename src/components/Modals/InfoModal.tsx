@@ -16,18 +16,31 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useTheme } from '../../stores/settingsStore';
+import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 import { modalStyles, modalConstants } from '../../styles/modalStyles';
+import { useUIStore } from '../../stores/uiStore';
 import { useInfoStore } from '../../stores/infoStore';
 import { useProgressStore } from '../../stores/progressStore';
 import { typography, typographyThemed } from '../../styles/typography';
-import { spacing, borderRadius, iconSizes } from '../../styles/global';
+import {
+  spacing,
+  borderRadius,
+  iconSizes,
+  iconButtonSizes,
+} from '../../styles/global';
 import { useAnimatedModal } from '../../hooks/useAnimatedModal';
 import { motion } from '../../styles/motion';
 // TOTAL_JOURNEY_MILES not needed; journey progress computed via store selectors
 import CelebrationBorder from '../CelebrationBorder';
-import { CloseButton } from '../ButtonIcons';
+import {
+  CloseButton,
+  SyncButton,
+  PlusButton,
+  SettingsButton,
+  DevModeButton,
+} from '../ButtonIcons';
 import JourneyProgressBar from '../JourneyProgressBar';
+import SyncOptionsModal from './SyncOptionsModal';
 // PointType import not needed here after store-based lookups
 
 // Centralized timings and flags
@@ -88,6 +101,22 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   const getPointFromIndex = useProgressStore(state => state.getPointFromIndex);
   const getPreviousTrivia = useProgressStore(state => state.getPreviousTrivia);
   const setCurrentItem = useInfoStore(state => state.setCurrentItem);
+  const syncEnabled = useSettingsStore(state => state.syncEnabled);
+  const devMode = useSettingsStore(state => state.devMode);
+  const setDevMode = useSettingsStore(state => state.setDevMode);
+  const setShowSettings = useUIStore(state => state.setShowSettings);
+
+  // State for sync options modal
+  const [showSyncOptions, setShowSyncOptions] = React.useState(false);
+
+  // Show sync hint on first checkpoint (Hobbiton) when sync is not yet enabled
+  const isFirstCheckpoint =
+    itemType === 'checkpoint' &&
+    currentItem &&
+    'isStart' in currentItem &&
+    currentItem.isStart === true;
+  // Always show tracking options on first checkpoint
+  const showTrackingOptions = isFirstCheckpoint;
   // const getCurrentCheckpoint = useProgressStore(
   //   state => state.getCurrentCheckpoint,
   // );
@@ -287,6 +316,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
 
                 <Animated.View
                   style={[
+                    modalStyles.modalContainer,
                     modalStyles.modalContainerSmallHeader,
                     animatedCardStyle,
                     modalStyles.modalCardDefault,
@@ -302,7 +332,11 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   {/* Scrollable Content */}
                   <ScrollView
                     style={modalStyles.scrollView}
-                    contentContainerStyle={[modalStyles.scrollContent]}
+                    contentContainerStyle={[
+                      modalStyles.scrollContent,
+                      showTrackingOptions &&
+                        styles.scrollContentWithTrackingOptions,
+                    ]}
                     showsVerticalScrollIndicator={false}
                     bounces={true}
                     scrollEventThrottle={16}
@@ -349,6 +383,101 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                       >
                         {currentItem.description.text}
                       </Text>
+                    )}
+
+                    {/* Tracking options for first checkpoint - after description */}
+                    {showTrackingOptions && (
+                      <View style={styles.trackingOptionsContainer}>
+                        {/* Sync button when not synced, Settings button when synced */}
+                        {!syncEnabled ? (
+                          <Pressable
+                            style={styles.trackingOption}
+                            onPress={() => {
+                              // Close checkpoint modal, then open sync options modal
+                              onDismiss();
+                              setShowSyncOptions(true);
+                            }}
+                          >
+                            <View style={styles.trackingButtonContainer}>
+                              <SyncButton size={iconSizes.medium} />
+                            </View>
+                            <Text
+                              style={[
+                                typographyThemed(theme).captionSecondary,
+                                styles.trackingOptionText,
+                              ]}
+                            >
+                              Sync health data from device (optional). Manage
+                              this at any time from Settings
+                            </Text>
+                          </Pressable>
+                        ) : (
+                          <Pressable
+                            style={styles.trackingOption}
+                            onPress={() => {
+                              handleDismiss();
+                              setShowSettings(true);
+                            }}
+                          >
+                            <View style={styles.trackingButtonContainer}>
+                              <SettingsButton size={iconSizes.medium} />
+                            </View>
+                            <Text
+                              style={[
+                                typographyThemed(theme).captionSecondary,
+                                styles.trackingOptionText,
+                              ]}
+                            >
+                              Health sync enabled. Tap to manage sync in
+                              Settings
+                            </Text>
+                          </Pressable>
+                        )}
+                        <Pressable
+                          style={styles.trackingOption}
+                          onPress={() => {
+                            handleDismiss();
+                            // Open manual miles modal
+                            useUIStore.getState().setShowManualMilesModal(true);
+                          }}
+                        >
+                          <View style={styles.trackingButtonContainer}>
+                            <PlusButton size={iconSizes.medium} />
+                          </View>
+                          <Text
+                            style={[
+                              typographyThemed(theme).captionSecondary,
+                              styles.trackingOptionText,
+                            ]}
+                          >
+                            Manually add or edit miles
+                          </Text>
+                        </Pressable>
+                        {/* Dev mode option - toggle on/off */}
+                        <Pressable
+                          style={styles.trackingOption}
+                          onPress={() => {
+                            setDevMode(!devMode);
+                          }}
+                        >
+                          <View style={styles.trackingButtonContainer}>
+                            <DevModeButton
+                              size={iconSizes.medium}
+                              variant={devMode ? 'brand' : 'primary'}
+                            />
+                          </View>
+                          <Text
+                            style={[
+                              typographyThemed(theme).captionSecondary,
+                              styles.trackingOptionText,
+                            ]}
+                          >
+                            {devMode
+                              ? 'Dev mode is enabled. Tap to disable'
+                              : 'Not ready to commit? Explore the map in dev mode'}
+                          </Text>
+                        </Pressable>
+                      </View>
                     )}
 
                     {/* Image if available (hidden for locked checkpoints) */}
@@ -600,6 +729,12 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
         ) : null}
       </Modal>
 
+      {/* Sync options modal */}
+      <SyncOptionsModal
+        visible={showSyncOptions}
+        onDismiss={() => setShowSyncOptions(false)}
+      />
+
       {/* Celebration rendered within overlay (pointerEvents none) to avoid blocking taps */}
     </>
   );
@@ -681,6 +816,31 @@ const styles = StyleSheet.create({
   bottomProgressSection: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
+  },
+  scrollContentWithTrackingOptions: {
+    flexGrow: 1,
+  },
+  trackingOptionsContainer: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: spacing.xl,
+  },
+  trackingOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  trackingButtonContainer: {
+    width: iconButtonSizes.medium,
+    height: iconButtonSizes.medium,
+    borderRadius: borderRadius.full,
+  },
+  trackingOptionText: {
+    textAlign: 'left',
+    flex: 1,
+    flexShrink: 1,
   },
   triviaSection: {
     marginTop: spacing.sm,

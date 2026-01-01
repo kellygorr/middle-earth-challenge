@@ -56,6 +56,9 @@ export interface Theme {
     buttonOutlineBg: string;
     buttonOutlineBorder: string;
     buttonOutlineText: string;
+    // Disabled state
+    buttonDisabledBg: string;
+    buttonDisabledText: string;
     // Pressed state
     buttonPressed: string;
 
@@ -148,6 +151,9 @@ export const classicTheme: Theme = {
     buttonOutlineBg: '#FFFFFF',
     buttonOutlineBorder: '#6a4c34ff',
     buttonOutlineText: '#2f1b14ff',
+    // Disabled state
+    buttonDisabledBg: '#A0826D',
+    buttonDisabledText: '#F5EFE0',
     // Pressed state
     buttonPressed: 'rgba(107, 89, 67, 1)',
 
@@ -220,6 +226,9 @@ export const minimalistTheme: Theme = {
     buttonOutlineBg: '#FFFFFF',
     buttonOutlineBorder: '#D4AF37',
     buttonOutlineText: '#212121',
+    // Disabled state
+    buttonDisabledBg: '#757575',
+    buttonDisabledText: '#E0E0E0',
     // Pressed state
     buttonPressed: '#757575',
 

@@ -6,3 +6,5 @@ export { default as CloseButton } from './CloseButton';
 export { default as PlusButton } from './PlusButton';
 export { default as EditButton } from './EditButton';
 export { default as ChevronButton } from './ChevronButton';
+export { default as SyncButton } from './SyncButton';
+export { default as DevModeButton } from './DevModeButton';

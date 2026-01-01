@@ -11,6 +11,7 @@ interface ProgressStore {
   distanceEntries: DistanceEntry[];
   lastSyncDate: string | null;
   isSyncing: boolean;
+  syncMessage: string | null; // Message to show during sync (e.g., "+0.5 miles")
   // Dev/test override state
   isTestOverride: boolean;
   testOverrideBaseMiles: number | null;
@@ -22,10 +23,12 @@ interface ProgressStore {
   setTriviaUnlocks: (unlocks: TriviaUnlock[]) => void;
   addTriviaUnlock: (unlock: TriviaUnlock) => void;
   addDistanceEntry: (entry: DistanceEntry) => void;
+  updateDistanceEntry: (entry: DistanceEntry) => void;
   removeDistanceEntry: (id: string) => void;
   setDistanceEntries: (entries: DistanceEntry[]) => void;
   setLastSyncDate: (date: string) => void;
   setIsSyncing: (syncing: boolean) => void;
+  setSyncMessage: (message: string | null) => void;
   resetProgress: () => void;
 
   // Selectors / derived values
@@ -61,6 +64,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   distanceEntries: [],
   lastSyncDate: null,
   isSyncing: false,
+  syncMessage: null,
   isTestOverride: false,
   testOverrideBaseMiles: null,
 
@@ -88,6 +92,13 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   addDistanceEntry: entry =>
     set(state => ({ distanceEntries: [entry, ...state.distanceEntries] })),
 
+  updateDistanceEntry: entry =>
+    set(state => ({
+      distanceEntries: state.distanceEntries.map(e =>
+        e.id === entry.id ? entry : e,
+      ),
+    })),
+
   removeDistanceEntry: id =>
     set(state => ({
       distanceEntries: state.distanceEntries.filter(d => d.id !== id),
@@ -98,6 +109,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   setLastSyncDate: date => set({ lastSyncDate: date }),
 
   setIsSyncing: syncing => set({ isSyncing: syncing }),
+
+  setSyncMessage: message => set({ syncMessage: message }),
 
   resetProgress: () =>
     set({

@@ -10,7 +10,7 @@ import {
 import { useTheme } from '../../stores/settingsStore';
 import { typographyThemed } from '../../styles/typography';
 import { spacing, iconSizes } from '../../styles/global';
-import { modalStyles } from '../../styles/modalStyles';
+
 import ModalWrapper from './ModalWrapper';
 import Button from '../Buttons';
 import { useProgressStore } from '../../stores/progressStore';
@@ -66,6 +66,7 @@ export default function ManualMilesModal({
       saveId,
       date: timestamp,
       miles: delta,
+      source: 'manual',
     };
     setPendingEntries(prev => [entry, ...prev]);
     setAddInput('');
@@ -95,6 +96,7 @@ export default function ManualMilesModal({
         saveId: editingItem.saveId,
         date: editDate,
         miles: newMiles,
+        source: editingItem.source || 'manual',
       };
       setPendingEntries(prev => [updatedEntry, ...prev]);
     }
@@ -177,6 +179,7 @@ export default function ManualMilesModal({
             saveId: persisted.saveId,
             date: persisted.date as number,
             miles: persisted.miles,
+            source: persisted.source || 'manual',
           });
         } catch (err) {
           console.warn('Failed to persist distance:', err);
@@ -213,14 +216,6 @@ export default function ManualMilesModal({
       {/* Recent recorded miles (flex to push input to bottom) */}
       <View style={styles.listSection}>
         <View style={styles.listContainer}>
-          <Text
-            style={[
-              typographyThemed(theme).subtitleLargePrimary,
-              modalStyles.sectionTitle,
-            ]}
-          >
-            All Enteries
-          </Text>
           {pendingEntries.length > 0 ||
           (distanceEntries && distanceEntries.length > 0) ? (
             <FlatList
@@ -314,8 +309,14 @@ export default function ManualMilesModal({
             />
           ) : (
             <View style={styles.emptyState}>
-              <Text style={typographyThemed(theme).bodySecondary}>
-                No miles recorded yet
+              <Text
+                style={[
+                  typographyThemed(theme).bodySecondary,
+                  styles.emptyStateText,
+                ]}
+              >
+                Add miles to get started tracking your journey! {'\n\n'}Or start
+                syncing your health data from the Settings screen
               </Text>
             </View>
           )}
@@ -422,6 +423,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyStateText: {
+    textAlign: 'center',
   },
   listItem: {
     flexDirection: 'row',
