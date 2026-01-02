@@ -18,7 +18,11 @@ interface InfoStore {
 
   // Actions
   setCurrentItem: (item: PointType, type: 'checkpoint' | 'trivia') => void;
-  showInfo: (item: PointType, type: 'checkpoint' | 'trivia') => void;
+  showInfo: (
+    item: PointType,
+    type: 'checkpoint' | 'trivia',
+    sticky?: boolean,
+  ) => void;
   hideInfo: () => void;
   openModal: () => void;
   closeModal: () => void;
@@ -48,13 +52,15 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       currentItem: item,
       itemType: type,
     }),
-  showInfo: (item, type) =>
+  showInfo: (item, type, sticky = true) =>
     set({
       currentItem: item,
       itemType: type,
       isModalVisible: false, // Start with modal closed
-      stickyUntilMilesChange: true,
-      lastMilesAtSelection: useProgressStore.getState().miles || 0,
+      stickyUntilMilesChange: sticky,
+      lastMilesAtSelection: sticky
+        ? useProgressStore.getState().miles || 0
+        : null,
     }),
 
   hideInfo: () =>

@@ -300,6 +300,14 @@ class FitnessService implements FitnessServiceInterface {
           return records;
         } catch (error) {
           console.log('Failed to get distance records:', error);
+          // Re-throw permission errors so they can be handled by the caller
+          const errorMessage = String(error);
+          if (
+            errorMessage.includes('SecurityException') ||
+            errorMessage.includes('permission')
+          ) {
+            throw error;
+          }
           return [];
         }
       }
@@ -307,6 +315,14 @@ class FitnessService implements FitnessServiceInterface {
       return [];
     } catch (error) {
       console.error('Get distance records error:', error);
+      // Re-throw permission errors so they can be handled by the caller
+      const errorMessage = String(error);
+      if (
+        errorMessage.includes('SecurityException') ||
+        errorMessage.includes('permission')
+      ) {
+        throw error;
+      }
       return [];
     }
   }

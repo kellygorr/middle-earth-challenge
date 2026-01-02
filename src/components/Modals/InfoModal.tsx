@@ -36,11 +36,10 @@ import {
   CloseButton,
   SyncButton,
   PlusButton,
-  SettingsButton,
   DevModeButton,
 } from '../ButtonIcons';
 import JourneyProgressBar from '../JourneyProgressBar';
-import SyncOptionsModal from './SyncOptionsModal';
+import SyncModal from './SyncModal';
 // PointType import not needed here after store-based lookups
 
 // Centralized timings and flags
@@ -104,7 +103,6 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const devMode = useSettingsStore(state => state.devMode);
   const setDevMode = useSettingsStore(state => state.setDevMode);
-  const setShowSettings = useUIStore(state => state.setShowSettings);
 
   // State for sync options modal
   const [showSyncOptions, setShowSyncOptions] = React.useState(false);
@@ -332,11 +330,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                   {/* Scrollable Content */}
                   <ScrollView
                     style={modalStyles.scrollView}
-                    contentContainerStyle={[
-                      modalStyles.scrollContent,
-                      showTrackingOptions &&
-                        styles.scrollContentWithTrackingOptions,
-                    ]}
+                    contentContainerStyle={modalStyles.scrollContent}
                     showsVerticalScrollIndicator={false}
                     bounces={true}
                     scrollEventThrottle={16}
@@ -388,51 +382,32 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                     {/* Tracking options for first checkpoint - after description */}
                     {showTrackingOptions && (
                       <View style={styles.trackingOptionsContainer}>
-                        {/* Sync button when not synced, Settings button when synced */}
-                        {!syncEnabled ? (
-                          <Pressable
-                            style={styles.trackingOption}
-                            onPress={() => {
-                              // Close checkpoint modal, then open sync options modal
-                              onDismiss();
-                              setShowSyncOptions(true);
-                            }}
+                        {/* Sync button - always opens sync modal */}
+                        <Pressable
+                          style={styles.trackingOption}
+                          onPress={() => {
+                            // Close checkpoint modal, then open sync options modal
+                            onDismiss();
+                            setShowSyncOptions(true);
+                          }}
+                        >
+                          <View style={styles.trackingButtonContainer}>
+                            <SyncButton
+                              size={iconSizes.medium}
+                              variant={syncEnabled ? 'brand' : 'primary'}
+                            />
+                          </View>
+                          <Text
+                            style={[
+                              typographyThemed(theme).captionSecondary,
+                              styles.trackingOptionText,
+                            ]}
                           >
-                            <View style={styles.trackingButtonContainer}>
-                              <SyncButton size={iconSizes.medium} />
-                            </View>
-                            <Text
-                              style={[
-                                typographyThemed(theme).captionSecondary,
-                                styles.trackingOptionText,
-                              ]}
-                            >
-                              Sync health data from device (optional). Manage
-                              this at any time from Settings
-                            </Text>
-                          </Pressable>
-                        ) : (
-                          <Pressable
-                            style={styles.trackingOption}
-                            onPress={() => {
-                              handleDismiss();
-                              setShowSettings(true);
-                            }}
-                          >
-                            <View style={styles.trackingButtonContainer}>
-                              <SettingsButton size={iconSizes.medium} />
-                            </View>
-                            <Text
-                              style={[
-                                typographyThemed(theme).captionSecondary,
-                                styles.trackingOptionText,
-                              ]}
-                            >
-                              Health sync enabled. Tap to manage sync in
-                              Settings
-                            </Text>
-                          </Pressable>
-                        )}
+                            {syncEnabled
+                              ? 'Health sync enabled. Tap to manage sync options'
+                              : 'Sync health data from device (optional). Manage this at any time from Settings'}
+                          </Text>
+                        </Pressable>
                         <Pressable
                           style={styles.trackingOption}
                           onPress={() => {
@@ -544,163 +519,170 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                           </View>
                         );
                       })()}
-                  </ScrollView>
 
-                  {/* Miles section */}
-                  {(() => {
-                    const isCheckpointView = itemType === 'checkpoint';
-                    const milesVal = currentItem.CUMULATIVE_MILES as number;
-                    const index = currentItem.index ?? -1;
-                    if (index < 0) return null;
-                    const nextCheckpoint = getPointFromIndex(
-                      index + 1,
-                      'checkpoint',
-                    );
-                    const nextCheckpointName = nextCheckpoint?.name ?? null;
-                    // Keep lookup for potential future use; no longer needed for miles-to-next
-                    // const currentCheckpoint = getCurrentCheckpoint();
-                    const checkpointMiles = milesVal;
-                    const leftColumn =
-                      Number.isFinite(checkpointMiles) && checkpointMiles > 0;
-                    const nextCheckpointMiles = (() => {
-                      const m = Number(nextCheckpoint?.CUMULATIVE_MILES ?? NaN);
-                      return Number.isFinite(m) ? m : null;
-                    })();
-                    const milesToNextCheckpoint =
-                      nextCheckpointMiles !== null
-                        ? Math.max(1, nextCheckpointMiles - checkpointMiles)
-                        : null;
-                    const remaining =
-                      !isCheckpointView && nextCheckpointMiles !== null
-                        ? Math.round(getRemainingMilesTo(nextCheckpointMiles))
-                        : Math.round(getRemainingMilesTo(milesVal));
-                    return (
-                      <View style={styles.milesToNextSection}>
-                        <View
-                          style={[styles.milesTwoColRow, styles.milesTitleRow]}
-                        >
-                          <View
-                            style={styles.milesCol}
-                            pointerEvents={leftColumn ? 'auto' : 'none'}
-                          >
-                            <Text
-                              style={[
-                                typographyThemed(theme).captionPrimaryBold,
-                                styles.milesToNextTitle,
-                                isCheckpointView && isLockedCheckpoint
-                                  ? { color: theme.colors.infoModalInactive }
-                                  : null,
-                                !leftColumn ? styles.hidden : null,
-                              ]}
-                            >
-                              {isCheckpointView ? 'Checkpoint' : 'Total miles'}
-                            </Text>
-                          </View>
+                    {/* Miles section */}
+                    {(() => {
+                      const isCheckpointView = itemType === 'checkpoint';
+                      const milesVal = currentItem.CUMULATIVE_MILES as number;
+                      const index = currentItem.index ?? -1;
+                      if (index < 0) return null;
+                      const nextCheckpoint = getPointFromIndex(
+                        index + 1,
+                        'checkpoint',
+                      );
+                      const nextCheckpointName = nextCheckpoint?.name ?? null;
+                      // Keep lookup for potential future use; no longer needed for miles-to-next
+                      // const currentCheckpoint = getCurrentCheckpoint();
+                      const checkpointMiles = milesVal;
+                      const leftColumn =
+                        Number.isFinite(checkpointMiles) && checkpointMiles > 0;
+                      const nextCheckpointMiles = (() => {
+                        const m = Number(
+                          nextCheckpoint?.CUMULATIVE_MILES ?? NaN,
+                        );
+                        return Number.isFinite(m) ? m : null;
+                      })();
+                      const milesToNextCheckpoint =
+                        nextCheckpointMiles !== null
+                          ? Math.max(1, nextCheckpointMiles - checkpointMiles)
+                          : null;
+                      const remaining =
+                        !isCheckpointView && nextCheckpointMiles !== null
+                          ? Math.round(getRemainingMilesTo(nextCheckpointMiles))
+                          : Math.round(getRemainingMilesTo(milesVal));
+                      return (
+                        <View style={styles.milesToNextSection}>
                           <View
                             style={[
-                              styles.milesCol,
-                              { marginLeft: spacing.md },
+                              styles.milesTwoColRow,
+                              styles.milesTitleRow,
                             ]}
                           >
-                            <Text
-                              style={[
-                                typographyThemed(theme).captionPrimaryBold,
-                                styles.milesToNextTitle,
-                                isCheckpointView && isLockedCheckpoint
-                                  ? { color: theme.colors.infoModalInactive }
-                                  : null,
-                              ]}
-                            >
-                              {isCheckpointView && isLockedCheckpoint
-                                ? 'Remaining'
-                                : nextCheckpointName || 'Next checkpoint'}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View
-                          style={[
-                            styles.milesTwoColRow,
-                            { marginTop: spacing.xs },
-                          ]}
-                        >
-                          <View
-                            style={styles.milesCol}
-                            pointerEvents={leftColumn ? 'auto' : 'none'}
-                          >
                             <View
-                              style={[
-                                styles.milesToNextPill,
-                                {
-                                  backgroundColor:
-                                    isCheckpointView && isLockedCheckpoint
-                                      ? theme.colors.infoModalInactive
-                                      : theme.colors.checkpointTextBackground,
-                                },
-                                !leftColumn ? styles.hidden : null,
-                              ]}
+                              style={styles.milesCol}
+                              pointerEvents={leftColumn ? 'auto' : 'none'}
                             >
                               <Text
                                 style={[
-                                  typography.titleLarge,
-                                  styles.milesToNextValue,
-                                  { color: theme.colors.checkpointLabel },
+                                  typographyThemed(theme).captionPrimaryBold,
+                                  styles.milesToNextTitle,
+                                  isCheckpointView && isLockedCheckpoint
+                                    ? { color: theme.colors.infoModalInactive }
+                                    : null,
+                                  !leftColumn ? styles.hidden : null,
                                 ]}
                               >
-                                {checkpointMiles}
-                                <Text
-                                  style={[
-                                    styles.milesSuffix,
-                                    { color: theme.colors.checkpointLabel },
-                                  ]}
-                                >
-                                  miles
-                                </Text>
+                                {isCheckpointView
+                                  ? 'Checkpoint'
+                                  : 'Total miles'}
                               </Text>
                             </View>
-                          </View>
-                          <View
-                            style={[
-                              styles.milesCol,
-                              { marginLeft: spacing.md },
-                            ]}
-                          >
                             <View
                               style={[
-                                styles.milesToNextPill,
-                                {
-                                  backgroundColor:
-                                    isCheckpointView && isLockedCheckpoint
-                                      ? theme.colors.infoModalInactive
-                                      : theme.colors.checkpointTextBackground,
-                                },
+                                styles.milesCol,
+                                { marginLeft: spacing.md },
                               ]}
                             >
                               <Text
                                 style={[
-                                  typography.titleLarge,
-                                  styles.milesToNextValue,
-                                  { color: theme.colors.checkpointLabel },
+                                  typographyThemed(theme).captionPrimaryBold,
+                                  styles.milesToNextTitle,
+                                  isCheckpointView && isLockedCheckpoint
+                                    ? { color: theme.colors.infoModalInactive }
+                                    : null,
                                 ]}
                               >
                                 {isCheckpointView && isLockedCheckpoint
-                                  ? '-' + remaining
-                                  : milesToNextCheckpoint ?? remaining}
-                                <Text
-                                  style={[
-                                    styles.milesSuffix,
-                                    { color: theme.colors.checkpointLabel },
-                                  ]}
-                                >
-                                  miles
-                                </Text>
+                                  ? 'Remaining'
+                                  : nextCheckpointName || 'Next checkpoint'}
                               </Text>
                             </View>
                           </View>
+
+                          <View
+                            style={[
+                              styles.milesTwoColRow,
+                              { marginTop: spacing.xs },
+                            ]}
+                          >
+                            <View
+                              style={styles.milesCol}
+                              pointerEvents={leftColumn ? 'auto' : 'none'}
+                            >
+                              <View
+                                style={[
+                                  styles.milesToNextPill,
+                                  {
+                                    backgroundColor:
+                                      isCheckpointView && isLockedCheckpoint
+                                        ? theme.colors.infoModalInactive
+                                        : theme.colors.checkpointTextBackground,
+                                  },
+                                  !leftColumn ? styles.hidden : null,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    typography.titleLarge,
+                                    styles.milesToNextValue,
+                                    { color: theme.colors.checkpointLabel },
+                                  ]}
+                                >
+                                  {checkpointMiles}
+                                  <Text
+                                    style={[
+                                      styles.milesSuffix,
+                                      { color: theme.colors.checkpointLabel },
+                                    ]}
+                                  >
+                                    miles
+                                  </Text>
+                                </Text>
+                              </View>
+                            </View>
+                            <View
+                              style={[
+                                styles.milesCol,
+                                { marginLeft: spacing.md },
+                              ]}
+                            >
+                              <View
+                                style={[
+                                  styles.milesToNextPill,
+                                  {
+                                    backgroundColor:
+                                      isCheckpointView && isLockedCheckpoint
+                                        ? theme.colors.infoModalInactive
+                                        : theme.colors.checkpointTextBackground,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    typography.titleLarge,
+                                    styles.milesToNextValue,
+                                    { color: theme.colors.checkpointLabel },
+                                  ]}
+                                >
+                                  {isCheckpointView && isLockedCheckpoint
+                                    ? '-' + remaining
+                                    : milesToNextCheckpoint ?? remaining}
+                                  <Text
+                                    style={[
+                                      styles.milesSuffix,
+                                      { color: theme.colors.checkpointLabel },
+                                    ]}
+                                  >
+                                    miles
+                                  </Text>
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
                         </View>
-                      </View>
-                    );
-                  })()}
+                      );
+                    })()}
+                  </ScrollView>
 
                   {/* Progress - Journey at bottom of modal */}
                   <View style={styles.bottomProgressSection}>
@@ -729,8 +711,8 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
         ) : null}
       </Modal>
 
-      {/* Sync options modal */}
-      <SyncOptionsModal
+      {/* Sync modal */}
+      <SyncModal
         visible={showSyncOptions}
         onDismiss={() => setShowSyncOptions(false)}
       />
@@ -755,8 +737,6 @@ const styles = StyleSheet.create({
   // Miles to Next section
   milesToNextSection: {
     alignItems: 'stretch',
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
   },
   milesTwoColRow: {
     flexDirection: 'row',
@@ -796,16 +776,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   locationName: {
-    marginBottom: spacing.md,
     textAlign: 'center',
   },
   description: {
-    marginBottom: spacing.lg,
     lineHeight: 24,
     textAlign: 'center',
   },
   imageContainer: {
-    marginBottom: spacing.lg,
     alignItems: 'center',
   },
   image: {
@@ -817,15 +794,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
   },
-  scrollContentWithTrackingOptions: {
-    flexGrow: 1,
-  },
   trackingOptionsContainer: {
     flex: 1,
     flexDirection: 'column',
     alignItems: 'flex-start',
     justifyContent: 'center',
-    gap: spacing.xl,
+    gap: spacing.md,
   },
   trackingOption: {
     flexDirection: 'row',
@@ -842,10 +816,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexShrink: 1,
   },
-  triviaSection: {
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-  },
+  triviaSection: {},
   triviaTitle: {
     marginBottom: spacing.xs,
     fontWeight: '600',

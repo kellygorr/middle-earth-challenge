@@ -9,13 +9,16 @@ import {
 import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../stores/settingsStore';
+import { useUIStore } from '../../stores/uiStore';
 import { typography, typographyThemed } from '../../styles/typography';
-import { spacing } from '../../styles/global';
+import { spacing, borderRadius } from '../../styles/global';
 import { useAnimatedModal } from '../../hooks/useAnimatedModal';
 import { motion } from '../../styles/motion';
 import Button from '../Buttons';
+import { SyncButton } from '../ButtonIcons';
 import { useProgressStore } from '../../stores/progressStore';
 import JourneyProgressBar from '../JourneyProgressBar';
+import SyncIndicator from '../SyncIndicator';
 
 interface WelcomeModalProps {
   visible: boolean;
@@ -28,6 +31,23 @@ export default function WelcomeModal({
 }: WelcomeModalProps) {
   const theme = useTheme();
   const miles = useProgressStore(state => state.miles) || 0;
+  const syncError = useProgressStore(state => state.syncError);
+  const setSyncError = useProgressStore(state => state.setSyncError);
+  const setShowSyncModal = useUIStore(state => state.setShowSyncModal);
+
+  const handleReconnect = () => {
+    // Clear the error and open sync modal
+    setSyncError(null);
+    setShowSyncModal(true);
+  };
+
+  const handleDismiss = () => {
+    // Clear sync error when user dismisses welcome modal
+    if (syncError) {
+      setSyncError(null);
+    }
+    onDismiss();
+  };
 
   const { internalVisible, animatedBackgroundStyle, animatedContentStyle } =
     useAnimatedModal(visible, {
@@ -43,7 +63,7 @@ export default function WelcomeModal({
       visible={internalVisible}
       transparent={true}
       animationType="none"
-      onRequestClose={onDismiss}
+      onRequestClose={handleDismiss}
       statusBarTranslucent={true}
     >
       <Animated.View
@@ -53,7 +73,7 @@ export default function WelcomeModal({
           animatedBackgroundStyle,
         ]}
       >
-        <TouchableWithoutFeedback onPress={onDismiss}>
+        <TouchableWithoutFeedback onPress={handleDismiss}>
           <View style={StyleSheet.absoluteFill} />
         </TouchableWithoutFeedback>
         <SafeAreaView
@@ -79,17 +99,35 @@ export default function WelcomeModal({
               >
                 1,235 miles from Bag End to Mount Doom
               </Text>
-              <Button onPress={onDismiss} variant="brand" size="large">
+              <Button onPress={handleDismiss} variant="brand" size="large">
                 {miles > 0 ? 'Continue journey' : 'Begin journey'}
               </Button>
+
+              {/* Sync error message */}
+              {syncError && (
+                <View style={styles.syncErrorContainer}>
+                  <Text
+                    style={[
+                      styles.syncErrorText,
+                      { color: theme.colors.textInverted },
+                    ]}
+                  >
+                    {syncError}
+                  </Text>
+                  <SyncButton
+                    size={40}
+                    variant="brand"
+                    onPress={handleReconnect}
+                  />
+                </View>
+              )}
             </View>
           </Animated.View>
           {miles > 0 && (
-            <Animated.View
-              style={[styles.bottomProgressContainer, animatedContentStyle]}
-            >
+            <View style={styles.bottomProgressContainer}>
+              <SyncIndicator style={styles.syncIndicator} />
               <JourneyProgressBar isLocked={false} darkMode />
-            </Animated.View>
+            </View>
           )}
         </SafeAreaView>
       </Animated.View>
@@ -131,5 +169,23 @@ const styles = StyleSheet.create({
     bottom: spacing.xl,
     left: spacing.xl,
     right: spacing.xl,
+    alignItems: 'center',
+  },
+  syncIndicator: {
+    marginBottom: spacing.lg,
+  },
+  syncErrorContainer: {
+    marginTop: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: borderRadius.md,
+  },
+  syncErrorText: {
+    ...typography.body,
+    textAlign: 'center',
+    opacity: 0.9,
   },
 });

@@ -81,8 +81,11 @@ export const modalStyles = StyleSheet.create({
 
   // ScrollView content padding
   scrollContent: {
+    flexGrow: 1,
     padding: spacing.lg,
     paddingTop: 0,
+    paddingBottom: 0,
+    gap: spacing.md,
   },
 
   // Header button container (right side - close button)

@@ -85,7 +85,7 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
             modalStyles.sectionTitle,
           ]}
         >
-          Journey Progress
+          Journey progress
         </Text>
         {renderStatRow(
           'Checkpoints completed',
@@ -162,7 +162,7 @@ export default function StatsModal({ visible, onDismiss }: StatsModalProps) {
             modalStyles.sectionTitle,
           ]}
         >
-          Pace & Projections
+          Pace & projections
         </Text>
         {renderStatRow(
           'Avg miles/day',

@@ -8,6 +8,7 @@ import { DistanceEntry } from '../types';
 
 const SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
 const SYNC_MESSAGE_DURATION_MS = 5000; // Show message for 5 seconds
+const INITIAL_SYNC_MIN_DURATION_MS = 3000; // Show initial sync message for at least 3 seconds
 const METERS_TO_MILES = 0.000621371;
 
 /**
@@ -17,6 +18,7 @@ const METERS_TO_MILES = 0.000621371;
  */
 export function useSyncInterval() {
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
+  const setSyncEnabled = useSettingsStore(state => state.setSyncEnabled);
   const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
   const syncStartDate = useSettingsStore(state => state.syncStartDate);
@@ -26,6 +28,7 @@ export function useSyncInterval() {
   const setMiles = useProgressStore(state => state.setMiles);
   const setIsSyncing = useProgressStore(state => state.setIsSyncing);
   const setSyncMessage = useProgressStore(state => state.setSyncMessage);
+  const setSyncError = useProgressStore(state => state.setSyncError);
   const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
   const updateDistanceEntry = useProgressStore(
     state => state.updateDistanceEntry,
@@ -35,20 +38,52 @@ export function useSyncInterval() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const messageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isInitialSyncRef = useRef(true); // Track if this is the first sync after app start
+  const syncStartTimeRef = useRef<number | null>(null); // Track when sync started
+
+  // Log sync state on mount
+  useEffect(() => {
+    console.log('[useSyncInterval] Hook mounted with state:', {
+      syncEnabled,
+      liveSyncEnabled,
+      syncProvider,
+      syncStartDate,
+    });
+  }, [syncEnabled, liveSyncEnabled, syncProvider, syncStartDate]);
 
   // Perform the actual sync
   const performSync = useCallback(async () => {
+    console.log('[useSyncInterval] performSync called', {
+      syncEnabled,
+      liveSyncEnabled,
+      syncProvider,
+      syncStartDate,
+    });
+
     if (
       !syncEnabled ||
       !liveSyncEnabled ||
       syncProvider === 'none' ||
       !syncStartDate
     ) {
+      console.log('[useSyncInterval] Sync skipped - conditions not met');
       return;
     }
 
     try {
+      console.log('[useSyncInterval] Starting sync...');
       setIsSyncing(true);
+
+      // For initial sync, show message immediately to give user confidence
+      const isInitialSync = isInitialSyncRef.current;
+      if (isInitialSync) {
+        console.log(
+          '[useSyncInterval] Initial sync - showing message immediately',
+        );
+        syncStartTimeRef.current = Date.now();
+        setSyncMessage('Syncing miles...');
+        isInitialSyncRef.current = false;
+      }
 
       // Initialize fitness service if needed
       await fitnessService.initialize(syncProvider);
@@ -69,6 +104,20 @@ export function useSyncInterval() {
         // No new records, just update timestamp
         setLastSyncTimestamp(Date.now());
         setIsSyncing(false);
+
+        // For initial sync, ensure message shows for minimum duration
+        if (syncStartTimeRef.current) {
+          const elapsed = Date.now() - syncStartTimeRef.current;
+          const remaining = INITIAL_SYNC_MIN_DURATION_MS - elapsed;
+          if (remaining > 0) {
+            messageTimeoutRef.current = setTimeout(() => {
+              setSyncMessage(null);
+            }, remaining);
+          } else {
+            setSyncMessage(null);
+          }
+          syncStartTimeRef.current = null;
+        }
         return;
       }
 
@@ -187,16 +236,39 @@ export function useSyncInterval() {
       // Update last sync timestamp
       setLastSyncTimestamp(Date.now());
 
-      // Show sync message if miles changed
-      if (milesChanged > 0.01) {
-        // Clear any existing timeout
-        if (messageTimeoutRef.current) {
-          clearTimeout(messageTimeoutRef.current);
-        }
+      console.log('[useSyncInterval] milesChanged:', milesChanged);
 
+      // Clear any existing timeout
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+      }
+
+      // Determine how long to show the message
+      // - For initial sync: at least INITIAL_SYNC_MIN_DURATION_MS from start
+      // - For live sync with new miles: SYNC_MESSAGE_DURATION_MS
+      // - For live sync with no new miles: don't show
+      if (syncStartTimeRef.current) {
+        // Initial sync - ensure minimum duration
+        const elapsed = Date.now() - syncStartTimeRef.current;
+        const remaining = Math.max(
+          INITIAL_SYNC_MIN_DURATION_MS - elapsed,
+          milesChanged > 0.01 ? SYNC_MESSAGE_DURATION_MS : 0,
+        );
+        if (remaining > 0) {
+          messageTimeoutRef.current = setTimeout(() => {
+            setSyncMessage(null);
+          }, remaining);
+        } else {
+          setSyncMessage(null);
+        }
+        syncStartTimeRef.current = null;
+      } else if (milesChanged > 0.01) {
+        // Live sync with new miles
+        console.log(
+          '[useSyncInterval] Setting syncMessage to "Syncing miles..."',
+        );
         setSyncMessage('Syncing miles...');
 
-        // Clear the message after a delay
         messageTimeoutRef.current = setTimeout(() => {
           setSyncMessage(null);
         }, SYNC_MESSAGE_DURATION_MS);
@@ -213,7 +285,29 @@ export function useSyncInterval() {
         totalMiles.toFixed(2),
       );
     } catch (error) {
-      console.error('Sync error:', error);
+      console.error('[useSyncInterval] Sync error caught:', error);
+
+      // Clear sync message on error
+      setSyncMessage(null);
+      syncStartTimeRef.current = null;
+
+      // Check if this is a permission error
+      const errorMessage = String(error);
+      console.log('[useSyncInterval] Error message:', errorMessage);
+      if (
+        errorMessage.includes('SecurityException') ||
+        errorMessage.includes('permission')
+      ) {
+        console.log(
+          '[useSyncInterval] Permission error detected, disabling sync',
+        );
+        // Set sync error for UI to display
+        setSyncError(
+          'Looks like you were disconnected. Reconnect to sync or manually add miles.',
+        );
+        // Disable sync
+        setSyncEnabled(false);
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -229,6 +323,8 @@ export function useSyncInterval() {
     setLastSyncTimestamp,
     setIsSyncing,
     setSyncMessage,
+    setSyncError,
+    setSyncEnabled,
   ]);
 
   // Start/stop interval based on sync enabled state and app state

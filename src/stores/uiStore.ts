@@ -5,11 +5,13 @@ interface UIStore {
   showSettings: boolean;
   showMilesModal: boolean;
   showStats: boolean;
+  showSyncModal: boolean;
 
   // Actions
   setShowSettings: (show: boolean) => void;
   setShowMilesModal: (show: boolean) => void;
   setShowStats: (show: boolean) => void;
+  setShowSyncModal: (show: boolean) => void;
 }
 
 export const useUIStore = create<UIStore>(set => ({
@@ -17,9 +19,11 @@ export const useUIStore = create<UIStore>(set => ({
   showSettings: false,
   showMilesModal: false,
   showStats: false,
+  showSyncModal: false,
 
   // Actions
   setShowSettings: show => set({ showSettings: show }),
   setShowMilesModal: show => set({ showMilesModal: show }),
   setShowStats: show => set({ showStats: show }),
+  setShowSyncModal: show => set({ showSyncModal: show }),
 }));

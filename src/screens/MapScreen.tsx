@@ -4,15 +4,7 @@ import {
   GestureHandlerRootView,
   GestureDetector,
 } from 'react-native-gesture-handler';
-import Animated, {
-  FadeIn,
-  FadeOut,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
-import Svg, { Path } from 'react-native-svg';
+import Animated from 'react-native-reanimated';
 // Modals are rendered globally in App.tsx
 import {
   SettingsButton,
@@ -26,6 +18,7 @@ import PointLayer from '../components/Point/PointLayer';
 import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import DevMiles from '../components/DevMiles';
+import SyncIndicator from '../components/SyncIndicator';
 import { spacing, borderRadius, iconButtonSizes } from '../styles/global';
 
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
@@ -82,11 +75,14 @@ export default function MapScreen() {
     itemType,
     isModalVisible,
     showInfo,
+    hideInfo,
     openModal,
     clearStickyInfo,
     showStartupTooltip,
     tooltipPosition,
     observeMilesChanges,
+    stickyUntilMilesChange,
+    lastMilesAtSelection,
     setShowStartupTooltip,
     setTooltipPosition,
     setObserveMilesChanges,
@@ -94,29 +90,6 @@ export default function MapScreen() {
 
   // Miles from progress store (source of truth)
   const miles = useProgressStore(state => state.miles);
-  const syncMessage = useProgressStore(state => state.syncMessage);
-
-  // Rotating animation for sync icon - step-based rotation in a circle
-  const syncRotation = useSharedValue(0);
-
-  useEffect(() => {
-    if (syncMessage) {
-      // Step rotation: move 45 degrees every 350ms
-      const interval = setInterval(() => {
-        syncRotation.value = withTiming(syncRotation.value + 45, {
-          duration: 150,
-          easing: Easing.out(Easing.ease),
-        });
-      }, 350);
-      return () => clearInterval(interval);
-    } else {
-      syncRotation.value = 0;
-    }
-  }, [syncMessage, syncRotation]);
-
-  const syncIconStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${syncRotation.value}deg` }],
-  }));
 
   const firstCheckpoint = checkpointsData[0];
   const {
@@ -218,18 +191,33 @@ export default function MapScreen() {
   useEffect(() => {
     if (isModalVisible) return; // Respect manual selection while modal is open
     const active = useProgressStore.getState().getActiveInfoItem();
-    if (!active) return;
+    if (!active) {
+      // No active item at current position
+      // Don't clear if sticky and miles haven't changed
+      if (stickyUntilMilesChange && lastMilesAtSelection != null) {
+        const unchanged = Math.abs((miles || 0) - lastMilesAtSelection) < 1e-6;
+        if (unchanged) return; // Keep sticky item visible
+      }
+      if (currentItem) {
+        hideInfo();
+      }
+      return;
+    }
     const { item, type } = active;
     if (currentItem?.name !== item.name || itemType !== type) {
-      showInfo(item as PointType, type);
+      // Auto-display: not sticky (sticky=false)
+      showInfo(item as PointType, type, false);
     }
   }, [
     miles,
     currentItem,
     itemType,
     showInfo,
+    hideInfo,
     observeMilesChanges,
     isModalVisible,
+    stickyUntilMilesChange,
+    lastMilesAtSelection,
   ]);
 
   // Reset startup guidance when welcome is shown again
@@ -372,42 +360,8 @@ export default function MapScreen() {
         />
       </Animated.View>
 
-      {/* Sync Message Toast */}
-      {syncMessage && (
-        <Animated.View
-          style={styles.syncMessageContainer}
-          entering={FadeIn.duration(200)}
-          exiting={FadeOut.duration(200)}
-        >
-          <View
-            style={[
-              styles.syncMessageContent,
-              { backgroundColor: theme.colors.buttonPrimary },
-            ]}
-          >
-            <Animated.View style={syncIconStyle}>
-              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                <Path
-                  d="M12 4V1L8 5L12 9V6C15.31 6 18 8.69 18 12H20C20 7.58 16.42 4 12 4Z"
-                  fill={theme.colors.buttonPrimaryText}
-                />
-                <Path
-                  d="M12 20V23L16 19L12 15V18C8.69 18 6 15.31 6 12H4C4 16.42 7.58 20 12 20Z"
-                  fill={theme.colors.buttonPrimaryText}
-                />
-              </Svg>
-            </Animated.View>
-            <Text
-              style={[
-                styles.syncMessageText,
-                { color: theme.colors.buttonPrimaryText },
-              ]}
-            >
-              {syncMessage}
-            </Text>
-          </View>
-        </Animated.View>
-      )}
+      {/* Sync Message Toast - hidden when welcome screen is open */}
+      {!showWelcome && <SyncIndicator style={styles.syncMessageContainer} />}
 
       {/* Info System - Checkpoint/Trivia Info (derived via store selector) */}
       {currentItem && shouldShowInfoButton && (
@@ -589,18 +543,6 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     pointerEvents: 'none',
-  },
-  syncMessageContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-  },
-  syncMessageText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

@@ -12,6 +12,7 @@ interface ProgressStore {
   lastSyncDate: string | null;
   isSyncing: boolean;
   syncMessage: string | null; // Message to show during sync (e.g., "+0.5 miles")
+  syncError: string | null; // Error message when sync fails (e.g., permissions lost)
   // Dev/test override state
   isTestOverride: boolean;
   testOverrideBaseMiles: number | null;
@@ -29,6 +30,7 @@ interface ProgressStore {
   setLastSyncDate: (date: string) => void;
   setIsSyncing: (syncing: boolean) => void;
   setSyncMessage: (message: string | null) => void;
+  setSyncError: (error: string | null) => void;
   resetProgress: () => void;
 
   // Selectors / derived values
@@ -65,6 +67,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   lastSyncDate: null,
   isSyncing: false,
   syncMessage: null,
+  syncError: null,
   isTestOverride: false,
   testOverrideBaseMiles: null,
 
@@ -112,6 +115,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
 
   setSyncMessage: message => set({ syncMessage: message }),
 
+  setSyncError: error => set({ syncError: error }),
+
   resetProgress: () =>
     set({
       miles: 0,
@@ -119,6 +124,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       distanceEntries: [],
       lastSyncDate: null,
       isSyncing: false,
+      syncError: null,
       isTestOverride: false,
       testOverrideBaseMiles: null,
     }),

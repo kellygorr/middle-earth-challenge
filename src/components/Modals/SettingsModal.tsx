@@ -7,8 +7,9 @@ import {
   ScrollView,
   Pressable,
   useWindowDimensions,
-  Platform,
+  Alert,
 } from 'react-native';
+import { database } from '../../services/database';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 import { typographyThemed } from '../../styles/typography';
 import {
@@ -19,7 +20,7 @@ import {
 } from '../../styles/global';
 import { modalStyles } from '../../styles/modalStyles';
 import ModalWrapper from './ModalWrapper';
-import SyncOptionsModal from './SyncOptionsModal';
+import SyncModal from './SyncModal';
 import Button from '../Buttons';
 import { HomeButton, SyncButton, DevModeButton } from '../ButtonIcons';
 import { useProgressStore } from '../../stores/progressStore';
@@ -60,7 +61,9 @@ export default function SettingsModal({
     state => state.setLiveSyncEnabled,
   );
   const distanceEntries = useProgressStore(state => state.distanceEntries);
-  const hasSyncedData = distanceEntries.some(e => e.source === 'synced');
+  const hasSyncedData = distanceEntries.some(
+    e => e.source === 'synced' || e.source === 'health-connect',
+  );
 
   // State for sync options modal
   const [showSyncOptions, setShowSyncOptions] = React.useState(false);
@@ -75,6 +78,8 @@ export default function SettingsModal({
     await fitnessService.disconnect();
     // Update settings
     setSyncEnabled(false);
+    // Clear last sync so reconnect starts fresh
+    useSettingsStore.getState().setLastSyncTimestamp(null);
   };
 
   return (
@@ -208,31 +213,30 @@ export default function SettingsModal({
               modalStyles.sectionTitle,
             ]}
           >
-            Health Data
+            Health data
           </Text>
 
           {/* Sync option - show toggle with icon */}
-          <Pressable
+          <View
             style={[
               styles.contentRow,
               styles.contentRowSpaceBetween,
               styles.contentRowWithGap,
             ]}
-            onPress={() => {
-              if (syncEnabled) {
-                handleDisconnectSync();
-              } else {
-                setShowSyncOptions(true);
-              }
-            }}
           >
-            <View style={styles.iconButtonContainer}>
+            <Pressable
+              style={styles.iconButtonContainer}
+              onPress={() => setShowSyncOptions(true)}
+            >
               <SyncButton
                 size={iconSizes.medium}
                 variant={syncEnabled ? 'brand' : 'primary'}
               />
-            </View>
-            <View style={styles.flex1}>
+            </Pressable>
+            <Pressable
+              style={styles.flex1}
+              onPress={() => setShowSyncOptions(true)}
+            >
               {syncEnabled ? (
                 <>
                   <Text style={[typographyThemed(theme).bodyPrimary]}>
@@ -248,16 +252,16 @@ export default function SettingsModal({
                     <Text style={[typographyThemed(theme).captionSecondary]}>
                       {`Last synced: ${new Date(
                         lastSyncTimestamp,
-                      ).toLocaleDateString()}`}
+                      ).toLocaleString()}`}
                     </Text>
                   )}
                 </>
               ) : (
                 <Text style={[typographyThemed(theme).bodyPrimary]}>
-                  Sync from health app
+                  Sync with health app
                 </Text>
               )}
-            </View>
+            </Pressable>
             <Switch
               value={syncEnabled}
               onValueChange={value => {
@@ -273,7 +277,7 @@ export default function SettingsModal({
               }}
               thumbColor={theme.colors.surface}
             />
-          </Pressable>
+          </View>
 
           {/* Live sync toggle - always visible under sync option */}
           <View
@@ -286,11 +290,10 @@ export default function SettingsModal({
           >
             <View style={styles.flex1}>
               <Text style={[typographyThemed(theme).bodyPrimary]}>
-                {`Live sync (${liveSyncEnabled ? 'enabled' : 'disabled'})`}
+                {`Live sync`}
               </Text>
               <Text style={[typographyThemed(theme).captionSecondary]}>
-                Enable this when exercising with the app open to see your
-                progress update in real-time
+                See your progress update in real-time
               </Text>
             </View>
             <Switch
@@ -321,8 +324,52 @@ export default function SettingsModal({
             </Text>
             <Button
               onPress={() => {
-                // TODO: Delete all synced entries from database
-                // TODO: Show confirmation dialog
+                Alert.alert(
+                  'Delete Synced Data',
+                  'Are you sure you want to delete all synced data? This cannot be undone.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        const syncedEntries = distanceEntries.filter(
+                          e =>
+                            e.source === 'synced' ||
+                            e.source === 'health-connect',
+                        );
+                        const totalToRemove = syncedEntries.reduce(
+                          (sum, e) => sum + (e?.miles ?? 0),
+                          0,
+                        );
+                        // Remove from store and database
+                        for (const entry of syncedEntries) {
+                          useProgressStore
+                            .getState()
+                            .removeDistanceEntry(entry.id);
+                          try {
+                            await database.removeDistanceEntry(entry.id);
+                          } catch (err) {
+                            console.warn('Failed to remove synced entry:', err);
+                          }
+                        }
+                        // Update miles total
+                        const currentMiles =
+                          useProgressStore.getState().miles ?? 0;
+                        const newMiles = Math.max(
+                          0,
+                          currentMiles - totalToRemove,
+                        );
+                        useProgressStore.getState().setMiles(newMiles);
+                        try {
+                          await database.setMilesSnapshot('default', newMiles);
+                        } catch (err) {
+                          console.warn('Failed to update miles snapshot:', err);
+                        }
+                      },
+                    },
+                  ],
+                );
               }}
               variant="outline"
               size={'default'}
@@ -341,7 +388,7 @@ export default function SettingsModal({
               modalStyles.sectionTitle,
             ]}
           >
-            Developer Settings
+            Developer settings
           </Text>
 
           <Pressable
@@ -379,27 +426,6 @@ export default function SettingsModal({
 
         {/* Footer info */}
         <View style={{ paddingTop: spacing.lg }}>
-          {Platform.OS === 'android' && (
-            <>
-              <Text
-                style={[
-                  typographyThemed(theme).captionPrimary,
-                  { fontWeight: '600' },
-                ]}
-              >
-                Revoking access (android)
-              </Text>
-              <Text
-                style={[
-                  typographyThemed(theme).captionSecondary,
-                  { marginBottom: spacing.sm },
-                ]}
-              >
-                When revoking sync access, permissions are removed after app
-                restart. This is a limitation of the Health Connect API.
-              </Text>
-            </>
-          )}
           <Text
             style={[
               typographyThemed(theme).captionPrimary,
@@ -420,8 +446,8 @@ export default function SettingsModal({
         </View>
       </ScrollView>
 
-      {/* Sync options modal */}
-      <SyncOptionsModal
+      {/* Sync modal */}
+      <SyncModal
         visible={showSyncOptions}
         onDismiss={() => setShowSyncOptions(false)}
       />

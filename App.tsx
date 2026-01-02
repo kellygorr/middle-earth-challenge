@@ -11,6 +11,7 @@ import {
   StatsModal,
   MilesModal,
   InfoModal,
+  SyncModal,
 } from './src/components/Modals';
 import { useSettingsStore } from './src/stores/settingsStore';
 import { useSyncInterval } from './src/hooks/useSyncInterval';
@@ -66,6 +67,8 @@ function App(): React.JSX.Element {
   const setShowStats = useUIStore(state => state.setShowStats);
   const showMilesModal = useUIStore(state => state.showMilesModal);
   const setShowMilesModal = useUIStore(state => state.setShowMilesModal);
+  const showSyncModal = useUIStore(state => state.showSyncModal);
+  const setShowSyncModal = useUIStore(state => state.setShowSyncModal);
 
   const isInfoVisible = useInfoStore(state => state.isModalVisible);
   const closeInfoModal = useInfoStore(state => state.closeModal);
@@ -142,6 +145,10 @@ function App(): React.JSX.Element {
         <MilesModal
           visible={showMilesModal}
           onDismiss={() => setShowMilesModal(false)}
+        />
+        <SyncModal
+          visible={showSyncModal}
+          onDismiss={() => setShowSyncModal(false)}
         />
         <InfoModal visible={isInfoVisible} onDismiss={closeInfoModal} />
 

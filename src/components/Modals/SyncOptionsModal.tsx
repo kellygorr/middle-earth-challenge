@@ -7,6 +7,7 @@ import {
   Alert,
   Linking,
   Switch,
+  ScrollView,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 import { typographyThemed } from '../../styles/typography';
@@ -40,13 +41,25 @@ export default function SyncOptionsModal({
   onSyncEnabled,
 }: SyncOptionsModalProps) {
   const theme = useTheme();
+  const syncEnabled = useSettingsStore(state => state.syncEnabled);
+  const syncProvider = useSettingsStore(state => state.syncProvider);
   const setSyncEnabled = useSettingsStore(state => state.setSyncEnabled);
   const setSyncProvider = useSettingsStore(state => state.setSyncProvider);
   const setSyncStartDate = useSettingsStore(state => state.setSyncStartDate);
+  const setLastSyncTimestamp = useSettingsStore(
+    state => state.setLastSyncTimestamp,
+  );
   const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
   const setLiveSyncEnabled = useSettingsStore(
     state => state.setLiveSyncEnabled,
   );
+
+  const handleDisconnect = async () => {
+    await fitnessService.disconnect();
+    setSyncEnabled(false);
+    setSyncProvider('none');
+    setLastSyncTimestamp(null); // Clear so reconnect starts fresh
+  };
 
   // Define available sync options based on platform
   const syncOptions: SyncOption[] = React.useMemo(() => {
@@ -220,7 +233,12 @@ export default function SyncOptionsModal({
       onDismiss={onDismiss}
       title={Platform.OS === 'ios' ? 'iOS' : 'Android'}
     >
-      <View style={[modalStyles.scrollContent, styles.container]}>
+      <ScrollView
+        style={modalStyles.scrollView}
+        contentContainerStyle={[modalStyles.scrollContent, styles.container]}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
         <Text
           style={[
             typographyThemed(theme).subtitleLargePrimary,
@@ -230,17 +248,41 @@ export default function SyncOptionsModal({
           Sync options
         </Text>
 
+        {syncEnabled && (
+          <Text
+            style={[
+              typographyThemed(theme).bodyPrimary,
+              styles.connectedMessage,
+            ]}
+          >
+            ✓ You are connected to{' '}
+            {syncProvider === 'health-connect'
+              ? 'Health Connect'
+              : syncProvider === 'apple-health'
+              ? 'Apple Health'
+              : 'a health app'}
+          </Text>
+        )}
+
         <View style={styles.buttonRow}>
           {syncOptions.map(option => (
             <Button
               key={option.id}
-              variant="primary"
+              variant={
+                syncEnabled && syncProvider === option.id ? 'brand' : 'primary'
+              }
               size="default"
               onPress={() => handleSelectProvider(option.id)}
+              disabled={syncEnabled && syncProvider === option.id}
             >
               {option.name}
             </Button>
           ))}
+          {syncEnabled && (
+            <Button variant="outline" size="default" onPress={handleDisconnect}>
+              Disconnect
+            </Button>
+          )}
         </View>
 
         <Text
@@ -260,7 +302,7 @@ export default function SyncOptionsModal({
                   styles.sectionLabel,
                 ]}
               >
-                {`Live sync (${liveSyncEnabled ? 'enabled' : 'disabled'})`}
+                {`Live sync`}
               </Text>
               <Text
                 style={[
@@ -269,8 +311,7 @@ export default function SyncOptionsModal({
                   { marginTop: spacing.xs },
                 ]}
               >
-                Enable this when exercising with the app open to see your
-                progress update in real-time.
+                See your progress update in real-time
               </Text>
             </View>
             <Switch
@@ -302,10 +343,30 @@ export default function SyncOptionsModal({
           >
             You can disable syncing or delete synced data at any time from the
             Settings menu.
-            {Platform.OS === 'android' &&
-              ' When revoking sync access, permissions are removed after app restart. This is a limitation of the Health Connect API.'}
           </Text>
         </View>
+
+        {Platform.OS === 'android' && (
+          <View style={styles.section}>
+            <Text
+              style={[
+                typographyThemed(theme).captionPrimary,
+                styles.sectionLabel,
+              ]}
+            >
+              Revoking access
+            </Text>
+            <Text
+              style={[
+                typographyThemed(theme).captionSecondary,
+                styles.sectionText,
+              ]}
+            >
+              When revoking sync access, permissions are removed after app
+              restart. This is a limitation of the Health Connect API.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text
@@ -326,7 +387,7 @@ export default function SyncOptionsModal({
             to track your journey progress. No data is sent to external servers.
           </Text>
         </View>
-      </View>
+      </ScrollView>
     </ModalWrapper>
   );
 }
@@ -371,5 +432,10 @@ const styles = StyleSheet.create({
   },
   boldText: {
     fontWeight: '600',
+  },
+  connectedMessage: {
+    textAlign: 'center',
+    marginBottom: spacing.md,
+    color: '#22c55e',
   },
 });
