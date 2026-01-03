@@ -327,6 +327,7 @@ export default function MapScreen() {
             scale={scale}
             showPointLabels={showPointLabels}
             animatedProgress={animatedProgress}
+            currentMiles={miles}
             onItemPress={(item, type) => {
               showInfo(item, type);
               openModal();
@@ -501,8 +502,8 @@ export const styles = StyleSheet.create({
   },
   infoContainer: {
     position: 'absolute',
-    top: 50,
-    left: 20,
+    top: spacing.xl2,
+    left: spacing.md,
     zIndex: 100,
   },
   tooltipOverlay: {

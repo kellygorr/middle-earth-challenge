@@ -28,22 +28,14 @@ export function useGameProgressAnimation(
     const currentMiles = miles || 0;
     const target = mapBookMilesToPathProgress(currentMiles);
     const delta = Math.abs(currentMiles - (prevAnimMilesRef.current || 0));
-    const base = motion.pathReveal.duration;
-    let factor = 2.8;
-    if (delta < 50) factor = 1.0;
-    else if (delta < 300) factor = 1.5;
-    else if (delta < 600) factor = 2.2;
-    const durationMs = Math.max(120, Math.round(base * factor));
-    const easingCurve =
-      delta < 50
-        ? motion.easing.inOut
-        : delta < 300
-        ? motion.easing.standard
-        : motion.easing.inOut;
+
+    // Scale duration: 1 second per 100 miles (10ms per mile)
+    const msPerMile = 10;
+    const durationMs = Math.max(500, Math.round(delta * msPerMile));
 
     gameProgressValue.value = withTiming(target, {
       duration: durationMs,
-      easing: easingCurve,
+      easing: motion.easing.linear,
     });
     prevAnimMilesRef.current = currentMiles;
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -5,10 +5,10 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Image,
   ScrollView,
   useWindowDimensions,
   AccessibilityInfo,
+  Image,
 } from 'react-native';
 import { TouchableWithoutFeedback } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -16,31 +16,48 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useTheme, useSettingsStore } from '../../stores/settingsStore';
+import { useTheme } from '../../stores/settingsStore';
 import { modalStyles, modalConstants } from '../../styles/modalStyles';
-import { useUIStore } from '../../stores/uiStore';
 import { useInfoStore } from '../../stores/infoStore';
 import { useProgressStore } from '../../stores/progressStore';
-import { typography, typographyThemed } from '../../styles/typography';
-import {
-  spacing,
-  borderRadius,
-  iconSizes,
-  iconButtonSizes,
-} from '../../styles/global';
+import { typographyThemed } from '../../styles/typography';
+import { spacing, iconSizes, borderRadius } from '../../styles/global';
 import { useAnimatedModal } from '../../hooks/useAnimatedModal';
 import { motion } from '../../styles/motion';
 // TOTAL_JOURNEY_MILES not needed; journey progress computed via store selectors
 import CelebrationBorder from '../CelebrationBorder';
-import {
-  CloseButton,
-  SyncButton,
-  PlusButton,
-  DevModeButton,
-} from '../ButtonIcons';
+import { CloseButton } from '../ButtonIcons';
 import JourneyProgressBar from '../JourneyProgressBar';
 import SyncModal from './SyncModal';
+import { LockedCheckpointBanner } from '../LockedCheckpointBanner';
+import { TrackingOptions } from '../TrackingOptions';
+import { MilesDisplay } from '../MilesDisplay';
 // PointType import not needed here after store-based lookups
+
+// Checkpoint image mapping - require() must be static
+const checkpointImages: Record<string, any> = {
+  'hobbiton.jpg': require('../../assets/checkpoints/hobbiton.jpg'),
+  'bree.jpg': require('../../assets/checkpoints/bree.jpg'),
+  'rivendell.jpg': require('../../assets/checkpoints/rivendell.jpg'),
+  'lothlorien.jpg': require('../../assets/checkpoints/lothlorien.jpg'),
+  'parth-galen.jpg': require('../../assets/checkpoints/parth-galen.jpg'),
+  'the-black-gates.jpg': require('../../assets/checkpoints/the-black-gates.jpg'),
+  'minas-morgul.jpg': require('../../assets/checkpoints/minas-morgul.jpg'),
+  'mount-doom.jpg': require('../../assets/checkpoints/mount-doom.jpg'),
+};
+
+// Trivia image mapping - require() must be static
+const triviaImages: Record<string, any> = {
+  'the-old-forest.jpg': require('../../assets/trivia/the-old-forest.jpg'),
+  'weathertop.jpg': require('../../assets/trivia/weathertop.jpg'),
+  'hollin-gate.jpg': require('../../assets/trivia/hollin-gate.jpg'),
+  'khazad-dum.jpg': require('../../assets/trivia/khazad-dum.jpg'),
+  'the-argonath.jpg': require('../../assets/trivia/the-argonath.jpg'),
+  'emyn-muil.jpg': require('../../assets/trivia/emyn-muil.jpg'),
+  'dead-marshes.jpg': require('../../assets/trivia/dead-marshes.jpg'),
+  'shelobs-lair.jpg': require('../../assets/trivia/shelobs-lair.jpg'),
+  'gorgoroth.jpg': require('../../assets/trivia/gorgoroth.jpg'),
+};
 
 // Centralized timings and flags
 const CELEBRATION_MAX_MS = motion.checkpointCelebration.maxRunMs;
@@ -91,18 +108,11 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
   const getLatestCompletedCheckpointNumber = useProgressStore(
     state => state.getLatestCompletedCheckpointNumber,
   );
-  const getRemainingMilesTo = useProgressStore(
-    state => state.getRemainingMilesTo,
-  );
   const shouldShowCheckpointCelebration = useProgressStore(
     state => state.shouldShowCheckpointCelebration,
   );
-  const getPointFromIndex = useProgressStore(state => state.getPointFromIndex);
   const getPreviousTrivia = useProgressStore(state => state.getPreviousTrivia);
   const setCurrentItem = useInfoStore(state => state.setCurrentItem);
-  const syncEnabled = useSettingsStore(state => state.syncEnabled);
-  const devMode = useSettingsStore(state => state.devMode);
-  const setDevMode = useSettingsStore(state => state.setDevMode);
 
   // State for sync options modal
   const [showSyncOptions, setShowSyncOptions] = React.useState(false);
@@ -221,6 +231,28 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
     return null;
   }
 
+  // Pre-calculate values used in render
+  const checkpointIndex = currentItem.index;
+  const checkpointNumber =
+    typeof checkpointIndex === 'number' && checkpointIndex >= 0
+      ? checkpointIndex + 1
+      : undefined;
+  const modalTitle =
+    itemType === 'checkpoint'
+      ? typeof checkpointNumber === 'number'
+        ? `Checkpoint #${checkpointNumber}`
+        : 'Checkpoint'
+      : 'Trivia';
+
+  // Get previous trivia for unlocked checkpoints
+  const previousTrivia = (() => {
+    if (itemType !== 'checkpoint' || isLockedCheckpoint) return null;
+    const idx = Number(currentItem.index ?? -1);
+    if (!Number.isFinite(idx) || idx <= 0) return null;
+    const trivia = getPreviousTrivia(idx);
+    return trivia && trivia.length > 0 ? trivia : null;
+  })();
+
   return (
     <>
       <Modal
@@ -270,17 +302,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                     modalStyles.title,
                   ]}
                 >
-                  {(() => {
-                    const idx = currentItem.index;
-                    const n =
-                      typeof idx === 'number' && idx >= 0 ? idx + 1 : undefined;
-                    if (itemType === 'checkpoint') {
-                      return typeof n === 'number'
-                        ? `Checkpoint #${n}`
-                        : 'Checkpoint';
-                    }
-                    return 'Trivia';
-                  })()}
+                  {modalTitle}
                 </Text>
               )}
 
@@ -295,19 +317,7 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                         modalStyles.verticalTitle,
                       ]}
                     >
-                      {(() => {
-                        const idx = currentItem.index;
-                        const n =
-                          typeof idx === 'number' && idx >= 0
-                            ? idx + 1
-                            : undefined;
-                        if (itemType === 'checkpoint') {
-                          return typeof n === 'number'
-                            ? `Checkpoint #${n}`
-                            : 'Checkpoint';
-                        }
-                        return 'Trivia';
-                      })()}
+                      {modalTitle}
                     </Text>
                   </View>
                 )}
@@ -346,26 +356,19 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                       {currentItem.name}
                     </Text>
 
-                    {itemType === 'checkpoint' && isLockedCheckpoint ? (
-                      <View style={styles.lockedSectionContainer}>
-                        <View
-                          style={[
-                            styles.lockedCenterContainer,
-                            { backgroundColor: theme.colors.infoModalInactive },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              typography.caption,
-                              styles.lockedBannerText,
-                              { color: theme.colors.checkpointLabel },
-                            ]}
-                          >
-                            Checkpoint locked
-                          </Text>
-                        </View>
-                      </View>
-                    ) : null}
+                    {/* Checkpoint/Trivia image */}
+                    {!isLockedCheckpoint &&
+                      currentItem.description?.image &&
+                      (checkpointImages[currentItem.description.image] ||
+                        triviaImages[currentItem.description.image]) && (
+                        <Image
+                          source={
+                            checkpointImages[currentItem.description.image] ||
+                            triviaImages[currentItem.description.image]
+                          }
+                          style={styles.checkpointImage}
+                        />
+                      )}
 
                     {/* Description (hidden for locked checkpoints) */}
                     {!isLockedCheckpoint && currentItem.description?.text && (
@@ -379,309 +382,65 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
                       </Text>
                     )}
 
-                    {/* Tracking options for first checkpoint - after description */}
-                    {showTrackingOptions && (
-                      <View style={styles.trackingOptionsContainer}>
-                        {/* Sync button - always opens sync modal */}
-                        <Pressable
-                          style={styles.trackingOption}
-                          onPress={() => {
-                            // Close checkpoint modal, then open sync options modal
-                            onDismiss();
-                            setShowSyncOptions(true);
-                          }}
+                    {/* Previous trivia list */}
+                    {previousTrivia && (
+                      <View style={styles.triviaSection}>
+                        <Text
+                          style={[
+                            typographyThemed(theme).captionPrimaryBold,
+                            styles.triviaTitle,
+                          ]}
                         >
-                          <View style={styles.trackingButtonContainer}>
-                            <SyncButton
-                              size={iconSizes.medium}
-                              variant={syncEnabled ? 'brand' : 'primary'}
-                            />
-                          </View>
-                          <Text
-                            style={[
-                              typographyThemed(theme).captionSecondary,
-                              styles.trackingOptionText,
-                            ]}
-                          >
-                            {syncEnabled
-                              ? 'Health sync enabled. Tap to manage sync options'
-                              : 'Sync health data from device (optional). Manage this at any time from Settings'}
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          style={styles.trackingOption}
-                          onPress={() => {
-                            handleDismiss();
-                            // Open miles modal
-                            useUIStore.getState().setShowMilesModal(true);
-                          }}
-                        >
-                          <View style={styles.trackingButtonContainer}>
-                            <PlusButton size={iconSizes.medium} />
-                          </View>
-                          <Text
-                            style={[
-                              typographyThemed(theme).captionSecondary,
-                              styles.trackingOptionText,
-                            ]}
-                          >
-                            Manually add or edit miles
-                          </Text>
-                        </Pressable>
-                        {/* Dev mode option - toggle on/off */}
-                        <Pressable
-                          style={styles.trackingOption}
-                          onPress={() => {
-                            setDevMode(!devMode);
-                          }}
-                        >
-                          <View style={styles.trackingButtonContainer}>
-                            <DevModeButton
-                              size={iconSizes.medium}
-                              variant={devMode ? 'brand' : 'primary'}
-                            />
-                          </View>
-                          <Text
-                            style={[
-                              typographyThemed(theme).captionSecondary,
-                              styles.trackingOptionText,
-                            ]}
-                          >
-                            {devMode
-                              ? 'Dev mode is enabled. Tap to disable'
-                              : 'Not ready to commit? Explore the map in dev mode'}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    )}
-
-                    {/* Image if available (hidden for locked checkpoints) */}
-                    {!isLockedCheckpoint && currentItem.description?.image && (
-                      <View style={styles.imageContainer}>
-                        <Image
-                          source={{ uri: currentItem.description.image }}
-                          style={styles.image}
-                          resizeMode="cover"
-                        />
-                      </View>
-                    )}
-
-                    {/* Previous trivia list removed during cleanup */}
-                    {itemType === 'checkpoint' &&
-                      !isLockedCheckpoint &&
-                      (() => {
-                        const idx = Number(currentItem.index ?? -1);
-                        if (!Number.isFinite(idx) || idx <= 0) return null;
-                        const previousTrivia = getPreviousTrivia(idx);
-                        if (!previousTrivia || previousTrivia.length === 0) {
-                          return null;
-                        }
-                        return (
-                          <View style={styles.triviaSection}>
-                            <Text
-                              style={[
-                                typographyThemed(theme).captionPrimaryBold,
-                                styles.triviaTitle,
-                              ]}
-                            >
-                              Unlocked Trivia
-                            </Text>
-                            <View style={styles.triviaList}>
-                              {previousTrivia.map((t, i) => (
-                                <Pressable
-                                  key={`${t.name}:${i}`}
-                                  style={styles.triviaItemRow}
-                                  onPress={() => setCurrentItem(t, 'trivia')}
-                                >
-                                  <Text
-                                    style={[
-                                      typographyThemed(theme).bodySecondary,
-                                      styles.triviaItemName,
-                                    ]}
-                                  >
-                                    {t.name}
-                                  </Text>
-                                  <Text
-                                    style={[
-                                      typographyThemed(theme).bodySecondary,
-                                      styles.triviaItemMile,
-                                    ]}
-                                  >
-                                    {t.CUMULATIVE_MILES}
-                                    <Text style={styles.milesSuffix}>
-                                      {' '}
-                                      miles
-                                    </Text>
-                                  </Text>
-                                </Pressable>
-                              ))}
-                            </View>
-                          </View>
-                        );
-                      })()}
-
-                    {/* Miles section */}
-                    {(() => {
-                      const isCheckpointView = itemType === 'checkpoint';
-                      const milesVal = currentItem.CUMULATIVE_MILES as number;
-                      const index = currentItem.index ?? -1;
-                      if (index < 0) return null;
-                      const nextCheckpoint = getPointFromIndex(
-                        index + 1,
-                        'checkpoint',
-                      );
-                      const nextCheckpointName = nextCheckpoint?.name ?? null;
-                      // Keep lookup for potential future use; no longer needed for miles-to-next
-                      // const currentCheckpoint = getCurrentCheckpoint();
-                      const checkpointMiles = milesVal;
-                      const leftColumn =
-                        Number.isFinite(checkpointMiles) && checkpointMiles > 0;
-                      const nextCheckpointMiles = (() => {
-                        const m = Number(
-                          nextCheckpoint?.CUMULATIVE_MILES ?? NaN,
-                        );
-                        return Number.isFinite(m) ? m : null;
-                      })();
-                      const milesToNextCheckpoint =
-                        nextCheckpointMiles !== null
-                          ? Math.max(1, nextCheckpointMiles - checkpointMiles)
-                          : null;
-                      const remaining =
-                        !isCheckpointView && nextCheckpointMiles !== null
-                          ? Math.round(getRemainingMilesTo(nextCheckpointMiles))
-                          : Math.round(getRemainingMilesTo(milesVal));
-                      return (
-                        <View style={styles.milesToNextSection}>
-                          <View
-                            style={[
-                              styles.milesTwoColRow,
-                              styles.milesTitleRow,
-                            ]}
-                          >
-                            <View
-                              style={styles.milesCol}
-                              pointerEvents={leftColumn ? 'auto' : 'none'}
+                          Unlocked Trivia
+                        </Text>
+                        <View style={styles.triviaList}>
+                          {previousTrivia.map((t, i) => (
+                            <Pressable
+                              key={`${t.name}:${i}`}
+                              style={styles.triviaItemRow}
+                              onPress={() => setCurrentItem(t, 'trivia')}
                             >
                               <Text
                                 style={[
-                                  typographyThemed(theme).captionPrimaryBold,
-                                  styles.milesToNextTitle,
-                                  isCheckpointView && isLockedCheckpoint
-                                    ? { color: theme.colors.infoModalInactive }
-                                    : null,
-                                  !leftColumn ? styles.hidden : null,
+                                  typographyThemed(theme).bodySecondary,
+                                  styles.triviaItemName,
                                 ]}
                               >
-                                {isCheckpointView
-                                  ? 'Checkpoint'
-                                  : 'Total miles'}
+                                {t.name}
                               </Text>
-                            </View>
-                            <View
-                              style={[
-                                styles.milesCol,
-                                { marginLeft: spacing.md },
-                              ]}
-                            >
                               <Text
                                 style={[
-                                  typographyThemed(theme).captionPrimaryBold,
-                                  styles.milesToNextTitle,
-                                  isCheckpointView && isLockedCheckpoint
-                                    ? { color: theme.colors.infoModalInactive }
-                                    : null,
+                                  typographyThemed(theme).bodySecondary,
+                                  styles.triviaItemMile,
                                 ]}
                               >
-                                {isCheckpointView && isLockedCheckpoint
-                                  ? 'Remaining'
-                                  : nextCheckpointName || 'Next checkpoint'}
+                                {t.CUMULATIVE_MILES}
+                                <Text style={styles.milesSuffix}> miles</Text>
                               </Text>
-                            </View>
-                          </View>
-
-                          <View
-                            style={[
-                              styles.milesTwoColRow,
-                              { marginTop: spacing.xs },
-                            ]}
-                          >
-                            <View
-                              style={styles.milesCol}
-                              pointerEvents={leftColumn ? 'auto' : 'none'}
-                            >
-                              <View
-                                style={[
-                                  styles.milesToNextPill,
-                                  {
-                                    backgroundColor:
-                                      isCheckpointView && isLockedCheckpoint
-                                        ? theme.colors.infoModalInactive
-                                        : theme.colors.checkpointTextBackground,
-                                  },
-                                  !leftColumn ? styles.hidden : null,
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    typography.titleLarge,
-                                    styles.milesToNextValue,
-                                    { color: theme.colors.checkpointLabel },
-                                  ]}
-                                >
-                                  {checkpointMiles}
-                                  <Text
-                                    style={[
-                                      styles.milesSuffix,
-                                      { color: theme.colors.checkpointLabel },
-                                    ]}
-                                  >
-                                    miles
-                                  </Text>
-                                </Text>
-                              </View>
-                            </View>
-                            <View
-                              style={[
-                                styles.milesCol,
-                                { marginLeft: spacing.md },
-                              ]}
-                            >
-                              <View
-                                style={[
-                                  styles.milesToNextPill,
-                                  {
-                                    backgroundColor:
-                                      isCheckpointView && isLockedCheckpoint
-                                        ? theme.colors.infoModalInactive
-                                        : theme.colors.checkpointTextBackground,
-                                  },
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    typography.titleLarge,
-                                    styles.milesToNextValue,
-                                    { color: theme.colors.checkpointLabel },
-                                  ]}
-                                >
-                                  {isCheckpointView && isLockedCheckpoint
-                                    ? '-' + remaining
-                                    : milesToNextCheckpoint ?? remaining}
-                                  <Text
-                                    style={[
-                                      styles.milesSuffix,
-                                      { color: theme.colors.checkpointLabel },
-                                    ]}
-                                  >
-                                    miles
-                                  </Text>
-                                </Text>
-                              </View>
-                            </View>
-                          </View>
+                            </Pressable>
+                          ))}
                         </View>
-                      );
-                    })()}
+                      </View>
+                    )}
+
+                    {/* Bottom section */}
+                    <View style={styles.bottomSection}>
+                      {/* Locked checkpoint message */}
+                      {itemType === 'checkpoint' && isLockedCheckpoint && (
+                        <LockedCheckpointBanner />
+                      )}
+
+                      {/* Tracking options for first checkpoint */}
+                      {showTrackingOptions && (
+                        <TrackingOptions
+                          onDismiss={handleDismiss}
+                          onOpenSyncModal={() => setShowSyncOptions(true)}
+                        />
+                      )}
+
+                      {/* Miles display */}
+                      <MilesDisplay />
+                    </View>
                   </ScrollView>
 
                   {/* Progress - Journey at bottom of modal */}
@@ -696,8 +455,6 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
               </View>
             </Animated.View>
           </SafeAreaView>
-
-          {/* Celebration border is the chosen celebration effect */}
         </Animated.View>
 
         {/* Animated gradient border on top of modal */}
@@ -723,53 +480,12 @@ export default function InfoModal({ visible, onDismiss }: InfoModalProps) {
 }
 
 const styles = StyleSheet.create({
-  lockedSectionContainer: {
-    alignSelf: 'stretch',
-    flexGrow: 1,
-    marginHorizontal: -spacing.lg,
-    paddingHorizontal: spacing.lg,
-    justifyContent: 'center',
-  },
-
-  lockedBannerText: {
-    fontWeight: '600',
-  },
-  // Miles to Next section
-  milesToNextSection: {
-    alignItems: 'stretch',
-  },
-  milesTwoColRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  milesTitleRow: {
-    alignItems: 'flex-end',
-  },
-  milesCol: {
+  // Bottom section - contains locked banner, tracking options, and miles display
+  bottomSection: {
     flex: 1,
-  },
-  milesToNextTitle: {
-    marginBottom: 4,
-    textAlign: 'left',
-  },
-  milesToNextValue: {
-    textAlign: 'left',
-  },
-
-  milesToNextPill: {
-    borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    width: '100%',
-  },
-
-  hidden: {
-    opacity: 0,
-  },
-  singleColRight: {
-    alignItems: 'flex-end',
+    alignItems: 'stretch',
+    justifyContent: 'flex-end',
+    gap: spacing.md,
   },
   milesSuffix: {
     fontSize: 12,
@@ -780,41 +496,17 @@ const styles = StyleSheet.create({
   },
   description: {
     lineHeight: 24,
-    textAlign: 'center',
+    textAlign: 'left',
   },
-  imageContainer: {
-    alignItems: 'center',
-  },
-  image: {
+  checkpointImage: {
     width: '100%',
-    height: 200,
+    height: undefined,
+    aspectRatio: 1,
     borderRadius: borderRadius.md,
   },
   bottomProgressSection: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-  },
-  trackingOptionsContainer: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  trackingOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  trackingButtonContainer: {
-    width: iconButtonSizes.medium,
-    height: iconButtonSizes.medium,
-    borderRadius: borderRadius.full,
-  },
-  trackingOptionText: {
-    textAlign: 'left',
-    flex: 1,
-    flexShrink: 1,
   },
   triviaSection: {},
   triviaTitle: {
@@ -835,18 +527,5 @@ const styles = StyleSheet.create({
   },
   triviaItemMile: {
     textAlign: 'right',
-  },
-
-  lockedCenterContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.md,
-  },
-
-  milesContainer: {
-    marginTop: spacing.lg,
-    alignItems: 'center',
   },
 });

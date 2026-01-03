@@ -18,7 +18,7 @@ export const motion = {
   // Path reveal animation (initial journey path drawing)
   pathReveal: {
     delay: 1000,
-    duration: 2000,
+    duration: 4000,
   },
 
   // Modal animations
@@ -49,6 +49,8 @@ export const motion = {
   easing: {
     standard: Easing.out(Easing.cubic),
     inOut: Easing.inOut(Easing.cubic),
+    // Reverse of inOut: fast start, slow middle, fast end
+    outIn: Easing.bezier(0.8, 0, 0.2, 1),
     linear: Easing.linear,
     sway: Easing.inOut(Easing.sin),
     // Snappier curve for small delta animations

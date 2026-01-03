@@ -19,7 +19,6 @@ import { EditButton } from '../ButtonIcons';
 import DateStepper from '../DateStepper';
 import { DistanceEntry } from '../../types';
 import { formatDateLabel, formatTime, getYear } from '../../utils/date';
-import { database } from '../../services/database';
 
 const sepStyles = StyleSheet.create({
   separator: { height: 1, backgroundColor: 'rgba(0,0,0,0.08)' },
@@ -169,45 +168,25 @@ export default function MilesModal({ visible, onDismiss }: MilesModalProps) {
       (sum, e) => sum + (e?.miles ?? 0),
       0,
     );
-    // Apply deletions to store entries
+    // Apply deletions (store handles persistence)
     if (pendingDeletions.length > 0) {
       for (const d of pendingDeletions) {
-        useProgressStore.getState().removeDistanceEntry(d.id);
-        try {
-          await database.removeDistanceEntry(d.id);
-        } catch (e) {
-          console.warn('Failed to remove distance from DB:', e);
-        }
+        await useProgressStore.getState().removeDistanceEntry(d.id);
       }
     }
-    // Apply additions to store entries
+    // Apply additions (store handles persistence)
     if (pendingTotal > 0) {
       for (let idx = 0; idx < pendingEntries.length; idx++) {
         const e = pendingEntries[idx];
         const persisted = { ...e, id: `manual_${Date.now()}_${idx}` };
-        addDistanceEntry(persisted);
-        try {
-          await database.addDistanceEntry({
-            id: persisted.id,
-            saveId: persisted.saveId,
-            date: persisted.date as number,
-            miles: persisted.miles,
-            source: persisted.source || 'manual',
-          });
-        } catch (err) {
-          console.warn('Failed to persist distance:', err);
-        }
+        await addDistanceEntry(persisted);
       }
     }
     // Update miles once with adds minus deletions
     if (pendingTotal > 0 || deletionTotal > 0) {
       const newMiles = baseMiles + pendingTotal - deletionTotal;
       setMiles(newMiles);
-      try {
-        await database.setMilesSnapshot('default', newMiles);
-      } catch (e) {
-        console.warn('Failed to update miles snapshot:', e);
-      }
+      await useProgressStore.getState().persistMilesSnapshot();
     }
     if (state.isTestOverride) {
       useProgressStore.getState().clearTestOverride();

@@ -16,6 +16,7 @@ type Props = {
   scale: any;
   showPointLabels: boolean;
   animatedProgress: number;
+  currentMiles: number;
   onItemPress: (item: PointType, type: 'checkpoint' | 'trivia') => void;
 };
 
@@ -32,6 +33,7 @@ export default function PointLayer({
   scale,
   showPointLabels,
   animatedProgress,
+  currentMiles,
   onItemPress,
 }: Props) {
   // Only enrich checkpoints with index; trivia passes through unchanged.
@@ -47,10 +49,17 @@ export default function PointLayer({
     const activationProgress = mapBookMilesToPathProgress(
       item.CUMULATIVE_MILES ?? 0,
     );
+    // Forward: activate ~8 miles before path reaches point (0.007)
+    // Backward: deactivate ~8 miles before path reaches point (0.007)
+    const pointMiles = item.CUMULATIVE_MILES ?? 0;
+    const goingBackward = currentMiles < pointMiles;
+    const buffer = Math.abs(currentMiles - pointMiles) > 20 ? 0.007 : 1e-6;
     const isActive =
       kind === 'checkpoint' && item.isStart
         ? true
-        : animatedProgress + 1e-6 >= activationProgress;
+        : goingBackward
+        ? animatedProgress >= activationProgress + buffer
+        : animatedProgress + buffer >= activationProgress;
 
     const enriched: PointType = { ...item, index };
 

@@ -88,7 +88,7 @@ export default function SettingsModal({
       onDismiss={onDismiss}
       title="Settings"
       leftButton={
-        <HomeButton size={iconSizes.large} onPress={handleHomePress} />
+        <HomeButton size={iconSizes.medium} onPress={handleHomePress} />
       }
     >
       <ScrollView

@@ -3,6 +3,9 @@ import { TriviaUnlock, PointType, DistanceEntry } from '../types';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 import trivia from '../constants/trivia.json';
+import { database } from '../services/database';
+
+const SAVE_ID = 'default';
 
 interface ProgressStore {
   // State
@@ -17,21 +20,25 @@ interface ProgressStore {
   isTestOverride: boolean;
   testOverrideBaseMiles: number | null;
 
-  // Actions
+  // Initialization (loads from database)
+  initFromDatabase: () => Promise<void>;
+
+  // Actions (persist to database automatically)
   setMiles: (miles: number) => void;
   setTestMiles: (miles: number) => void;
   clearTestOverride: () => void;
   setTriviaUnlocks: (unlocks: TriviaUnlock[]) => void;
   addTriviaUnlock: (unlock: TriviaUnlock) => void;
-  addDistanceEntry: (entry: DistanceEntry) => void;
-  updateDistanceEntry: (entry: DistanceEntry) => void;
-  removeDistanceEntry: (id: string) => void;
+  addDistanceEntry: (entry: DistanceEntry) => Promise<void>;
+  updateDistanceEntry: (entry: DistanceEntry) => Promise<void>;
+  removeDistanceEntry: (id: string) => Promise<void>;
   setDistanceEntries: (entries: DistanceEntry[]) => void;
   setLastSyncDate: (date: string) => void;
   setIsSyncing: (syncing: boolean) => void;
   setSyncMessage: (message: string | null) => void;
   setSyncError: (error: string | null) => void;
-  resetProgress: () => void;
+  resetProgress: () => Promise<void>;
+  persistMilesSnapshot: () => Promise<void>;
 
   // Selectors / derived values
   getProgressMiles: () => number;
@@ -71,6 +78,28 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   isTestOverride: false,
   testOverrideBaseMiles: null,
 
+  // Initialize from database on app start
+  initFromDatabase: async () => {
+    try {
+      const snapshot = await database.getMilesSnapshot(SAVE_ID);
+      const entries = await database.getDistanceEntries(SAVE_ID);
+
+      if (snapshot !== null) {
+        set({ miles: snapshot, distanceEntries: entries });
+      } else {
+        // No snapshot, calculate from entries
+        const totalMiles = (entries || []).reduce(
+          (sum, e) => sum + (e?.miles ?? 0),
+          0,
+        );
+        set({ miles: totalMiles, distanceEntries: entries });
+        await database.setMilesSnapshot(SAVE_ID, totalMiles);
+      }
+    } catch (error) {
+      console.error('Failed to init progress from database:', error);
+    }
+  },
+
   // Actions
   setMiles: miles => set({ miles }),
   setTestMiles: miles =>
@@ -92,20 +121,65 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       triviaUnlocks: [...state.triviaUnlocks, unlock],
     })),
 
-  addDistanceEntry: entry =>
-    set(state => ({ distanceEntries: [entry, ...state.distanceEntries] })),
+  addDistanceEntry: async entry => {
+    const state = get();
+    // Check for duplicate
+    if (state.distanceEntries.some(e => e.id === entry.id)) {
+      return; // Already exists
+    }
 
-  updateDistanceEntry: entry =>
+    // Update store first (immediate UI feedback)
+    set({ distanceEntries: [entry, ...state.distanceEntries] });
+
+    // Persist to database
+    try {
+      await database.addDistanceEntry({
+        id: entry.id,
+        saveId: entry.saveId || SAVE_ID,
+        date: entry.date as number,
+        miles: entry.miles,
+        source: entry.source,
+      });
+    } catch (error) {
+      console.error('Failed to persist distance entry:', error);
+    }
+  },
+
+  updateDistanceEntry: async entry => {
+    // Update store first
     set(state => ({
       distanceEntries: state.distanceEntries.map(e =>
         e.id === entry.id ? entry : e,
       ),
-    })),
+    }));
 
-  removeDistanceEntry: id =>
+    // Persist to database
+    try {
+      await database.addDistanceEntry({
+        id: entry.id,
+        saveId: entry.saveId || SAVE_ID,
+        date: entry.date as number,
+        miles: entry.miles,
+        source: entry.source,
+      });
+    } catch (error) {
+      console.error('Failed to update distance entry:', error);
+    }
+  },
+
+  removeDistanceEntry: async id => {
+    // Update store first
     set(state => ({
       distanceEntries: state.distanceEntries.filter(d => d.id !== id),
-    })),
+    }));
+
+    // Persist to database
+    try {
+      await database.removeDistanceEntry(id);
+    } catch (error) {
+      console.error('Failed to remove distance entry:', error);
+    }
+  },
 
   setDistanceEntries: entries => set({ distanceEntries: entries }),
 
@@ -117,7 +191,16 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
 
   setSyncError: error => set({ syncError: error }),
 
-  resetProgress: () =>
+  persistMilesSnapshot: async () => {
+    const miles = get().miles;
+    try {
+      await database.setMilesSnapshot(SAVE_ID, miles);
+    } catch (error) {
+      console.error('Failed to persist miles snapshot:', error);
+    }
+  },
+
+  resetProgress: async () => {
     set({
       miles: 0,
       triviaUnlocks: [],
@@ -127,7 +210,16 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       syncError: null,
       isTestOverride: false,
       testOverrideBaseMiles: null,
-    }),
+    });
+
+    // Clear database
+    try {
+      await database.setMilesSnapshot(SAVE_ID, 0);
+      // Note: Would need to add a clearDistanceEntries method to database
+    } catch (error) {
+      console.error('Failed to reset database:', error);
+    }
+  },
 
   // Selectors / derived values
   getProgressMiles: () => {

@@ -13,6 +13,7 @@ export interface PointType {
     text: string;
     image?: string;
   };
+  image?: string; // Checkpoint image filename
   CUMULATIVE_MILES: number;
   // Checkpoint-specific fields
   isStart?: boolean;

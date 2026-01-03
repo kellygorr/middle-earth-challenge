@@ -3,7 +3,8 @@
     "type": "checkpoint",
     "name": "Hobbiton",
     "description": {
-      "text": "The peaceful homeland of hobbits, with its rolling green hills and cozy hobbit-holes. Here begins the greatest journey of the Third Age. \n\nTake up the Ring, leave the Shire behind, and begin the long road to Mordor."
+      "text": "Hobbiton is an idyllic place of comfort and routine, largely untouched by danger. Life here is simple, and sheltered—until the One Ring is discovered, drawing danger that cannot be ignored.\n\nTake up the Ring, leave the Shire behind, and begin the long road to Mordor.",
+      "image": "hobbiton.jpg"
     },
     "isStart": true,
     "isActive": true,
@@ -18,7 +19,8 @@
     "type": "checkpoint",
     "name": "Bree",
     "description": {
-      "text": "A bustling village where Men and Hobbits live side by side. The Prancing Pony inn stands at the crossroads of the ancient Great East Road."
+      "text": "Bree is a rare village where Men and Hobbits live side by side. Travelers gather at the Prancing Pony, a lively inn offering food, ale, and warmth. It is here that the Hobbits first meet Strider, who will guide them on the dangerous road ahead.",
+      "image": "bree.jpg"
     },
     "x": 975,
     "y": 648,
@@ -30,7 +32,8 @@
     "type": "checkpoint",
     "name": "Rivendell",
     "description": {
-      "text": "The Last Homely House, hidden valley refuge of the Elves. Here the Fellowship was formed under Elrond's guidance."
+      "text": "Hidden in a deep valley, this Elven refuge offers healing, counsel, and secrecy. Here the Council of Elrond decides the Ring's fate, and a Fellowship is formed to see the task through.",
+      "image": "rivendell.jpg"
     },
     "x": 1484,
     "y": 608,
@@ -42,7 +45,8 @@
     "type": "checkpoint",
     "name": "Lothlorien",
     "description": {
-      "text": "The Golden Wood, realm of Galadriel and Celeborn. Ancient mallorn trees tower above, and time itself seems to move differently here."
+      "text": "An ancient Elven forest ruled by Galadriel, where golden mallorn trees rise above the river. Time feels slowed here, allowing the Fellowship to rest, and gain clarity before the journey turns darker.",
+      "image": "lothlorien.jpg"
     },
     "x": 1634,
     "y": 1015,
@@ -54,7 +58,8 @@
     "type": "checkpoint",
     "name": "Parth Galen",
     "description": {
-      "text": "The green lawn beside the Falls of Rauros, where the Fellowship was broken. Here the Company made their fateful choice."
+      "text": "Above the thunder of the Falls of Rauros, the Company makes camp for the last time. The Fellowship is broken, and Frodo sets out alone toward Mordor.",
+      "image": "parth-galen.jpg"
     },
     "x": 1829,
     "y": 1450,
@@ -67,7 +72,8 @@
     "type": "checkpoint",
     "name": "The Black Gates",
     "description": {
-      "text": "The Morannon, mighty fortress guarding the entrance to Mordor. Impassable to all but the most desperate or foolish."
+      "text": "The massive iron gates guarding the main entrance to Mordor, watched constantly by Sauron's forces. Reaching them makes one truth clear: this road is impossible, and another must be found.",
+      "image": "the-black-gates.jpg"
     },
     "x": 2100,
     "y": 1435,
@@ -79,7 +85,8 @@
     "type": "checkpoint",
     "name": "Minas Morgul",
     "description": {
-      "text": "The Tower of Sorcery, once fair Minas Ithil. Now a place of dread, glowing with a corpse-light under the shadow of the mountains."
+      "text": "Once the fair city of Minas Ithil, this fortress now serves the Witch-king. Its pale, corpse-light marks the path into Mordor, and passing it tests the courage of all who draw near.",
+      "image": "minas-morgul.jpg"
     },
     "x": 2060,
     "y": 1648,
@@ -91,7 +98,8 @@
     "type": "checkpoint",
     "name": "Mount Doom",
     "description": {
-      "text": "Orodruin, the Fire Mountain where the One Ring was forged and where it must be destroyed. The end of all things, or a new beginning."
+      "text": "The fire-mountain of Mordor, where the One Ring was forged.  You have reached the end. The Ring is destroyed, the Shadow vanquished, and Middle-earth is free. Your journey is complete.",
+      "image": "mount-doom.jpg"
     },
     "isEnd": true,
     "x": 2197,

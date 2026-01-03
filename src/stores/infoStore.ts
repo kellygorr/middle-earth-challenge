@@ -136,12 +136,12 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       if (unchanged) return true;
     }
 
-    if (isCheckpointItem) {
+    if (isCheckpointItem || isTriviaItem) {
       const m = currentItem.CUMULATIVE_MILES ?? 0;
       const threshold = mapBookMilesToPathProgress(m);
       const isExact = Math.abs(miles - m) < eps;
       return isExact && animatedProgress + eps >= threshold;
     }
-    return isTriviaItem;
+    return false;
   },
 }));

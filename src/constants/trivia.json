@@ -3,8 +3,8 @@
     "type": "trivia",
     "name": "The Old Forest",
     "description": {
-      "text": "In the Old Forest, the hobbits meet Tom Bombadil—a mysterious and ancient being, seemingly as old as the woods themselves. At the Council of Elrond, the idea of giving the Ring to Tom is discussed, since he is immune to its corruption. Yet he is also immune to its burden and responsibility. Tom cannot be entrusted with the Ring: he would not understand its importance, might forget it entirely, and would never think to guard it.",
-      "image": "old_forest.jpg"
+      "text": "In the Old Forest, the hobbits meet Tom Bombadil—a mysterious and ancient being, seemingly as old as the woods themselves.\n\nAt the Council of Elrond, the idea of giving the Ring to Tom is discussed, since he is immune to its corruption. Yet he is also immune to its burden and responsibility. Tom cannot be entrusted with the Ring: he would not understand its importance, might forget it entirely, and would never think to guard it.",
+      "image": "the-old-forest.jpg"
     },
     "x": 900,
     "y": 680,
@@ -14,7 +14,7 @@
     "type": "trivia",
     "name": "Weathertop",
     "description": {
-      "text": "Amon Sûl, the ancient watchtower where Frodo was wounded by the Morgul blade. The ruins stand lonely on the hilltop, haunted by memories of the Nazgûl's attack.",
+      "text": "Amon Sûl, the ancient watchtower, stands lonely on the hilltop. Frodo was struck here by the Morgul blade, a wound that would trouble him for the rest of the journey.",
       "image": "weathertop.jpg"
     },
     "x": 1129,
@@ -25,8 +25,8 @@
     "type": "trivia",
     "name": "Hollin Gate",
     "description": {
-      "text": "The Doors of Durin, hidden entrance to the Mines of Moria. 'Speak friend and enter' - a riddle that nearly cost the Fellowship their passage.",
-      "image": "hollin_gate.jpg"
+      "text": "The Doors of Durin mark the secret entrance to the ancient Dwarven city of Moria. They guard a vast network of mines and halls, once filled with wealth and life but now abandoned to shadow and danger.",
+      "image": "hollin-gate.jpg"
     },
     "x": 1401,
     "y": 925,
@@ -36,8 +36,8 @@
     "type": "trivia",
     "name": "The Bridge of Khazad-dûm",
     "description": {
-      "text": "The narrow stone arch where Gandalf faced the Balrog. 'You shall not pass!' echoed through the ancient halls as the wizard fell into shadow.",
-      "image": "khazad_dum.jpg"
+      "text": "You shall not pass!",
+      "image": "khazad-dum.jpg"
     },
     "x": 1480,
     "y": 924,
@@ -47,19 +47,19 @@
     "type": "trivia",
     "name": "The Argonath",
     "description": {
-      "text": "The Pillars of Kings, massive statues of Isildur and Anárion carved from living rock. They guard the northern approach to Gondor, silent witnesses to the passage of time.",
-      "image": "argonath.jpg"
+      "text": "The Pillars of Kings are massive statues of Isildur and Anárion carved from living rock.\n\nThey guard the northern approach to Gondor, standing as silent monuments to the realm’s ancient power.",
+      "image": "the-argonath.jpg"
     },
-    "x": 0,
-    "y": 0,
+    "x": 1820,
+    "y": 1390,
     "CUMULATIVE_MILES": 850
   },
   {
     "type": "trivia",
     "name": "Emyn Muil",
     "description": {
-      "text": "A maze of barren hills and twisted ravines where Frodo and Sam became hopelessly lost. Here they first captured Gollum, who would become both guide and nemesis.",
-      "image": "emyn_muil.jpg"
+      "text": "A maze of jagged hills and twisting ravines. Frodo and Sam struggled to find their way through the terrain, and here they first captured Gollum, who would become both guide and nemesis on their journey.",
+      "image": "emyn-muil.jpg"
     },
     "x": 1880,
     "y": 1404,
@@ -69,8 +69,8 @@
     "type": "trivia",
     "name": "The Dead Marshes",
     "description": {
-      "text": "An accursed wasteland where the dead of ancient battles lie preserved beneath the water. Pale faces and ghostly lights lure travelers to their doom.",
-      "image": "dead_marshes.jpg"
+      "text": "A cursed wetland, the Dead Marshes are filled with the bodies of men who fell in the ancient Battle of the Dagorlad. Pale faces and ghostly lights hover above the water, a grim reminder of the cost of war and the lands it scarred.",
+      "image": "dead-marshes.jpg"
     },
     "x": 1980,
     "y": 1431,
@@ -80,8 +80,8 @@
     "type": "trivia",
     "name": "Shelob's Lair",
     "description": {
-      "text": "The tunnel of Cirith Ungol, home to Shelob the Great Spider. Ancient and evil, she has dwelt in darkness for ages, feeding on all who dare pass through her domain.",
-      "image": "shelobs_lair.jpg"
+      "text": "The dark tunnel of Cirith Ungol is home to Shelob, the last child of Ungoliant, a primordial spider-like being.  She has dwelt here for ages, a massive and ancient creature lurking in the shadows, her lair a quiet, web-filled labyrinth.",
+      "image": "shelobs-lair.jpg"
     },
     "x": 2090,
     "y": 1628,
@@ -91,7 +91,7 @@
     "type": "trivia",
     "name": "The Plateau of Gorgoroth",
     "description": {
-      "text": "The desolate plain of Mordor, scorched by volcanic heat and poisoned by evil. Across this wasteland, Frodo and Sam made their final desperate march.",
+      "text": "The barren plains of Mordor stretch beneath a sky of ash and fire. Scorched earth, blackened rocks, and poisoned soil make this a desolate wasteland, the heart of Sauron’s realm and the final stretch on the road to Mount Doom.",
       "image": "gorgoroth.jpg"
     },
     "x": 2110,

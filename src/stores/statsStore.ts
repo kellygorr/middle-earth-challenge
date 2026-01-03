@@ -149,10 +149,12 @@ export const useStatsStore = create<StatsStore>(() => ({
     const now = new Date();
 
     // Journey Progress
-    const checkpointsCompleted = cps.filter(
-      cp => (cp?.CUMULATIVE_MILES ?? Infinity) <= miles && !cp?.isStart,
-    ).length;
-    const checkpointsTotal = cps.filter(cp => !cp?.isStart).length;
+    // Include first checkpoint (isStart) as always completed
+    const checkpointsCompleted =
+      cps.filter(
+        cp => (cp?.CUMULATIVE_MILES ?? Infinity) <= miles && !cp?.isStart,
+      ).length + 1;
+    const checkpointsTotal = cps.length;
     const milesCompleted = Math.min(miles, TOTAL_JOURNEY_MILES);
     const milesRemaining = Math.max(0, TOTAL_JOURNEY_MILES - miles);
     const progressPercentage = Math.round((miles / TOTAL_JOURNEY_MILES) * 100);

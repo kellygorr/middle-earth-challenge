@@ -76,33 +76,15 @@ function App(): React.JSX.Element {
   // Set up periodic sync when health sync is enabled
   useSyncInterval();
 
-  const setDistanceEntries = useProgressStore(
-    state => state.setDistanceEntries,
-  );
-  const setMiles = useProgressStore(state => state.setMiles);
+  const initFromDatabase = useProgressStore(state => state.initFromDatabase);
 
   useEffect(() => {
     const initApp = async () => {
       try {
         await database.init();
         await loadSettings();
-        // Restore miles from snapshot; fallback to distances if snapshot missing
-        const saveId = 'default';
-        const snapshot = await database.getMilesSnapshot(saveId);
-        if (snapshot !== null) {
-          setMiles(snapshot);
-          const entries = await database.getDistanceEntries(saveId);
-          setDistanceEntries(entries);
-        } else {
-          const entries = await database.getDistanceEntries(saveId);
-          setDistanceEntries(entries);
-          const totalMiles = (entries || []).reduce(
-            (sum, e) => sum + (e?.miles ?? 0),
-            0,
-          );
-          setMiles(totalMiles);
-          await database.setMilesSnapshot(saveId, totalMiles);
-        }
+        // Initialize progress store from database (single source of truth)
+        await initFromDatabase();
       } catch (error) {
         console.error('Failed to initialize app:', error);
       } finally {
@@ -113,7 +95,7 @@ function App(): React.JSX.Element {
     };
 
     initApp();
-  }, [loadSettings, setDistanceEntries, setMiles, setPhase]);
+  }, [loadSettings, initFromDatabase, setPhase]);
 
   return (
     <SafeAreaProvider>

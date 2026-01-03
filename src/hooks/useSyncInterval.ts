@@ -3,7 +3,6 @@ import { AppState, AppStateStatus } from 'react-native';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
 import { fitnessService } from '../services/fitnessService';
-import { database } from '../services/database';
 import { DistanceEntry } from '../types';
 
 const SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
@@ -184,15 +183,8 @@ export function useSyncInterval() {
           source: 'health-connect',
         };
 
-        // Add to store
-        addDistanceEntry(entry);
-
-        // Persist to database (INSERT OR REPLACE)
-        try {
-          await database.addDistanceEntry(entry);
-        } catch (err) {
-          console.warn('Failed to persist health connect entry:', err);
-        }
+        // Add to store (store handles persistence)
+        await addDistanceEntry(entry);
 
         milesChanged += miles;
       }
@@ -209,15 +201,8 @@ export function useSyncInterval() {
           miles: newMiles,
         };
 
-        // Update in store
-        updateDistanceEntry(updatedEntry);
-
-        // Update in database (INSERT OR REPLACE uses same ID)
-        try {
-          await database.addDistanceEntry(updatedEntry);
-        } catch (err) {
-          console.warn('Failed to update health connect entry:', err);
-        }
+        // Update in store (store handles persistence)
+        await updateDistanceEntry(updatedEntry);
 
         milesChanged += milesDiff;
       }
@@ -229,9 +214,9 @@ export function useSyncInterval() {
         0,
       );
 
-      // Update miles snapshot
-      await database.setMilesSnapshot(saveId, totalMiles);
+      // Update miles and persist snapshot
       setMiles(totalMiles);
+      await useProgressStore.getState().persistMilesSnapshot();
 
       // Update last sync timestamp
       setLastSyncTimestamp(Date.now());
