@@ -1,9 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
 import { fitnessService } from '../services/fitnessService';
-import { DistanceEntry } from '../types';
+import { DistanceEntry, DistanceSource } from '../types';
 
 const SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
 const SYNC_MESSAGE_DURATION_MS = 5000; // Show message for 5 seconds
@@ -99,6 +99,29 @@ export function useSyncInterval() {
         fetchFromDate,
       );
 
+      // Determine the source based on the current platform/provider
+      const healthSource: DistanceSource =
+        Platform.OS === 'ios' ? 'apple-health' : 'health-connect';
+      const idPrefix = Platform.OS === 'ios' ? 'ah' : 'hc';
+
+      // Disconnect detection for iOS:
+      // If we have existing apple-health entries but sync returns 0 records,
+      // the user may have revoked permissions in Settings
+      if (Platform.OS === 'ios' && records.length === 0) {
+        const existingAppleHealthEntries = distanceEntries.filter(
+          e => e.source === 'apple-health',
+        );
+        if (existingAppleHealthEntries.length > 0) {
+          console.log(
+            '[useSyncInterval] iOS: Had',
+            existingAppleHealthEntries.length,
+            'apple-health entries but sync returned 0 - possible permission revocation',
+          );
+          // Don't immediately disable - user may just have no new data
+          // The error handler below will catch actual permission errors
+        }
+      }
+
       if (records.length === 0) {
         // No new records, just update timestamp
         setLastSyncTimestamp(Date.now());
@@ -120,10 +143,10 @@ export function useSyncInterval() {
         return;
       }
 
-      // Build a map of existing Health Connect entries by ID for quick lookup
+      // Build a map of existing health entries by ID for quick lookup
       const existingEntriesMap = new Map(
         distanceEntries
-          .filter(e => e.source === 'health-connect')
+          .filter(e => e.source === healthSource)
           .map(e => [e.id, e]),
       );
 
@@ -143,7 +166,7 @@ export function useSyncInterval() {
           : null;
 
       for (const record of records) {
-        const entryId = `hc_${record.id}`;
+        const entryId = `${idPrefix}_${record.id}`;
         const existing = existingEntriesMap.get(entryId);
         const miles = record.distanceMeters * METERS_TO_MILES;
 
@@ -176,11 +199,11 @@ export function useSyncInterval() {
         const timestamp = new Date(record.startTime).getTime();
 
         const entry: DistanceEntry = {
-          id: `hc_${record.id}`,
+          id: `${idPrefix}_${record.id}`,
           saveId,
           date: timestamp,
           miles,
-          source: 'health-connect',
+          source: healthSource,
         };
 
         // Add to store (store handles persistence)
@@ -191,7 +214,7 @@ export function useSyncInterval() {
 
       // Handle updated records (in-progress activities with changed miles)
       for (const record of updatedRecords) {
-        const entryId = `hc_${record.id}`;
+        const entryId = `${idPrefix}_${record.id}`;
         const existing = existingEntriesMap.get(entryId)!;
         const newMiles = record.distanceMeters * METERS_TO_MILES;
         const milesDiff = newMiles - existing.miles;

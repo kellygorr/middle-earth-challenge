@@ -34,13 +34,16 @@ export interface Save {
   status: 'in_progress' | 'completed';
 }
 
+// Distance source types
+export type DistanceSource = 'manual' | 'health-connect' | 'apple-health' | 'synced';
+
 // Distance entry types
 export interface DistanceEntry {
   id: string;
   saveId: string;
   date: number; // Unix timestamp (ms)
   miles: number;
-  source: 'manual' | 'health-connect' | 'synced';
+  source: DistanceSource;
 }
 
 // Trivia unlock types

@@ -31,7 +31,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   currentTheme: 'classic',
   showTriviaMarkers: true,
   showPointLabels: true,
-  colorizeMap: false,
+  colorizeMap: true,
   showWelcome: true,
   reducedMapTitles: true,
   devMode: true,

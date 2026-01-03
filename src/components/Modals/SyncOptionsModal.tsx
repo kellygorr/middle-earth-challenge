@@ -17,10 +17,6 @@ import ModalWrapper from './ModalWrapper';
 import { SyncProvider } from '../../types';
 import { fitnessService } from '../../services/fitnessService';
 import Button from '../Buttons/Button';
-import {
-  getSdkStatus,
-  SdkAvailabilityStatus,
-} from 'react-native-health-connect';
 
 interface SyncOption {
   id: SyncProvider;
@@ -87,13 +83,13 @@ export default function SyncOptionsModal({
   const handleSelectProvider = async (provider: SyncProvider) => {
     console.log('handleSelectProvider called with:', provider);
 
-    // For Health Connect, check SDK availability first using the library's method
+    // For Health Connect, check SDK availability first
     if (provider === 'health-connect') {
       try {
-        const status = await getSdkStatus();
-        console.log('Health Connect SDK status:', status);
+        const sdkStatus = await fitnessService.checkSdkStatus();
+        console.log('Health Connect SDK status:', sdkStatus);
 
-        if (status === SdkAvailabilityStatus.SDK_UNAVAILABLE) {
+        if (sdkStatus.status === 'unavailable') {
           Alert.alert(
             'Health Connect Required',
             'Health Connect is not installed on your device. Would you like to install it from the Play Store?',
@@ -112,10 +108,7 @@ export default function SyncOptionsModal({
           return;
         }
 
-        if (
-          status ===
-          SdkAvailabilityStatus.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED
-        ) {
+        if (sdkStatus.status === 'update_required') {
           Alert.alert(
             'Update Required',
             'Health Connect needs to be updated. Would you like to update it from the Play Store?',
@@ -364,6 +357,29 @@ export default function SyncOptionsModal({
             >
               When revoking sync access, permissions are removed after app
               restart. This is a limitation of the Health Connect API.
+            </Text>
+          </View>
+        )}
+
+        {Platform.OS === 'ios' && (
+          <View style={styles.section}>
+            <Text
+              style={[
+                typographyThemed(theme).captionPrimary,
+                styles.sectionLabel,
+              ]}
+            >
+              Revoking access
+            </Text>
+            <Text
+              style={[
+                typographyThemed(theme).captionSecondary,
+                styles.sectionText,
+              ]}
+            >
+              Disconnecting stops the app from syncing your health data. To
+              fully revoke access, go to Settings → Health → Middle Earth
+              Challenge and turn off all permissions.
             </Text>
           </View>
         )}
