@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -12,6 +12,8 @@ import { useTheme } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
 import { spacing, borderRadius } from '../styles/global';
 
+const MIN_DISPLAY_TIME = 1000; // Minimum time to show indicator (ms)
+
 interface SyncIndicatorProps {
   style?: object;
 }
@@ -20,6 +22,7 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
   const theme = useTheme();
   const syncMessage = useProgressStore(state => state.syncMessage);
   const [isVisible, setIsVisible] = useState(false);
+  const showTimeRef = useRef<number>(0);
 
   // Debug logging
   useEffect(() => {
@@ -31,26 +34,40 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
 
   useEffect(() => {
     if (syncMessage) {
+      showTimeRef.current = Date.now();
       setIsVisible(true);
       opacity.value = withTiming(1, {
         duration: 200,
         easing: Easing.out(Easing.ease),
       });
-    } else {
-      opacity.value = withTiming(
-        0,
-        {
-          duration: 200,
-          easing: Easing.out(Easing.ease),
-        },
-        finished => {
-          if (finished) {
-            runOnJS(setIsVisible)(false);
-          }
-        },
-      );
+    } else if (isVisible) {
+      // Only fade out if we were visible (prevents initial null trigger)
+      const elapsed = Date.now() - showTimeRef.current;
+      const remainingTime = Math.max(0, MIN_DISPLAY_TIME - elapsed);
+
+      const fadeOut = () => {
+        opacity.value = withTiming(
+          0,
+          {
+            duration: 200,
+            easing: Easing.out(Easing.ease),
+          },
+          finished => {
+            if (finished) {
+              runOnJS(setIsVisible)(false);
+            }
+          },
+        );
+      };
+
+      if (remainingTime > 0) {
+        const timeout = setTimeout(fadeOut, remainingTime);
+        return () => clearTimeout(timeout);
+      } else {
+        fadeOut();
+      }
     }
-  }, [syncMessage, opacity]);
+  }, [syncMessage, opacity, isVisible]);
 
   // Rotating animation for sync icon - step-based rotation in a circle
   const syncRotation = useSharedValue(0);

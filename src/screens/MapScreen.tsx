@@ -1,17 +1,19 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, StatusBar, Keyboard } from 'react-native';
+import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
 import {
   GestureHandlerRootView,
   GestureDetector,
 } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 // Modals are rendered globally in App.tsx
+import { IconButton } from '../components/Buttons';
 import {
-  SettingsButton,
-  StatsButton,
-  RecenterButton,
-  PlusButton,
-} from '../components/ButtonIcons';
+  SettingsIcon,
+  StatsIcon,
+  RecenterIcon,
+  PlusIcon,
+} from '../assets/icons';
 import { iconSizes } from '../styles/global';
 // PositionedPoint now used via PointLayer
 import PointLayer from '../components/Point/PointLayer';
@@ -19,7 +21,8 @@ import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import DevMiles from '../components/DevMiles';
 import SyncIndicator from '../components/SyncIndicator';
-import { spacing, borderRadius, iconButtonSizes } from '../styles/global';
+
+import { spacing } from '../styles/global';
 
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
@@ -51,9 +54,7 @@ const triviaData = triviaDataRaw as PointType[];
 export default function MapScreen() {
   const theme = useTheme();
   const { width, height } = useReactiveDimensions(); // reactive
-  const setShowSettings = useUIStore(state => state.setShowSettings);
-  const setShowStats = useUIStore(state => state.setShowStats);
-  const setShowMilesModal = useUIStore(state => state.setShowMilesModal);
+  const pushModal = useUIStore(state => state.pushModal);
 
   const keyboardOffset = useKeyboardOffset(20);
   const showWelcome = useSettingsStore(state => state.showWelcome);
@@ -73,13 +74,11 @@ export default function MapScreen() {
   const {
     currentItem,
     itemType,
-    isModalVisible,
     showInfo,
     hideInfo,
     openModal,
     clearStickyInfo,
     showStartupTooltip,
-    tooltipPosition,
     observeMilesChanges,
     stickyUntilMilesChange,
     lastMilesAtSelection,
@@ -87,6 +86,8 @@ export default function MapScreen() {
     setTooltipPosition,
     setObserveMilesChanges,
   } = useInfoStore();
+  // Check if info modal is open via SharedModal stack
+  const isInfoModalOpen = useUIStore(state => state.isModalOpen('info'));
 
   // Miles from progress store (source of truth)
   const miles = useProgressStore(state => state.miles);
@@ -189,7 +190,7 @@ export default function MapScreen() {
 
   // Determine current active checkpoint/trivia via store selector (exact miles)
   useEffect(() => {
-    if (isModalVisible) return; // Respect manual selection while modal is open
+    if (isInfoModalOpen) return; // Respect manual selection while modal is open
     const active = useProgressStore.getState().getActiveInfoItem();
     if (!active) {
       // No active item at current position
@@ -215,7 +216,7 @@ export default function MapScreen() {
     showInfo,
     hideInfo,
     observeMilesChanges,
-    isModalVisible,
+    isInfoModalOpen,
     stickyUntilMilesChange,
     lastMilesAtSelection,
   ]);
@@ -243,10 +244,10 @@ export default function MapScreen() {
 
   // Hide tooltips when the info modal opens (user acted)
   useEffect(() => {
-    if (isModalVisible && showStartupTooltip) {
+    if (isInfoModalOpen && showStartupTooltip) {
       setShowStartupTooltip(false);
     }
-  }, [isModalVisible, showStartupTooltip, setShowStartupTooltip]);
+  }, [isInfoModalOpen, showStartupTooltip, setShowStartupTooltip]);
 
   // Hide startup tooltip once user travels beyond 0 miles
   useEffect(() => {
@@ -336,127 +337,133 @@ export default function MapScreen() {
         </View>
       </GestureDetector>
 
-      {/* Stats Button */}
-      <Animated.View style={[styles.statsButton, settingsEnterStyle]}>
-        <StatsButton
-          onPress={() => {
-            clearStickyInfo();
-            setShowStats(true);
-          }}
-          size={iconSizes.medium}
-          color={theme.colors.buttonPrimaryText}
-        />
-      </Animated.View>
+      {/* UI Overlay - SafeAreaView handles spacing from notch/Dynamic Island */}
+      <SafeAreaView style={styles.uiOverlay} pointerEvents="box-none">
+        {/* Top Row */}
+        <View style={styles.topRow} pointerEvents="box-none">
+          {/* Info System - Checkpoint/Trivia Info (derived via store selector) */}
+          {currentItem && shouldShowInfoButton ? (
+            <Animated.View
+              style={[styles.infoContainer, infoEnterStyle]}
+              pointerEvents="box-none"
+            >
+              <InfoButton
+                ref={infoButtonRef}
+                item={currentItem}
+                type={itemType!}
+              />
+              {/* Tooltip - positioned directly below InfoButton using relative layout */}
+              {showStartupTooltip && (
+                <TooltipButton
+                  onPress={() => {
+                    if (showStartupTooltip) setShowStartupTooltip(false);
+                    openModal();
+                  }}
+                />
+              )}
+            </Animated.View>
+          ) : (
+            <View />
+          )}
 
-      {/* Settings Button */}
-      <Animated.View style={[styles.settingsButton, settingsEnterStyle]}>
-        <SettingsButton
-          onPress={() => {
-            clearStickyInfo();
-            setShowSettings(true);
-          }}
-          size={iconSizes.medium}
-          color={theme.colors.buttonPrimaryText}
-          hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
-        />
-      </Animated.View>
+          {/* Right side buttons - column layout */}
+          <View style={styles.topRightColumn} pointerEvents="box-none">
+            {/* Stats + Settings row */}
+            <View style={styles.topRightButtons} pointerEvents="box-none">
+              {/* Stats Button */}
+              <Animated.View style={settingsEnterStyle}>
+                <IconButton
+                  icon={<StatsIcon size={iconSizes.medium} />}
+                  onPress={() => {
+                    clearStickyInfo();
+                    pushModal({ type: 'stats' });
+                  }}
+                />
+              </Animated.View>
 
-      {/* Sync Message Toast - hidden when welcome screen is open */}
-      {!showWelcome && <SyncIndicator style={styles.syncMessageContainer} />}
+              {/* Settings Button */}
+              <Animated.View style={settingsEnterStyle}>
+                <IconButton
+                  icon={<SettingsIcon size={iconSizes.medium} />}
+                  onPress={() => {
+                    clearStickyInfo();
+                    pushModal({ type: 'settings' });
+                  }}
+                  hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+                />
+              </Animated.View>
+            </View>
 
-      {/* Info System - Checkpoint/Trivia Info (derived via store selector) */}
-      {currentItem && shouldShowInfoButton && (
-        <Animated.View
-          style={[styles.infoContainer, infoEnterStyle]}
+            {/* Labels Toggle */}
+            <Animated.View style={labelsEnterStyle}>
+              <Button
+                onPress={() => {
+                  clearStickyInfo();
+                  setShowPointLabels(!showPointLabels);
+                }}
+                variant="primary"
+                size="small"
+                isMediumText={labelSize === 'large'}
+                hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+              >
+                Labels
+              </Button>
+            </Animated.View>
+          </View>
+        </View>
+
+        {/* Bottom Row */}
+        <View
+          style={[
+            styles.bottomRow,
+            devMode ? { marginBottom: keyboardOffset + spacing.xxxl } : null,
+          ]}
           pointerEvents="box-none"
         >
-          <InfoButton ref={infoButtonRef} item={currentItem} type={itemType!} />
-          {showStartupTooltip && tooltipPosition && (
-            <View
-              style={[
-                styles.tooltipOverlay,
-                {
-                  top: tooltipPosition.top,
-                  left: tooltipPosition.left,
-                },
-              ]}
-            >
-              <TooltipButton
-                onPress={() => {
-                  if (showStartupTooltip) setShowStartupTooltip(false);
-                  openModal();
-                }}
-              />
-            </View>
-          )}
-        </Animated.View>
-      )}
-
-      {/* Labels Toggle */}
-      <Animated.View style={[styles.labelsButton, labelsEnterStyle]}>
-        <Button
-          onPress={() => {
-            clearStickyInfo();
-            setShowPointLabels(!showPointLabels);
-          }}
-          variant="primary"
-          size="small"
-          isMediumText={labelSize === 'large'}
-          hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
-        >
-          Labels
-        </Button>
-      </Animated.View>
-
-      {/* Recenter Button */}
-      <Animated.View
-        style={[
-          styles.recenterButton,
-          recenterButtonStyle,
-          { bottom: spacing.md + iconButtonSizes.medium + spacing.sm },
-          devMode
-            ? {
-                bottom:
-                  keyboardOffset +
-                  spacing.xxxl +
-                  iconButtonSizes.medium +
-                  spacing.sm,
+          {/* Recenter Button */}
+          <Animated.View
+            style={[{ alignSelf: 'flex-end' }, recenterButtonStyle]}
+          >
+            <IconButton
+              icon={
+                <RecenterIcon
+                  size={iconSizes.medium}
+                  color={theme.colors.mapBackground}
+                />
               }
-            : null,
-        ]}
-      >
-        <RecenterButton
-          onPress={() => {
-            clearStickyInfo();
-            handleRecenter();
-          }}
-          size={iconSizes.medium}
-          color={theme.colors.mapBackground}
-          hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
-        />
-      </Animated.View>
+              onPress={() => {
+                clearStickyInfo();
+                handleRecenter();
+              }}
+              hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+            />
+          </Animated.View>
 
-      {/* Add Miles Button (always visible, independent overlay) */}
-      <Animated.View
-        style={[
-          styles.addMilesButton,
-          devMode ? { bottom: keyboardOffset + spacing.xxxl } : null,
-          settingsEnterStyle,
-        ]}
-      >
-        <PlusButton
-          onPress={() => {
-            clearStickyInfo();
-            setShowMilesModal(true);
-          }}
-          size={iconSizes.medium}
-          color={theme.colors.textInverted}
-          hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
-        />
-      </Animated.View>
+          {/* Add Miles Button */}
+          <Animated.View
+            style={[{ alignSelf: 'flex-end' }, settingsEnterStyle]}
+          >
+            <IconButton
+              icon={<PlusIcon size={iconSizes.medium} />}
+              onPress={() => {
+                clearStickyInfo();
+                pushModal({ type: 'miles' });
+              }}
+              hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
+            />
+          </Animated.View>
+        </View>
+      </SafeAreaView>
+
+
 
       {/* Dev Miles (Developer mode) */}
       {devMode && !showWelcome && <DevMiles keyboardOffset={keyboardOffset} />}
+
+      {/* Sync indicator - bottom center, matches WelcomeModal position */}
+      <View style={styles.syncIndicatorContainer} pointerEvents="none">
+        <SyncIndicator />
+      </View>
 
       {/* Loading overlay - hides map until ready */}
       {phase === 'loading' && <View style={styles.loadingOverlay} />}
@@ -480,73 +487,43 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  settingsButton: {
-    position: 'absolute',
-    top: spacing.xl2,
-    right: spacing.md,
-    width: iconButtonSizes.medium,
-    height: iconButtonSizes.medium,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
+  uiOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    // SafeAreaView handles top/bottom safe area padding automatically
   },
-  statsButton: {
-    position: 'absolute',
-    top: spacing.xl2,
-    right: spacing.md + iconButtonSizes.medium + spacing.sm,
-    width: iconButtonSizes.medium,
-    height: iconButtonSizes.medium,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  topRightColumn: {
+    alignItems: 'flex-end',
+    gap: spacing.md,
+  },
+  topRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
   },
   infoContainer: {
-    position: 'absolute',
-    top: spacing.xl2,
-    left: spacing.md,
     zIndex: 100,
   },
-  tooltipOverlay: {
-    position: 'absolute',
-    zIndex: 101,
-    pointerEvents: 'box-none',
+  bottomRow: {
+    alignItems: 'flex-end',
+    gap: spacing.md,
   },
-  labelsButton: {
-    position: 'absolute',
-    top: spacing.xl2 + iconButtonSizes.medium + spacing.sm,
-    right: spacing.md,
-  },
-  recenterButton: {
-    position: 'absolute',
-    right: spacing.md,
-    width: iconButtonSizes.medium,
-    height: iconButtonSizes.medium,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addMilesButton: {
-    position: 'absolute',
-    bottom: spacing.md,
-    right: spacing.md,
-    width: iconButtonSizes.medium,
-    height: iconButtonSizes.medium,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  syncMessageContainer: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    pointerEvents: 'none',
-  },
+
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000000',
+  },
+  syncIndicatorContainer: {
+    position: 'absolute',
+    bottom: 100,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
 });

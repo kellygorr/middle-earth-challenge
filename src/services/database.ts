@@ -199,7 +199,7 @@ class Database {
     saveId: string;
     date: number;
     miles: number;
-    source?: 'manual' | 'health-connect' | 'synced';
+    source?: 'manual' | 'health-connect' | 'apple-health' | 'synced';
   }): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     this.db.executeSync(

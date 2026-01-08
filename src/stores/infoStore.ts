@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { PointType } from '../types';
 import { mapBookMilesToPathProgress } from '../utils/pathProgress';
 import { useProgressStore } from './progressStore';
+import { useUIStore } from './uiStore';
 
 interface InfoStore {
   // State
@@ -15,6 +16,8 @@ interface InfoStore {
   // Sticky visibility: keep InfoButton visible until miles change
   stickyUntilMilesChange: boolean;
   lastMilesAtSelection: number | null;
+  // Celebration state for checkpoint animations
+  showCelebration: boolean;
 
   // Actions
   setCurrentItem: (item: PointType, type: 'checkpoint' | 'trivia') => void;
@@ -26,10 +29,13 @@ interface InfoStore {
   hideInfo: () => void;
   openModal: () => void;
   closeModal: () => void;
+  /** Opens the info modal via SharedModal stack with computed title */
+  openInfoModal: (item: PointType, type: 'checkpoint' | 'trivia') => void;
   clearStickyInfo: () => void;
   setShowStartupTooltip: (show: boolean) => void;
   setTooltipPosition: (pos: { top: number; left: number } | null) => void;
   setObserveMilesChanges: (observe: boolean) => void;
+  setShowCelebration: (show: boolean) => void;
   resetInfoUI: () => void;
   // Derived selectors
   getShouldShowInfoButton: (animatedProgress: number) => boolean;
@@ -45,6 +51,7 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
   observeMilesChanges: false,
   stickyUntilMilesChange: false,
   lastMilesAtSelection: null,
+  showCelebration: false,
 
   // Actions
   setCurrentItem: (item, type) =>
@@ -73,14 +80,51 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
     }),
 
   openModal: () => {
-    const { currentItem } = get();
-    if (currentItem) {
-      set({ isModalVisible: true });
+    const { currentItem, itemType } = get();
+    if (currentItem && itemType) {
+      // Compute title and push to SharedModal stack
+      const checkpointNumber =
+        itemType === 'checkpoint' && typeof currentItem.index === 'number'
+          ? currentItem.index + 1
+          : undefined;
+      const title =
+        itemType === 'checkpoint'
+          ? typeof checkpointNumber === 'number'
+            ? `Checkpoint #${checkpointNumber}`
+            : 'Checkpoint'
+          : 'Trivia';
+      useUIStore.getState().pushModal({ type: 'info', title });
     }
   },
 
   closeModal: () => {
     set({ isModalVisible: false });
+  },
+
+  openInfoModal: (item, type) => {
+    // Set current item in store
+    set({
+      currentItem: item,
+      itemType: type,
+      isModalVisible: false, // SharedModal handles visibility now
+      stickyUntilMilesChange: true,
+      lastMilesAtSelection: useProgressStore.getState().miles || 0,
+    });
+
+    // Compute title
+    const checkpointNumber =
+      type === 'checkpoint' && typeof item.index === 'number'
+        ? item.index + 1
+        : undefined;
+    const title =
+      type === 'checkpoint'
+        ? typeof checkpointNumber === 'number'
+          ? `Checkpoint #${checkpointNumber}`
+          : 'Checkpoint'
+        : 'Trivia';
+
+    // Push to modal stack with title
+    useUIStore.getState().pushModal({ type: 'info', title });
   },
 
   clearStickyInfo: () => {
@@ -104,6 +148,7 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
   setShowStartupTooltip: show => set({ showStartupTooltip: show }),
   setTooltipPosition: pos => set({ tooltipPosition: pos }),
   setObserveMilesChanges: observe => set({ observeMilesChanges: observe }),
+  setShowCelebration: show => set({ showCelebration: show }),
   resetInfoUI: () =>
     set({
       showStartupTooltip: false,
@@ -111,13 +156,13 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       observeMilesChanges: false,
       stickyUntilMilesChange: false,
       lastMilesAtSelection: null,
+      showCelebration: false,
     }),
   // Derived selectors
   getShouldShowInfoButton: (animatedProgress: number) => {
     const {
       currentItem,
       itemType,
-      isModalVisible,
       stickyUntilMilesChange,
       lastMilesAtSelection,
     } = get();
@@ -127,8 +172,9 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
     const isTriviaItem = itemType === 'trivia';
     const eps = 1e-6;
 
-    // Show the original InfoButton whenever the modal is open
-    if (isModalVisible) return true;
+    // Show the original InfoButton whenever the info modal is open
+    const isInfoModalOpen = useUIStore.getState().isModalOpen('info');
+    if (isInfoModalOpen) return true;
 
     // Keep InfoButton visible after closing until miles change
     if (stickyUntilMilesChange && lastMilesAtSelection != null) {

@@ -311,7 +311,7 @@ export function useSyncInterval() {
         );
         // Set sync error for UI to display
         setSyncError(
-          'Looks like you were disconnected. Reconnect to sync or manually add miles.',
+          'It looks like your health data connection was disconnected. If this was unintentional, you can reconnect here or in Settings. Otherwise, you can continue adding miles using the + button.',
         );
         // Disable sync
         setSyncEnabled(false);

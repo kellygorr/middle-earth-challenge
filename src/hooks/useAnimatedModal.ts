@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withDelay,
-  Easing,
   runOnJS,
+  cancelAnimation,
   EasingFunction,
   EasingFunctionFactory,
 } from 'react-native-reanimated';
@@ -36,6 +36,8 @@ export function useAnimatedModal(
   const hasTranslate = translateDistance !== 0;
 
   const [internalVisible, setInternalVisible] = useState(false);
+  // Ref to store pending callback to execute after exit animation completes
+  const exitCallbackRef = useRef<(() => void) | null>(null);
 
   const backgroundOpacity = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
@@ -43,26 +45,55 @@ export function useAnimatedModal(
     hasTranslate ? translateDistance : 0,
   );
 
+  // Called from worklet after exit animation completes
+  const handleExitComplete = useCallback(() => {
+    setInternalVisible(false);
+    // Execute pending callback if any
+    if (exitCallbackRef.current) {
+      exitCallbackRef.current();
+      exitCallbackRef.current = null;
+    }
+  }, []);
+
+  // Trigger dismiss with optional callback
+  const dismiss = (afterCallback?: () => void) => {
+    if (afterCallback) {
+      exitCallbackRef.current = afterCallback;
+    }
+  };
+
   useEffect(() => {
     if (visible) {
+      // Cancel any ongoing exit animations first
+      cancelAnimation(backgroundOpacity);
+      cancelAnimation(contentOpacity);
+      cancelAnimation(contentTranslateY);
+
+      // Reset to starting values before entrance animation
+      backgroundOpacity.value = 0;
+      contentOpacity.value = 0;
+      if (hasTranslate) {
+        contentTranslateY.value = translateDistance;
+      }
+
       setInternalVisible(true);
 
-      // Entrance animations
-      backgroundOpacity.value = withTiming(1, {
-        duration: entranceDuration,
-      });
-      contentOpacity.value = withDelay(
-        entranceDelay,
-        withTiming(1, { duration: entranceDuration, easing }),
-      );
-      if (hasTranslate) {
-        contentTranslateY.value = withDelay(
+      // Entrance animations - use requestAnimationFrame to ensure values are reset first
+      requestAnimationFrame(() => {
+        backgroundOpacity.value = withTiming(1, {
+          duration: entranceDuration,
+        });
+        contentOpacity.value = withDelay(
           entranceDelay,
-          withTiming(0, { duration: entranceDuration, easing }),
+          withTiming(1, { duration: entranceDuration, easing }),
         );
-      } else {
-        contentTranslateY.value = 0;
-      }
+        if (hasTranslate) {
+          contentTranslateY.value = withDelay(
+            entranceDelay,
+            withTiming(0, { duration: entranceDuration, easing }),
+          );
+        }
+      });
     } else if (internalVisible) {
       // Exit animations
       contentOpacity.value = withDelay(
@@ -79,7 +110,7 @@ export function useAnimatedModal(
       backgroundOpacity.value = withDelay(
         exitDelay + exitDuration,
         withTiming(0, { duration: exitDuration }, () => {
-          runOnJS(setInternalVisible)(false);
+          runOnJS(handleExitComplete)();
         }),
       );
     }
@@ -96,6 +127,7 @@ export function useAnimatedModal(
     translateDistance,
     easing,
     hasTranslate,
+    handleExitComplete,
   ]);
 
   const animatedBackgroundStyle = useAnimatedStyle(() => ({
@@ -115,5 +147,7 @@ export function useAnimatedModal(
     animatedBackgroundStyle,
     animatedContentStyle,
     contentOpacitySV: contentOpacity,
+    /** Call to register a callback that fires after exit animation completes */
+    dismiss,
   };
 }

@@ -59,7 +59,7 @@ export default function TooltipButton({
 const styles = StyleSheet.create({
   container: {
     alignSelf: 'flex-start',
-    marginTop: spacing.xs,
+    marginTop: spacing.sm, // Increased to account for the caret height
     position: 'relative',
   },
   caret: {

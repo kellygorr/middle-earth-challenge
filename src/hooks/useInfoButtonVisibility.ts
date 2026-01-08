@@ -5,12 +5,12 @@ import type { PointType } from '../types';
 export function useInfoButtonVisibility(
   currentItem: PointType | null,
   itemType: 'checkpoint' | 'trivia' | null,
-  isModalVisible: boolean,
+  isInfoModalOpen: boolean,
   miles: number | undefined,
   animatedProgress: number,
 ) {
   return useMemo(() => {
-    if (!currentItem || isModalVisible) return false;
+    if (!currentItem || isInfoModalOpen) return false;
     const currentMiles = miles || 0;
     const isCheckpointItem = itemType === 'checkpoint';
     const isTriviaItem = itemType === 'trivia';
@@ -22,5 +22,5 @@ export function useInfoButtonVisibility(
       return isExact(currentMiles, m) && animatedProgress + 1e-6 >= threshold;
     }
     return isTriviaItem;
-  }, [currentItem, itemType, isModalVisible, miles, animatedProgress]);
+  }, [currentItem, itemType, isInfoModalOpen, miles, animatedProgress]);
 }

@@ -7,11 +7,12 @@ import { spacing, shadows } from './global';
  */
 export const modalStyles = StyleSheet.create({
   // Overlay that covers the screen behind the modal
+  // Note: Only horizontal padding - SafeAreaView handles top/bottom safe areas
   overlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
 
   // SafeAreaView container
@@ -61,10 +62,9 @@ export const modalStyles = StyleSheet.create({
     flex: 1,
     borderRadius: 16,
     ...shadows.large,
-    paddingTop: 48, // Space for header buttons
   },
 
-  // Modal card with smaller header (no left button)
+  // Modal card with smaller header (no left button) - used by ModalWrapper
   modalContainerSmallHeader: {
     paddingTop: 40,
   },
@@ -84,31 +84,22 @@ export const modalStyles = StyleSheet.create({
     flexGrow: 1,
     padding: spacing.lg,
     paddingTop: 0,
-    paddingBottom: 0,
     gap: spacing.md,
   },
 
-  // Header button container (right side - close button)
+  // Header button container (right side) - used by ModalWrapper/InfoModal
   closeButton: {
     position: 'absolute',
     top: 0,
     right: spacing.sm,
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
     zIndex: 1,
   },
 
-  // Header button container (left side - optional home/back button)
+  // Header button container (left side) - used by ModalWrapper
   leftButton: {
     position: 'absolute',
     top: 0,
     left: spacing.sm,
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
     zIndex: 1,
   },
 

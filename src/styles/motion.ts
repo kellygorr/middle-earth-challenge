@@ -5,9 +5,9 @@ import { Easing } from 'react-native-reanimated';
 export const motion = {
   // Button fade in/out animations
   button: {
-    enterDuration: 220,
+    enterDuration: 300,
     exitDuration: 50,
-    enterDelayLabels: 120,
+    enterDelayLabels: 0,
   },
 
   // Map recenter animation

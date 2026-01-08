@@ -58,7 +58,10 @@ export default function CelebrationBorder({
 
   React.useEffect(() => {
     if (show) {
-      alpha.value = withTiming(opacity, { duration: 240, easing: Easing.linear });
+      alpha.value = withTiming(opacity, {
+        duration: 240,
+        easing: Easing.linear,
+      });
       if (!reduceMotionEnabled) {
         angle.value = 0;
         angle.value = withRepeat(
@@ -78,7 +81,8 @@ export default function CelebrationBorder({
   const toRad = Math.PI / 180;
   const cx = SCREEN_WIDTH / 2;
   const cy = SCREEN_HEIGHT / 2;
-  const R = Math.sqrt(SCREEN_WIDTH * SCREEN_WIDTH + SCREEN_HEIGHT * SCREEN_HEIGHT) / 2; // half-diagonal
+  const R =
+    Math.sqrt(SCREEN_WIDTH * SCREEN_WIDTH + SCREEN_HEIGHT * SCREEN_HEIGHT) / 2; // half-diagonal
   const gradientProps = useAnimatedProps(() => {
     const theta = angle.value * toRad;
     const x1 = cx + R * Math.cos(theta);

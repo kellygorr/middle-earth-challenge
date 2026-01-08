@@ -2,6 +2,7 @@ import React, { forwardRef } from 'react';
 import Button from './Button';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useInfoStore } from '../../stores/infoStore';
+import { useUIStore } from '../../stores/uiStore';
 import { PointType } from '../../types';
 
 interface InfoButtonProps {
@@ -11,7 +12,8 @@ interface InfoButtonProps {
 
 const InfoButton = forwardRef<any, InfoButtonProps>(
   function InfoButtonComponent({ item, type }: InfoButtonProps, ref) {
-    const { openModal, isModalVisible } = useInfoStore();
+    const openModal = useInfoStore(state => state.openModal);
+    const isInfoModalOpen = useUIStore(state => state.isModalOpen('info'));
     const labelSize = useSettingsStore(state => state.labelSize);
 
     // Generate display text based on type
@@ -31,7 +33,7 @@ const InfoButton = forwardRef<any, InfoButtonProps>(
         variant={type === 'trivia' ? 'outline' : 'primary'}
         size="default"
         isMediumText={labelSize === 'large'}
-        isOpen={isModalVisible}
+        isOpen={isInfoModalOpen}
         ref={ref as any}
       >
         {getDisplayText()}

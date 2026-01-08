@@ -67,3 +67,25 @@ export function formatTime(dateValue: number): string {
     return '';
   }
 }
+
+/**
+ * Format a Date object into a user-friendly date label, e.g., "Dec 31, 2025".
+ * Returns '—' for null values.
+ */
+export function formatDate(date: Date | null): string {
+  if (!date) return '—';
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Format miles with one decimal if needed, otherwise as integer.
+ * e.g., 5 -> "5", 5.5 -> "5.5", 5.123 -> "5.1"
+ */
+export function formatMiles(miles: number): string {
+  if (miles === Math.floor(miles)) return miles.toString();
+  return miles.toFixed(1);
+}

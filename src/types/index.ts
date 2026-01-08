@@ -35,7 +35,11 @@ export interface Save {
 }
 
 // Distance source types
-export type DistanceSource = 'manual' | 'health-connect' | 'apple-health' | 'synced';
+export type DistanceSource =
+  | 'manual'
+  | 'health-connect'
+  | 'apple-health'
+  | 'synced';
 
 // Distance entry types
 export interface DistanceEntry {

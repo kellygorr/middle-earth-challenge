@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+
 import { useTheme } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
 import { useInfoStore } from '../stores/infoStore';

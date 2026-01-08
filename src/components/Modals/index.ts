@@ -1,6 +1,13 @@
-export { default as InfoModal } from './InfoModal';
-export { default as SettingsModal } from './SettingsModal';
-export { default as StatsModal } from './StatsModal';
-export { default as WelcomeModal } from './WelcomeModal';
-export { default as MilesModal } from './MilesModal';
-export { default as SyncModal } from './SyncModal';
+// Content components for SharedModal
+export * from './Content';
+
+// Footer components for SharedModal
+export * from './Footers';
+
+// Supporting components
+export { default as JourneyProgressBar } from './JourneyProgressBar';
+export { MilesDisplay } from './MilesDisplay';
+export { LockedCheckpointBanner } from './LockedCheckpointBanner';
+export { TrackingOptions } from './TrackingOptions';
+export { default as DateStepper } from './DateStepper';
+export { default as CelebrationBorder } from './CelebrationBorder';

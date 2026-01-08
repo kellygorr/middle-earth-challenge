@@ -6,17 +6,17 @@ import {
   Platform,
   Alert,
   Linking,
-  Switch,
   ScrollView,
 } from 'react-native';
-import { useTheme, useSettingsStore } from '../../stores/settingsStore';
-import { typographyThemed } from '../../styles/typography';
-import { spacing } from '../../styles/global';
-import { modalStyles } from '../../styles/modalStyles';
-import ModalWrapper from './ModalWrapper';
-import { SyncProvider } from '../../types';
-import { fitnessService } from '../../services/fitnessService';
-import Button from '../Buttons/Button';
+import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
+import { typographyThemed } from '../../../styles/typography';
+import { spacing } from '../../../styles/global';
+import { modalStyles } from '../../../styles/modalStyles';
+import { SyncProvider } from '../../../types';
+import { fitnessService } from '../../../services/fitnessService';
+import Button from '../../Buttons/Button';
+import SectionHeader from '../../UI/SectionHeader';
+import ToggleRow from '../../UI/ToggleRow';
 
 interface SyncOption {
   id: SyncProvider;
@@ -25,17 +25,11 @@ interface SyncOption {
   available: boolean;
 }
 
-interface SyncOptionsModalProps {
-  visible: boolean;
-  onDismiss: () => void;
-  onSyncEnabled?: () => void;
-}
-
-export default function SyncOptionsModal({
-  visible,
-  onDismiss,
-  onSyncEnabled,
-}: SyncOptionsModalProps) {
+/**
+ * SyncContent - Content component for the Sync modal.
+ * Extracted from SyncModal for use with SharedModal.
+ */
+export default function SyncContent() {
   const theme = useTheme();
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
@@ -179,12 +173,11 @@ export default function SyncOptionsModal({
       console.log('Permission granted:', granted);
 
       if (granted) {
-        console.log('Setting sync provider and closing modal...');
+        console.log('Setting sync provider...');
         setSyncProvider(provider);
         setSyncStartDate(Date.now());
         setSyncEnabled(true);
-        onDismiss();
-        onSyncEnabled?.();
+        // Don't auto-dismiss - let user see connected state and dismiss manually
       } else {
         console.log('Permission denied, showing alert...');
         const providerName =
@@ -221,104 +214,85 @@ export default function SyncOptionsModal({
   };
 
   return (
-    <ModalWrapper
-      visible={visible}
-      onDismiss={onDismiss}
-      title={Platform.OS === 'ios' ? 'iOS' : 'Android'}
+    <ScrollView
+      style={modalStyles.scrollView}
+      contentContainerStyle={[modalStyles.scrollContent, styles.container]}
+      showsVerticalScrollIndicator={false}
+      bounces={true}
     >
-      <ScrollView
-        style={modalStyles.scrollView}
-        contentContainerStyle={[modalStyles.scrollContent, styles.container]}
-        showsVerticalScrollIndicator={false}
-        bounces={true}
-      >
+      <SectionHeader title="Sync options" />
+
+      {syncEnabled && (
         <Text
           style={[
-            typographyThemed(theme).subtitleLargePrimary,
-            modalStyles.sectionTitle,
+            typographyThemed(theme).bodyPrimary,
+            styles.connectedMessage,
+            {
+              backgroundColor: theme.colors.buttonDisabledBg,
+              color: theme.colors.buttonBrandText,
+            },
           ]}
         >
-          Sync options
+          ✓ You are connected to{' '}
+          {syncProvider === 'health-connect'
+            ? 'Health Connect'
+            : syncProvider === 'apple-health'
+            ? 'Apple Health'
+            : 'a health app'}
         </Text>
+      )}
 
+      <View style={styles.buttonRow}>
+        {syncOptions.map(option => (
+          <Button
+            key={option.id}
+            variant={
+              syncEnabled && syncProvider === option.id ? 'brand' : 'primary'
+            }
+            size="default"
+            onPress={() => handleSelectProvider(option.id)}
+            disabled={syncEnabled && syncProvider === option.id}
+          >
+            {option.name}
+          </Button>
+        ))}
         {syncEnabled && (
-          <Text
-            style={[
-              typographyThemed(theme).bodyPrimary,
-              styles.connectedMessage,
-            ]}
-          >
-            ✓ You are connected to{' '}
-            {syncProvider === 'health-connect'
-              ? 'Health Connect'
-              : syncProvider === 'apple-health'
-              ? 'Apple Health'
-              : 'a health app'}
-          </Text>
+          <Button variant="outline" size="default" onPress={handleDisconnect}>
+            Disconnect
+          </Button>
         )}
+      </View>
 
-        <View style={styles.buttonRow}>
-          {syncOptions.map(option => (
-            <Button
-              key={option.id}
-              variant={
-                syncEnabled && syncProvider === option.id ? 'brand' : 'primary'
-              }
-              size="default"
-              onPress={() => handleSelectProvider(option.id)}
-              disabled={syncEnabled && syncProvider === option.id}
-            >
-              {option.name}
-            </Button>
-          ))}
-          {syncEnabled && (
-            <Button variant="outline" size="default" onPress={handleDisconnect}>
-              Disconnect
-            </Button>
-          )}
-        </View>
+      <Text style={[typographyThemed(theme).captionSecondary, styles.infoText]}>
+        {Platform.OS === 'ios'
+          ? 'You must already have Apple Health set up on your device for syncing to work.'
+          : 'Health Connect is built into Android 14+ or can be installed from the Play Store.'}
+      </Text>
 
+      <View style={styles.section}>
+        <ToggleRow
+          label="Live sync"
+          caption="See your progress update in real-time"
+          value={liveSyncEnabled}
+          onValueChange={setLiveSyncEnabled}
+        />
+      </View>
+
+      <View style={styles.section}>
         <Text
-          style={[typographyThemed(theme).captionSecondary, styles.infoText]}
+          style={[typographyThemed(theme).captionPrimary, styles.sectionLabel]}
         >
-          {Platform.OS === 'ios'
-            ? 'You must already have Apple Health set up on your device for syncing to work.'
-            : 'Health Connect is built into Android 14+ or can be installed from the Play Store.'}
+          Manage syncing
         </Text>
+        <Text
+          style={[typographyThemed(theme).captionSecondary, styles.sectionText]}
+        >
+          You can disable syncing or delete synced data at any time from the
+          Settings menu.
+        </Text>
+      </View>
 
-        <View style={styles.section}>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleTextContainer}>
-              <Text
-                style={[
-                  typographyThemed(theme).captionPrimary,
-                  styles.sectionLabel,
-                ]}
-              >
-                {`Live sync`}
-              </Text>
-              <Text
-                style={[
-                  typographyThemed(theme).captionSecondary,
-                  styles.sectionText,
-                  { marginTop: spacing.xs },
-                ]}
-              >
-                See your progress update in real-time
-              </Text>
-            </View>
-            <Switch
-              value={liveSyncEnabled}
-              onValueChange={setLiveSyncEnabled}
-              trackColor={{
-                false: theme.colors.switchInactive,
-                true: theme.colors.buttonPrimary,
-              }}
-              thumbColor={theme.colors.surface}
-            />
-          </View>
-        </View>
-
+      {Platform.OS === 'android' && (
         <View style={styles.section}>
           <Text
             style={[
@@ -326,7 +300,7 @@ export default function SyncOptionsModal({
               styles.sectionLabel,
             ]}
           >
-            Manage syncing
+            Revoking access
           </Text>
           <Text
             style={[
@@ -334,56 +308,13 @@ export default function SyncOptionsModal({
               styles.sectionText,
             ]}
           >
-            You can disable syncing or delete synced data at any time from the
-            Settings menu.
+            When revoking sync access, permissions are removed after app
+            restart. This is a limitation of the Health Connect API.
           </Text>
         </View>
+      )}
 
-        {Platform.OS === 'android' && (
-          <View style={styles.section}>
-            <Text
-              style={[
-                typographyThemed(theme).captionPrimary,
-                styles.sectionLabel,
-              ]}
-            >
-              Revoking access
-            </Text>
-            <Text
-              style={[
-                typographyThemed(theme).captionSecondary,
-                styles.sectionText,
-              ]}
-            >
-              When revoking sync access, permissions are removed after app
-              restart. This is a limitation of the Health Connect API.
-            </Text>
-          </View>
-        )}
-
-        {Platform.OS === 'ios' && (
-          <View style={styles.section}>
-            <Text
-              style={[
-                typographyThemed(theme).captionPrimary,
-                styles.sectionLabel,
-              ]}
-            >
-              Revoking access
-            </Text>
-            <Text
-              style={[
-                typographyThemed(theme).captionSecondary,
-                styles.sectionText,
-              ]}
-            >
-              Disconnecting stops the app from syncing your health data. To
-              fully revoke access, go to Settings → Health → Middle Earth
-              Challenge and turn off all permissions.
-            </Text>
-          </View>
-        )}
-
+      {Platform.OS === 'ios' && (
         <View style={styles.section}>
           <Text
             style={[
@@ -391,7 +322,7 @@ export default function SyncOptionsModal({
               styles.sectionLabel,
             ]}
           >
-            Data use
+            Revoking access
           </Text>
           <Text
             style={[
@@ -399,22 +330,33 @@ export default function SyncOptionsModal({
               styles.sectionText,
             ]}
           >
-            Your distance data is stored locally on your device and is only used
-            to track your journey progress. No data is sent to external servers.
+            Disconnecting stops the app from syncing your health data. To fully
+            revoke access, go to Settings → Health → Middle Earth Challenge and
+            turn off all permissions.
           </Text>
         </View>
-      </ScrollView>
-    </ModalWrapper>
+      )}
+
+      <View style={styles.section}>
+        <Text
+          style={[typographyThemed(theme).captionPrimary, styles.sectionLabel]}
+        >
+          Data use
+        </Text>
+        <Text
+          style={[typographyThemed(theme).captionSecondary, styles.sectionText]}
+        >
+          Your distance data is stored locally on your device and is only used
+          to track your journey progress. No data is sent to external servers.
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     padding: spacing.lg,
-  },
-  description: {
-    marginBottom: spacing.lg,
-    textAlign: 'center',
   },
   buttonRow: {
     flexDirection: 'row',
@@ -437,21 +379,12 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     marginTop: spacing.xs,
   },
-  toggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  toggleTextContainer: {
-    flex: 1,
-    marginRight: spacing.md,
-  },
-  boldText: {
-    fontWeight: '600',
-  },
   connectedMessage: {
     textAlign: 'center',
     marginBottom: spacing.md,
-    color: '#22c55e',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
 });

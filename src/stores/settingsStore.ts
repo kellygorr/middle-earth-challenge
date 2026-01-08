@@ -69,7 +69,9 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     database.updateUserSettings({ colorizeMap: colorize });
   },
 
-  setShowWelcome: show => set({ showWelcome: show }), // Not persisted - always shows on load
+  setShowWelcome: show => {
+    set({ showWelcome: show });
+  }, // Not persisted - always shows on load
 
   setReducedMapTitles: reduced => {
     set({ reducedMapTitles: reduced });

@@ -1,22 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from 'react-native-safe-area-context';
 import { StyleSheet, View, Animated } from 'react-native';
 
 import MapScreen from './src/screens/MapScreen';
-import {
-  WelcomeModal,
-  SettingsModal,
-  StatsModal,
-  MilesModal,
-  InfoModal,
-  SyncModal,
-} from './src/components/Modals';
+import WelcomeModal from './src/screens/WelcomeModal';
+import SharedModal from './src/screens/SharedModal';
 import { useSettingsStore } from './src/stores/settingsStore';
 import { useSyncInterval } from './src/hooks/useSyncInterval';
-import { useUIStore } from './src/stores/uiStore';
-import { useInfoStore } from './src/stores/infoStore';
+
 import { useInitializationStore } from './src/stores/initializationStore';
 import { database } from './src/services/database';
 import { useProgressStore } from './src/stores/progressStore';
@@ -60,19 +56,6 @@ function App(): React.JSX.Element {
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
   const loadSettings = useSettingsStore(state => state.loadSettings);
 
-  // UI modal state from uiStore
-  const showSettings = useUIStore(state => state.showSettings);
-  const setShowSettings = useUIStore(state => state.setShowSettings);
-  const showStats = useUIStore(state => state.showStats);
-  const setShowStats = useUIStore(state => state.setShowStats);
-  const showMilesModal = useUIStore(state => state.showMilesModal);
-  const setShowMilesModal = useUIStore(state => state.setShowMilesModal);
-  const showSyncModal = useUIStore(state => state.showSyncModal);
-  const setShowSyncModal = useUIStore(state => state.setShowSyncModal);
-
-  const isInfoVisible = useInfoStore(state => state.isModalVisible);
-  const closeInfoModal = useInfoStore(state => state.closeModal);
-
   // Set up periodic sync when health sync is enabled
   useSyncInterval();
 
@@ -98,7 +81,7 @@ function App(): React.JSX.Element {
   }, [loadSettings, initFromDatabase, setPhase]);
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <View style={styles.container}>
         <NavigationContainer>
           <Stack.Navigator
@@ -111,28 +94,19 @@ function App(): React.JSX.Element {
         </NavigationContainer>
 
         {/* Global Modals */}
-        <WelcomeModal
-          visible={showWelcome}
-          onDismiss={() => {
-            setShowWelcome(false);
-            // Transition to revealing phase when welcome is dismissed
-            setPhase('revealing');
-          }}
-        />
-        <SettingsModal
-          visible={showSettings}
-          onDismiss={() => setShowSettings(false)}
-        />
-        <StatsModal visible={showStats} onDismiss={() => setShowStats(false)} />
-        <MilesModal
-          visible={showMilesModal}
-          onDismiss={() => setShowMilesModal(false)}
-        />
-        <SyncModal
-          visible={showSyncModal}
-          onDismiss={() => setShowSyncModal(false)}
-        />
-        <InfoModal visible={isInfoVisible} onDismiss={closeInfoModal} />
+        {showWelcome && (
+          <WelcomeModal
+            visible={showWelcome}
+            onDismiss={() => {
+              setShowWelcome(false);
+              // Transition to revealing phase when welcome is dismissed
+              setPhase('revealing');
+            }}
+          />
+        )}
+
+        {/* SharedModal - stack-based modal navigation */}
+        <SharedModal />
 
         {/* Splash - rendered LAST, hides everything until loading completes */}
         <SplashOverlay loading={loading} />

@@ -2,12 +2,13 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
-import { SyncButton, PlusButton, DevModeButton } from './ButtonIcons';
+import { IconButton } from './Buttons';
+import { SyncIcon, PlusIcon, DevModeIcon } from '../assets/icons';
 import { typographyThemed } from '../styles/typography';
 import { spacing, iconSizes } from '../styles/global';
 
 interface TrackingOptionsProps {
-  onDismiss: () => void;
+  onDismiss: (afterCallback?: () => void) => void;
   onOpenSyncModal: () => void;
 }
 
@@ -22,20 +23,12 @@ export function TrackingOptions({
 
   return (
     <View style={styles.container}>
-      {/* Sync button - always opens sync modal */}
-      <Pressable
-        style={styles.option}
-        onPress={() => {
-          onDismiss();
-          onOpenSyncModal();
-        }}
-      >
-        <View style={styles.buttonContainer}>
-          <SyncButton
-            size={iconSizes.medium}
-            variant={syncEnabled ? 'brand' : 'primary'}
-          />
-        </View>
+      {/* Sync button - opens sync modal overlay on top of InfoModal */}
+      <Pressable style={styles.option} onPress={onOpenSyncModal}>
+        <IconButton
+          icon={<SyncIcon size={iconSizes.medium} />}
+          variant={syncEnabled ? 'brand' : 'outline'}
+        />
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.optionText]}
         >
@@ -45,17 +38,19 @@ export function TrackingOptions({
         </Text>
       </Pressable>
 
-      {/* Manual add button */}
+      {/* Manual add button - dismisses InfoModal first, then opens MilesModal */}
       <Pressable
         style={styles.option}
         onPress={() => {
-          onDismiss();
-          useUIStore.getState().setShowMilesModal(true);
+          // Set returnTo so MilesModal returns to info when closed
+          useUIStore.getState().setReturnTo({ modal: 'info' });
+          // Dismiss InfoModal, then open Miles modal after exit animation completes
+          onDismiss(() => {
+            useUIStore.getState().pushModal({ type: 'miles' });
+          });
         }}
       >
-        <View style={styles.buttonContainer}>
-          <PlusButton size={iconSizes.medium} />
-        </View>
+        <IconButton icon={<PlusIcon size={iconSizes.medium} />} />
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.optionText]}
         >
@@ -65,12 +60,10 @@ export function TrackingOptions({
 
       {/* Dev mode toggle */}
       <Pressable style={styles.option} onPress={() => setDevMode(!devMode)}>
-        <View style={styles.buttonContainer}>
-          <DevModeButton
-            size={iconSizes.medium}
-            variant={devMode ? 'brand' : 'primary'}
-          />
-        </View>
+        <IconButton
+          icon={<DevModeIcon size={iconSizes.medium} />}
+          variant={devMode ? 'brand' : 'outline'}
+        />
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.optionText]}
         >
@@ -95,12 +88,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-  },
-  buttonContainer: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   optionText: {
     flex: 1,

@@ -36,7 +36,7 @@
 	<key>NSHealthShareUsageDescription</key>
 	<string>Middle Earth Challenge uses your walking and running distance data to track your progress on the journey from the Shire to Mordor.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>Middle Earth Challenge does not use your location, but this permission is required by a dependency.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

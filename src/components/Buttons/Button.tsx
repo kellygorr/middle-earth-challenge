@@ -1,4 +1,10 @@
-import React, { useEffect, forwardRef } from 'react';
+import React, {
+  useEffect,
+  forwardRef,
+  ReactNode,
+  isValidElement,
+  ReactElement,
+} from 'react';
 import {
   Text,
   StyleSheet,
@@ -16,11 +22,12 @@ import Animated, {
 import { useTheme } from '../../stores/settingsStore';
 import { typography } from '../../styles/typography';
 import { spacing, borderRadius } from '../../styles/global';
+import { ButtonVariant, getButtonTextColor } from './buttonColors';
 
 interface ButtonProps {
   onPress: () => void;
   children: string;
-  variant?: 'primary' | 'brand' | 'outline';
+  variant?: ButtonVariant;
   size?: 'small' | 'default' | 'large';
   isMediumText?: boolean;
   isOpen?: boolean;
@@ -29,6 +36,10 @@ interface ButtonProps {
     | number
     | { left?: number; right?: number; top?: number; bottom?: number };
   style?: StyleProp<ViewStyle>;
+  /** Icon element to render before the text */
+  iconBefore?: ReactNode;
+  /** Self-alignment within parent container */
+  align?: 'left' | 'center' | 'right';
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -46,11 +57,13 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       disabled = false,
       hitSlop,
       style,
+      iconBefore,
+      align,
     }: ButtonProps,
     ref,
   ) {
     const theme = useTheme();
-    const isFilled = true; // outline also has a filled (white) background
+    const isFilled = variant !== 'transparent';
 
     // Background/border animation
     const progress = useSharedValue(isFilled ? 1 : 0);
@@ -69,6 +82,16 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         };
       }
 
+      // Transparent variant: use opacity for press feedback
+      if (variant === 'transparent') {
+        return {
+          backgroundColor: 'transparent',
+          borderColor: 'transparent',
+          opacity: interpolate(pressedSV.value, [0, 1], [1, 0.5]),
+        };
+      }
+
+      // Inline color lookup to keep worklet-compatible
       const filledColor =
         variant === 'brand'
           ? theme.colors.buttonBrandBackground
@@ -126,11 +149,22 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
     const textColor =
       disabled && variant === 'outline'
         ? theme.colors.buttonDisabledText
-        : variant === 'primary'
-        ? theme.colors.buttonPrimaryText
-        : variant === 'brand'
-        ? theme.colors.buttonBrandText
-        : theme.colors.buttonOutlineText;
+        : getButtonTextColor(theme, variant);
+
+    // Clone iconBefore with color if needed
+    const renderIconBefore = () => {
+      if (!iconBefore) return null;
+      if (isValidElement(iconBefore)) {
+        const iconProps = iconBefore.props as Record<string, unknown>;
+        if (!iconProps.color) {
+          return React.cloneElement(
+            iconBefore as ReactElement<{ color?: string }>,
+            { color: textColor },
+          );
+        }
+      }
+      return iconBefore;
+    };
 
     // Text size: large for size 'large'; medium when isMediumText is true; else default
     const baseTextStyle =
@@ -139,6 +173,23 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         : isMediumText
         ? typography.buttonMedium
         : typography.button;
+
+    const alignSelf =
+      align === 'left'
+        ? 'flex-start'
+        : align === 'right'
+        ? 'flex-end'
+        : align === 'center'
+        ? 'center'
+        : undefined;
+
+    // Reduce left padding when left-aligned (so content appears flush with container edge)
+    const alignPadding =
+      align === 'left'
+        ? { paddingLeft: spacing.sm }
+        : align === 'right'
+        ? { paddingRight: spacing.sm }
+        : undefined;
 
     return (
       <AnimatedPressable
@@ -150,6 +201,8 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
             ? styles.buttonLarge
             : styles.button,
           animatedStyle,
+          alignSelf ? { alignSelf } : undefined,
+          alignPadding,
           style,
           { opacity: opacityValue },
         ]}
@@ -163,7 +216,16 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         disabled={disabled}
         hitSlop={hitSlop}
       >
-        <Text style={[baseTextStyle, { color: textColor }]}>{children}</Text>
+        {renderIconBefore()}
+        <Text
+          style={[
+            baseTextStyle,
+            { color: textColor },
+            iconBefore ? { marginLeft: spacing.xs } : undefined,
+          ]}
+        >
+          {children}
+        </Text>
         {hasCaret && (
           <AnimatedText
             style={[
