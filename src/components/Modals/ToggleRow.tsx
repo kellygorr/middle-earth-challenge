@@ -1,5 +1,5 @@
 /**
- * SettingsRow - A row with label on left and control on right.
+ * ToggleRow - A row with label on left and control on right.
  * Supports Switch, Button, or custom right element.
  */
 
@@ -16,7 +16,7 @@ import { useTheme } from '../../stores/settingsStore';
 import { typographyThemed } from '../../styles/typography';
 import { spacing, iconButtonSizes, borderRadius } from '../../styles/global';
 
-interface SettingsRowProps {
+interface ToggleRowProps {
   /** Primary label text */
   label: string;
   /** Optional secondary caption below label */
@@ -39,7 +39,7 @@ interface SettingsRowProps {
   borderTop?: boolean;
 }
 
-export default function SettingsRow({
+export default function ToggleRow({
   label,
   caption,
   value,
@@ -50,7 +50,7 @@ export default function SettingsRow({
   onPress,
   borderBottom,
   borderTop,
-}: SettingsRowProps) {
+}: ToggleRowProps) {
   const theme = useTheme();
 
   const renderSwitch = () => (

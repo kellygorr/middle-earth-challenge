@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useTheme } from '../stores/settingsStore';
-import { typography } from '../styles/typography';
-import { spacing, borderRadius } from '../styles/global';
+import { useTheme } from '../../stores/settingsStore';
+import { typography } from '../../styles/typography';
+import { spacing, borderRadius } from '../../styles/global';
 
 export function LockedCheckpointBanner() {
   const theme = useTheme();

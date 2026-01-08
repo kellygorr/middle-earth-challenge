@@ -1,11 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-import { useTheme } from '../stores/settingsStore';
-import { useProgressStore } from '../stores/progressStore';
-import { useInfoStore } from '../stores/infoStore';
-import { typography, typographyThemed } from '../styles/typography';
-import { spacing, borderRadius } from '../styles/global';
+import { useTheme } from '../../stores/settingsStore';
+import { useProgressStore } from '../../stores/progressStore';
+import { useInfoStore } from '../../stores/infoStore';
+import { typography, typographyThemed } from '../../styles/typography';
+import { spacing, borderRadius } from '../../styles/global';
 
 /**
  * MilesDisplay - Shows the 2-column miles information

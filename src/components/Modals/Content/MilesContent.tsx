@@ -15,10 +15,10 @@ import Button, { IconButton } from '../../Buttons';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { EditIcon } from '../../../assets/icons';
-import DateStepper from '../../UI/DateStepper';
+import DateStepper from '../DateStepper';
 import { DistanceEntry } from '../../../types';
 import { formatDateLabel, formatTime, getYear } from '../../../utils/date';
-import EmptyState from '../../UI/EmptyState';
+import EmptyState from '../EmptyState';
 
 /**
  * MilesContent - FlatList content for the Miles modal.

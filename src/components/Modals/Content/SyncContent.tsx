@@ -15,8 +15,8 @@ import { modalStyles } from '../../../styles/modalStyles';
 import { SyncProvider } from '../../../types';
 import { fitnessService } from '../../../services/fitnessService';
 import Button from '../../Buttons/Button';
-import SectionHeader from '../../UI/SectionHeader';
-import ToggleRow from '../../UI/ToggleRow';
+import SectionHeader from '../SectionHeader';
+import ToggleRow from '../ToggleRow';
 
 interface SyncOption {
   id: SyncProvider;

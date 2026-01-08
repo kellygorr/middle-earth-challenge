@@ -6,9 +6,9 @@ import { spacing } from '../../../styles/global';
 import { modalStyles } from '../../../styles/modalStyles';
 import { formatDate, formatMiles } from '../../../utils/date';
 import JourneyProgressBar from '../../JourneyProgressBar';
-import SectionHeader from '../../UI/SectionHeader';
-import StatRow from '../../UI/StatRow';
-import EmptyState from '../../UI/EmptyState';
+import SectionHeader from '../SectionHeader';
+import StatRow from '../StatRow';
+import EmptyState from '../EmptyState';
 
 /**
  * StatsContent - Inner content for the Stats modal.

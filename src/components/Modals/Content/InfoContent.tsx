@@ -13,10 +13,10 @@ import { typographyThemed } from '../../../styles/typography';
 import { spacing, borderRadius } from '../../../styles/global';
 import { modalStyles } from '../../../styles/modalStyles';
 import { motion } from '../../../styles/motion';
-import { LockedCheckpointBanner } from '../../LockedCheckpointBanner';
+import { LockedCheckpointBanner } from '../LockedCheckpointBanner';
 import { TrackingOptions } from '../../TrackingOptions';
-import { MilesDisplay } from '../../MilesDisplay';
-import TriviaListItem from '../../UI/TriviaListItem';
+import { MilesDisplay } from '../MilesDisplay';
+import TriviaListItem from '../TriviaListItem';
 
 const CELEBRATION_MAX_MS = motion.checkpointCelebration.maxRunMs;
 
