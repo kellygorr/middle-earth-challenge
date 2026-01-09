@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -88,6 +88,14 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
   const showCelebration = useInfoStore(state => state.showCelebration);
 
   const canGoBack = modalStack.length > 1;
+
+  // Ref to reset scroll position when modal stack changes
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // Reset scroll to top when a new modal is pushed/popped
+  useEffect(() => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+  }, [modalStack.length]);
   const currentModal = modalStack[modalStack.length - 1];
   const modalType = currentModal?.type;
 
@@ -170,6 +178,20 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
 
   // Handle back navigation
   const handleBack = () => {
+    // If going back from an info modal to another info modal, sync infoStore
+    const stack = useUIStore.getState().modalStack;
+    if (stack.length >= 2) {
+      const previousModal = stack[stack.length - 2];
+      if (previousModal?.type === 'info' && previousModal.params?.item) {
+        // Restore infoStore state to previous modal's item
+        useInfoStore
+          .getState()
+          .setCurrentItem(
+            previousModal.params.item,
+            previousModal.params.itemType,
+          );
+      }
+    }
     popModal();
   };
 
@@ -259,6 +281,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
     // Default: wrap in ScrollView
     return (
       <ScrollView
+        ref={scrollViewRef}
         style={scrollStyles.scrollView}
         contentContainerStyle={scrollStyles.scrollContent}
         showsVerticalScrollIndicator={false}

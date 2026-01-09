@@ -62,6 +62,7 @@ interface ProgressStore {
     index: number,
     type?: 'checkpoint' | 'trivia',
   ) => PointType | null;
+  getNextCheckpointAfterMiles: (miles: number) => PointType | null;
   // Trivia in previous segment between checkpoints[currentIndex-1] and checkpoints[currentIndex]
   getPreviousTrivia: (currentIndex: number) => PointType[];
 }
@@ -302,6 +303,17 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     if (index >= src.length) return null;
     const item = src[index] as PointType;
     return item ? ({ ...(item as PointType), index } as PointType) : null;
+  },
+
+  getNextCheckpointAfterMiles: miles => {
+    const cps = checkpoints as any[];
+    for (let i = 0; i < cps.length; i++) {
+      const cpMiles = Number(cps[i]?.CUMULATIVE_MILES ?? NaN);
+      if (Number.isFinite(cpMiles) && cpMiles > miles) {
+        return { ...(cps[i] as PointType), index: i } as PointType;
+      }
+    }
+    return null; // No checkpoint after this miles value
   },
 
   getPreviousTrivia: currentIndex => {

@@ -48,6 +48,7 @@ export default function JourneyProgressBar({
 
   return (
     <View style={styles.container}>
+      <Text style={[labelStyle, styles.headerLabel]}>Journey progress</Text>
       <View style={styles.progressRow}>
         <View style={styles.progressLeft}>
           <View style={styles.progressLabelRow}>
@@ -117,9 +118,9 @@ export default function JourneyProgressBar({
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: spacing.md,
     alignSelf: 'stretch',
     width: '100%',
+    paddingVertical: spacing.sm,
   },
   progressRow: {
     flexDirection: 'row',
@@ -139,6 +140,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     maxWidth: '48%',
     textAlign: 'left',
+  },
+  headerLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: spacing.sm,
   },
   progressBarContainer: {
     marginTop: 0,

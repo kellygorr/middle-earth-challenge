@@ -4,7 +4,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../../stores/settingsStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useProgressStore } from '../../stores/progressStore';
-import { useInfoStore } from '../../stores/infoStore';
+import { useUIStore } from '../../stores/uiStore';
 import { typography, typographyThemed } from '../../styles/typography';
 import { spacing, borderRadius } from '../../styles/global';
 import { formatDistance } from '../../utils/date';
@@ -17,8 +17,19 @@ export function MilesDisplay() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
   const unitLabel = useMiles ? ' miles' : ' kilometers';
-  const { currentItem, itemType } = useInfoStore();
+
+  // Get item from modal params - this is the source of truth
+  const modalStack = useUIStore(state => state.modalStack);
+  const currentModal = modalStack[modalStack.length - 1];
+  const modalParams = currentModal?.params;
+
+  const currentItem = modalParams?.item ?? null;
+  const itemType = modalParams?.itemType ?? null;
+
   const getPointFromIndex = useProgressStore(state => state.getPointFromIndex);
+  const getNextCheckpointAfterMiles = useProgressStore(
+    state => state.getNextCheckpointAfterMiles,
+  );
   const getRemainingMilesTo = useProgressStore(
     state => state.getRemainingMilesTo,
   );
@@ -36,9 +47,16 @@ export function MilesDisplay() {
   const milesVal = currentItem.CUMULATIVE_MILES as number;
   const index = currentItem.index ?? -1;
 
-  if (index < 0) return null;
+  // For checkpoints, use index to get next checkpoint
+  // For trivia (no index), find next checkpoint by miles
+  let nextCheckpoint = null;
+  if (isCheckpointView && index >= 0) {
+    nextCheckpoint = getPointFromIndex(index + 1, 'checkpoint');
+  } else if (!isCheckpointView && Number.isFinite(milesVal)) {
+    // Find the next checkpoint after this trivia's miles
+    nextCheckpoint = getNextCheckpointAfterMiles(milesVal);
+  }
 
-  const nextCheckpoint = getPointFromIndex(index + 1, 'checkpoint');
   const nextCheckpointName = nextCheckpoint?.name ?? null;
   const checkpointMiles = milesVal;
 

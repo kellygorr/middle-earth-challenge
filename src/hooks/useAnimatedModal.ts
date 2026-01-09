@@ -53,6 +53,13 @@ export function useAnimatedModal(
       exitCallbackRef.current();
       exitCallbackRef.current = null;
     }
+    // Also check for callback stored in uiStore (from closeAllModalsWithCallback)
+    // Import dynamically to avoid circular dependency
+    const { useUIStore } = require('../stores/uiStore');
+    const storedCallback = useUIStore.getState().consumeDismissCallback();
+    if (storedCallback) {
+      storedCallback();
+    }
   }, []);
 
   // Trigger dismiss with optional callback

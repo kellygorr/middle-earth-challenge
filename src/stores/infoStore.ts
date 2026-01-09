@@ -92,8 +92,12 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
           ? typeof checkpointNumber === 'number'
             ? `Checkpoint #${checkpointNumber}`
             : 'Checkpoint'
-          : 'Trivia';
-      useUIStore.getState().pushModal({ type: 'info', title });
+          : currentItem.name || 'Trivia';
+      useUIStore.getState().pushModal({
+        type: 'info',
+        title,
+        params: { item: currentItem, itemType },
+      });
     }
   },
 
@@ -102,7 +106,7 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
   },
 
   openInfoModal: (item, type) => {
-    // Set current item in store
+    // Set current item in store (for backward compatibility and info button)
     set({
       currentItem: item,
       itemType: type,
@@ -123,8 +127,12 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
           : 'Checkpoint'
         : 'Trivia';
 
-    // Push to modal stack with title
-    useUIStore.getState().pushModal({ type: 'info', title });
+    // Push to modal stack with title and item params
+    useUIStore.getState().pushModal({
+      type: 'info',
+      title,
+      params: { item, itemType: type },
+    });
   },
 
   clearStickyInfo: () => {

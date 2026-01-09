@@ -46,7 +46,7 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
     >
       <View style={[styles.leftGroup, isLandscape && styles.centeredGroup]}>
         <Text style={[styles.label, { color: theme.colors.textInverted }]}>
-          Test Miles
+          Set distance:
         </Text>
         <TextInput
           ref={inputRef}

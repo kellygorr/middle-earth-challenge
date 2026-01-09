@@ -1,91 +1,23 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useStatsStore, Stats } from '../../../stores/statsStore';
 import { useTheme } from '../../../stores/settingsStore';
 import { spacing } from '../../../styles/global';
-import { typographyThemed } from '../../../styles/typography';
 import { formatDate, formatDistance } from '../../../utils/date';
 import JourneyProgressBar from '../../JourneyProgressBar';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
 import StatRow from '../StatRow';
+import TwoColumnRow from '../TwoColumnRow';
 import EmptyState from '../EmptyState';
-
-/**
- * WeekRow - Dual-column row showing This week and Last week side by side.
- */
-function WeekRow({
-  thisWeek,
-  lastWeek,
-}: {
-  thisWeek: number;
-  lastWeek: number;
-}) {
-  const theme = useTheme();
-  const diff = thisWeek - lastWeek;
-  const diffStr = `${diff >= 0 ? '+' : ''}${formatDistance(diff, true)}`;
-
-  return (
-    <View style={styles.weekRow}>
-      <View style={styles.weekColumn}>
-        <Text style={typographyThemed(theme).captionSecondary}>
-          This week ({diffStr})
-        </Text>
-        <Text style={typographyThemed(theme).bodyPrimary}>
-          {formatDistance(thisWeek, true)}
-        </Text>
-      </View>
-      <View style={[styles.weekColumn, styles.weekColumnRight]}>
-        <Text style={typographyThemed(theme).captionSecondary}>Last week</Text>
-        <Text style={typographyThemed(theme).bodyPrimary}>
-          {formatDistance(lastWeek, true)}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-/**
- * MilesRow - Dual-column row showing Miles and Remaining side by side.
- */
-function MilesRow({
-  completed,
-  remaining,
-}: {
-  completed: number;
-  remaining: number;
-}) {
-  const theme = useTheme();
-
-  return (
-    <View
-      style={[
-        styles.weekRow,
-        { borderBottomColor: theme.colors.divider, borderBottomWidth: 1 },
-      ]}
-    >
-      <View style={styles.weekColumn}>
-        <Text style={typographyThemed(theme).captionSecondary}>Miles</Text>
-        <Text style={typographyThemed(theme).bodyPrimary}>
-          {formatDistance(completed, true)}
-        </Text>
-      </View>
-      <View style={[styles.weekColumn, styles.weekColumnRight]}>
-        <Text style={typographyThemed(theme).captionSecondary}>Remaining</Text>
-        <Text style={typographyThemed(theme).bodyPrimary}>
-          {formatDistance(remaining, true)}
-        </Text>
-      </View>
-    </View>
-  );
-}
 
 /**
  * StatsContent - Inner content for the Stats modal.
  * Rendered inside SharedModal's ScrollView.
  */
 export default function StatsContent() {
+  const theme = useTheme();
   const distanceEntries = useProgressStore(state => state.distanceEntries);
   const miles = useProgressStore(state => state.miles);
   const hasEnoughData = useStatsStore(state => state.hasEnoughDataForStats)(
@@ -110,15 +42,26 @@ export default function StatsContent() {
   return (
     <>
       {/* Journey Progress Section */}
-      <SectionHeader title="Journey progress" />
+      <SectionHeader title="Progress" />
       <View>
+        <View
+          style={[
+            styles.progressRow,
+            { borderBottomColor: theme.colors.divider, borderBottomWidth: 1 },
+          ]}
+        >
+          <JourneyProgressBar isLocked={false} />
+        </View>
+        <TwoColumnRow
+          labels={['Miles', 'Remaining']}
+          values={[
+            formatDistance(stats.journey.milesCompleted, true),
+            formatDistance(stats.journey.milesRemaining, true),
+          ]}
+        />
         <StatRow
           label="Checkpoints"
           value={`${stats.journey.checkpointsCompleted} of ${stats.journey.checkpointsTotal}`}
-        />
-        <MilesRow
-          completed={stats.journey.milesCompleted}
-          remaining={stats.journey.milesRemaining}
         />
         {stats.journey.nextCheckpointName && (
           <StatRow
@@ -150,9 +93,23 @@ export default function StatsContent() {
               : '—'
           }
         />
-        <WeekRow
-          thisWeek={stats.activity.milesThisWeek}
-          lastWeek={stats.activity.milesLastWeek}
+        <TwoColumnRow
+          labels={[
+            `This week (${
+              stats.activity.milesThisWeek - stats.activity.milesLastWeek >= 0
+                ? '+'
+                : ''
+            }${formatDistance(
+              stats.activity.milesThisWeek - stats.activity.milesLastWeek,
+              true,
+            )})`,
+            'Last week',
+          ]}
+          values={[
+            formatDistance(stats.activity.milesThisWeek, true),
+            formatDistance(stats.activity.milesLastWeek, true),
+          ]}
+          isLast
         />
       </Section>
 
@@ -185,11 +142,6 @@ export default function StatsContent() {
           />
         )}
       </Section>
-
-      {/* Journey Progress Bar at bottom */}
-      <View style={styles.progressBarSection}>
-        <JourneyProgressBar isLocked={false} />
-      </View>
     </>
   );
 }
@@ -198,10 +150,8 @@ const styles = StyleSheet.create({
   progressBarSection: {
     marginTop: spacing.md,
     paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
   },
-  weekRow: {
+  progressRow: {
     flexDirection: 'row',
     paddingVertical: spacing.sm,
   },

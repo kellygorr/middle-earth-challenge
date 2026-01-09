@@ -27,6 +27,9 @@ interface UIStore {
   // Simple return-to tracking for modal-to-modal navigation
   returnTo: ReturnToContext | null;
 
+  // Callback to execute after modal dismiss animation completes
+  dismissCallback: (() => void) | null;
+
   // Pending miles state (ephemeral, reset on modal close)
   pendingEntries: DistanceEntry[];
   pendingDeletions: DistanceEntry[];
@@ -43,6 +46,10 @@ interface UIStore {
   popModal: () => void;
   replaceModal: (screen: ModalScreen) => void;
   closeAllModals: () => void;
+  /** Close all modals with a callback to run after dismiss animation completes */
+  closeAllModalsWithCallback: (callback: () => void) => void;
+  /** Get and clear the dismiss callback (called by SharedModal after animation) */
+  consumeDismissCallback: () => (() => void) | null;
 
   // Get the current (top) modal screen
   getCurrentModal: () => ModalScreen | null;
@@ -72,6 +79,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   // Initial state
   modalStack: [],
   returnTo: null,
+  dismissCallback: null,
   pendingEntries: [],
   pendingDeletions: [],
   editingEntry: null,
@@ -97,6 +105,17 @@ export const useUIStore = create<UIStore>((set, get) => ({
     })),
 
   closeAllModals: () => set({ modalStack: [], returnTo: null }),
+
+  closeAllModalsWithCallback: callback =>
+    set({ modalStack: [], returnTo: null, dismissCallback: callback }),
+
+  consumeDismissCallback: () => {
+    const callback = get().dismissCallback;
+    if (callback) {
+      set({ dismissCallback: null });
+    }
+    return callback;
+  },
 
   getCurrentModal: () => {
     const stack = get().modalStack;

@@ -46,8 +46,16 @@ const triviaImages: Record<string, any> = {
 
 export default function InfoContent() {
   const theme = useTheme();
-  const { currentItem, itemType } = useInfoStore();
-  const setCurrentItem = useInfoStore(state => state.setCurrentItem);
+
+  // Get item from modal params - this is the source of truth
+  const modalStack = useUIStore(state => state.modalStack);
+  const currentModal = modalStack[modalStack.length - 1];
+  const modalParams = currentModal?.params;
+
+  const currentItem = modalParams?.item ?? null;
+  const itemType = modalParams?.itemType ?? null;
+
+  const openInfoModal = useInfoStore(state => state.openInfoModal);
   const setShowCelebration = useInfoStore(state => state.setShowCelebration);
   const shouldShowCheckpointCelebration = useProgressStore(
     state => state.shouldShowCheckpointCelebration,
@@ -130,8 +138,13 @@ export default function InfoContent() {
   })();
 
   // Handle dismiss for TrackingOptions callback
-  const handleDismiss = () => {
-    closeAllModals();
+  // Uses closeAllModalsWithCallback to run callback after animation completes
+  const handleDismiss = (afterCallback?: () => void) => {
+    if (afterCallback) {
+      useUIStore.getState().closeAllModalsWithCallback(afterCallback);
+    } else {
+      closeAllModals();
+    }
   };
 
   if (!currentItem || !itemType) {
@@ -188,7 +201,7 @@ export default function InfoContent() {
                 key={`${t.name}:${i}`}
                 name={t.name}
                 miles={t.CUMULATIVE_MILES}
-                onPress={() => setCurrentItem(t, 'trivia')}
+                onPress={() => openInfoModal(t, 'trivia')}
               />
             ))}
           </View>
