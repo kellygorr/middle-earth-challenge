@@ -7,7 +7,7 @@ import {
   Keyboard,
   useWindowDimensions,
 } from 'react-native';
-import { useTheme } from '../../../stores/settingsStore';
+import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
 import Button from '../../Buttons';
@@ -22,6 +22,7 @@ import { formatDistance } from '../../../utils/date';
  */
 export default function MilesFooter() {
   const theme = useTheme();
+  const useMiles = useSettingsStore(state => state.useMiles);
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const inputRef = useRef<TextInput>(null);
@@ -116,7 +117,7 @@ export default function MilesFooter() {
           placeholderTextColor={theme.colors.textSecondary}
         />
         <Button onPress={handleAdd} variant="brand" size="default">
-          Add miles
+          {useMiles ? 'Add miles' : 'Add km'}
         </Button>
       </View>
     </View>

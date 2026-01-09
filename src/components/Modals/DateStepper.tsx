@@ -23,18 +23,19 @@ export default function DateStepper({ date, onDateChange }: DateStepperProps) {
         icon={
           <ChevronIcon
             direction="left"
-            size={iconSizes.medium}
+            size={iconSizes.small}
             color={theme.colors.textSecondary}
           />
         }
         pressedIcon={
           <ChevronIcon
             direction="left"
-            size={iconSizes.medium}
+            size={iconSizes.small}
             color={theme.colors.textPrimary}
           />
         }
         onPress={() => onDateChange(date - ONE_DAY_MS)}
+        size="small"
         variant="transparent"
         hitSlop={12}
       />
@@ -45,18 +46,19 @@ export default function DateStepper({ date, onDateChange }: DateStepperProps) {
         icon={
           <ChevronIcon
             direction="right"
-            size={iconSizes.medium}
+            size={iconSizes.small}
             color={theme.colors.textSecondary}
           />
         }
         pressedIcon={
           <ChevronIcon
             direction="right"
-            size={iconSizes.medium}
+            size={iconSizes.small}
             color={theme.colors.textPrimary}
           />
         }
         onPress={() => onDateChange(date + ONE_DAY_MS)}
+        size="small"
         variant="transparent"
         hitSlop={12}
       />

@@ -16,13 +16,13 @@ import {
   Animated,
   Platform,
 } from 'react-native';
-import { useTheme } from '../../../stores/settingsStore';
+import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing, iconSizes, scrollStyles } from '../../../styles/global';
 import Button, { IconButton } from '../../Buttons';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useUIStore } from '../../../stores/uiStore';
-import { EditIcon, ChevronIcon } from '../../../assets/icons';
+import { EditIcon, ChevronIcon, CloseIcon } from '../../../assets/icons';
 import DateStepper from '../DateStepper';
 import { DistanceEntry } from '../../../types';
 import {
@@ -91,6 +91,7 @@ const DaySeparator = () => <View style={styles.daySeparator} />;
  */
 export default function MilesContent() {
   const theme = useTheme();
+  const useMiles = useSettingsStore(state => state.useMiles);
   const editInputRef = useRef<TextInput>(null);
   const flatListRef = useRef<FlatList<DayGroup>>(null);
 
@@ -365,7 +366,9 @@ export default function MilesContent() {
   if (dayGroups.length === 0) {
     return (
       <EmptyState
-        message={`Add miles to get started tracking your journey!\n\nOr start syncing your health data from the Settings screen`}
+        message={`Add ${
+          useMiles ? 'miles' : 'kilometers'
+        } to get started tracking your journey!\n\nOr start syncing your health data from the Settings screen`}
       />
     );
   }
@@ -376,23 +379,6 @@ export default function MilesContent() {
     return (
       <View key={item.id}>
         <View style={styles.listItem}>
-          <View style={styles.listItemLeft}>
-            <View style={styles.titleRow}>
-              <Text style={typographyThemed(theme).bodyPrimary}>
-                {formatTime(item.date as number)}
-              </Text>
-              <Text style={typographyThemed(theme).bodyPrimary}>
-                {formatDistance(item.miles, true)}
-              </Text>
-            </View>
-            <Text style={typographyThemed(theme).captionSecondary}>
-              {item.source === 'health-connect'
-                ? 'Health Connect'
-                : item.source === 'synced'
-                ? 'Synced'
-                : 'Manual'}
-            </Text>
-          </View>
           <IconButton
             icon={
               <EditIcon
@@ -410,6 +396,42 @@ export default function MilesContent() {
             variant="transparent"
             hitSlop={16}
           />
+          <View style={styles.listItemLeft}>
+            <View style={styles.titleRow}>
+              <Text style={typographyThemed(theme).bodyPrimary}>
+                {formatTime(item.date as number)}
+              </Text>
+              <Text style={typographyThemed(theme).bodyPrimary}>
+                {formatDistance(item.miles, true)}
+              </Text>
+            </View>
+            <Text style={typographyThemed(theme).captionSecondary}>
+              {item.source === 'health-connect'
+                ? 'Health Connect'
+                : item.source === 'synced'
+                ? 'Synced'
+                : 'Manual'}
+            </Text>
+          </View>
+          {isEditing && (
+            <IconButton
+              icon={
+                <CloseIcon
+                  size={iconSizes.small}
+                  color={theme.colors.textSecondary}
+                />
+              }
+              pressedIcon={
+                <CloseIcon
+                  size={iconSizes.small}
+                  color={theme.colors.textPrimary}
+                />
+              }
+              onPress={cancelEditing}
+              variant="transparent"
+              hitSlop={12}
+            />
+          )}
         </View>
         {isEditing && (
           <View style={styles.editSection}>
@@ -447,18 +469,9 @@ export default function MilesContent() {
               <Button onPress={handleDelete} variant="primary" size="default">
                 Delete
               </Button>
-              <View style={styles.editButtonsRight}>
-                <Button onPress={handleEdit} variant="brand" size="default">
-                  Update
-                </Button>
-                <Button
-                  onPress={cancelEditing}
-                  variant="outline"
-                  size="default"
-                >
-                  Close
-                </Button>
-              </View>
+              <Button onPress={handleEdit} variant="brand" size="default">
+                Update
+              </Button>
             </View>
           </View>
         )}
@@ -613,7 +626,7 @@ const styles = StyleSheet.create({
     marginVertical: spacing.xs,
   },
   editSection: {
-    paddingVertical: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   editFieldsRow: {
     flexDirection: 'row',
@@ -626,11 +639,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  editButtonsRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.sm,
   },
   input: {

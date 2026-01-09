@@ -61,6 +61,9 @@ export interface Theme {
     buttonDisabledText: string;
     // Pressed state
     buttonPressed: string;
+    // Success state
+    successBg: string;
+    successText: string;
 
     // SVG layer colors (for colorized map mode)
     svgLegend: string;
@@ -156,6 +159,9 @@ export const classicTheme: Theme = {
     buttonDisabledText: '#F5EFE0',
     // Pressed state
     buttonPressed: 'rgba(107, 89, 67, 1)',
+    // Success state
+    successBg: '#E8F5E9',
+    successText: '#2E7D32',
 
     // SVG layer colors
     ...svgLayerColors,
@@ -231,6 +237,9 @@ export const minimalistTheme: Theme = {
     buttonDisabledText: '#E0E0E0',
     // Pressed state
     buttonPressed: '#757575',
+    // Success state
+    successBg: '#E8F5E9',
+    successText: '#1B5E20',
 
     // SVG layer colors
     ...svgLayerColors,

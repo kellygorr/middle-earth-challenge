@@ -71,6 +71,7 @@ export interface UserSettings {
   colorizeMap: boolean;
   reducedMapTitles: boolean;
   devMode: boolean;
+  useMiles: boolean; // true = miles, false = kilometers
   // Health sync settings
   syncEnabled: boolean;
   syncProvider: SyncProvider; // Which fitness service to sync with

@@ -214,8 +214,8 @@ export default function SyncContent() {
             typographyThemed(theme).bodyPrimary,
             styles.connectedMessage,
             {
-              backgroundColor: theme.colors.buttonDisabledBg,
-              color: theme.colors.buttonBrandText,
+              backgroundColor: theme.colors.successBg,
+              color: theme.colors.successText,
             },
           ]}
         >

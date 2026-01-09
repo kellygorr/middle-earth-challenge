@@ -82,43 +82,88 @@ export function formatDate(date: Date | null): string {
 }
 
 const FEET_PER_MILE = 5280;
+const KM_PER_MILE = 1.60934;
+const METERS_PER_KM = 1000;
+
+interface FormatDistanceOptions {
+  /** Append unit label (mi/ft or km/m) */
+  includeUnits?: boolean;
+  /** Always use miles/km, never convert to feet/meters */
+  useLargeUnit?: boolean;
+  /** Round down to whole number (prevents showing completion early) */
+  noDecimals?: boolean;
+  /** Use miles (true) or kilometers (false). Default: true (miles) */
+  useMiles?: boolean;
+}
 
 /**
  * Format distance intelligently:
  * - For values >= 1 mile: show miles (integers without decimals, or 1-2 decimals)
  * - For values < 1 mile: convert to feet for easier understanding
- * - Optional includeUnits parameter to append unit label
+ * - useLargeUnit: always show miles, never convert to feet
+ * - noDecimals: round down to whole number
  *
  * Examples:
  *   formatDistance(5) -> "5"
  *   formatDistance(5, true) -> "5 mi"
  *   formatDistance(0.5) -> "2640"
  *   formatDistance(0.5, true) -> "2640 ft"
+ *   formatDistance(5.7, { includeUnits: true, noDecimals: true }) -> "5 mi"
+ *   formatDistance(0.5, { includeUnits: true, useLargeUnit: true }) -> "0 mi"
+ *   formatDistance(5, { includeUnits: true, useMiles: false }) -> "8 km"
  */
-export function formatDistance(miles: number, includeUnits = false): string {
-  if (miles === 0) return includeUnits ? '0 mi' : '0';
+export function formatDistance(
+  miles: number,
+  options: boolean | FormatDistanceOptions = false,
+): string {
+  // Support legacy boolean parameter for includeUnits
+  const opts: FormatDistanceOptions =
+    typeof options === 'boolean' ? { includeUnits: options } : options;
+  const {
+    includeUnits = false,
+    useLargeUnit = false,
+    noDecimals = false,
+    useMiles = true,
+  } = opts;
 
-  // For values >= 1 mile, display in miles
-  if (miles >= 1) {
+  if (miles === 0) {
+    const zeroUnit = useMiles ? 'mi' : 'km';
+    return includeUnits ? `0 ${zeroUnit}` : '0';
+  }
+
+  // Convert to km if needed
+  const distance = useMiles ? miles : miles * KM_PER_MILE;
+  const largeUnit = useMiles ? 'mi' : 'km';
+  const smallUnit = useMiles ? 'ft' : 'm';
+  const smallPerLarge = useMiles ? FEET_PER_MILE : METERS_PER_KM;
+
+  // Handle noDecimals - round down (floor) to prevent early completion display
+  if (noDecimals) {
+    const floored = Math.floor(Math.abs(distance)) * Math.sign(distance);
+    return includeUnits ? `${floored} ${largeUnit}` : floored.toString();
+  }
+
+  // For useLargeUnit mode or values >= 1, display in large units
+  if (useLargeUnit || distance >= 1) {
     let value: string;
-    if (miles === Math.floor(miles)) {
-      value = miles.toString();
+    if (distance === Math.floor(distance)) {
+      value = distance.toString();
     } else {
       // Try 1 decimal first
-      const oneDecimal = miles.toFixed(1);
-      if (parseFloat(oneDecimal) === miles || miles >= 10) {
+      const oneDecimal = distance.toFixed(1);
+      if (parseFloat(oneDecimal) === distance || distance >= 10) {
         value = oneDecimal;
       } else {
-        value = miles.toFixed(2);
+        value = distance.toFixed(2);
       }
       // Remove trailing zeros after decimal
       value = value.replace(/\.?0+$/, '');
     }
-    return includeUnits ? `${value} mi` : value;
+    return includeUnits ? `${value} ${largeUnit}` : value;
   }
 
-  // For values < 1 mile, convert to feet
-  const feet = Math.round(miles * FEET_PER_MILE);
-  if (feet === 0) return includeUnits ? '>0 ft' : '>0';
-  return includeUnits ? `${feet} ft` : feet.toString();
+  // For values < 1, convert to small units
+  const smallValue = Math.round(distance * smallPerLarge);
+  if (smallValue === 0) return includeUnits ? `>0 ${smallUnit}` : '>0';
+  return includeUnits ? `${smallValue} ${smallUnit}` : smallValue.toString();
 }

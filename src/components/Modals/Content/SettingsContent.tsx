@@ -45,6 +45,8 @@ export default function SettingsContent() {
   );
   const devMode = useSettingsStore(state => state.devMode);
   const setDevMode = useSettingsStore(state => state.setDevMode);
+  const useMiles = useSettingsStore(state => state.useMiles);
+  const setUseMiles = useSettingsStore(state => state.setUseMiles);
   // Sync settings
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const setSyncEnabled = useSettingsStore(state => state.setSyncEnabled);
@@ -143,13 +145,36 @@ export default function SettingsContent() {
         </View>
 
         {/* Reduced Map Titles */}
-        <View style={[styles.contentRow, styles.contentRowSpaceBetween]}>
+        <View
+          style={[
+            styles.contentRow,
+            styles.contentRowSpaceBetween,
+            styles.contentRowBorderBottom,
+            { borderBottomColor: theme.colors.divider },
+          ]}
+        >
           <Text style={[typographyThemed(theme).bodyPrimary, styles.flex1]}>
             Reduced map titles
           </Text>
           <Switch
             value={reducedMapTitles}
             onValueChange={setReducedMapTitles}
+            trackColor={{
+              false: theme.colors.switchInactive,
+              true: theme.colors.buttonPrimary,
+            }}
+            thumbColor={theme.colors.surface}
+          />
+        </View>
+
+        {/* Distance Units */}
+        <View style={[styles.contentRow, styles.contentRowSpaceBetween]}>
+          <Text style={[typographyThemed(theme).bodyPrimary, styles.flex1]}>
+            Kilometers/Miles
+          </Text>
+          <Switch
+            value={useMiles}
+            onValueChange={setUseMiles}
             trackColor={{
               false: theme.colors.switchInactive,
               true: theme.colors.buttonPrimary,

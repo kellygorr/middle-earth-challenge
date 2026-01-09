@@ -31,6 +31,7 @@ export interface Stats {
     currentStreak: number;
     longestStreak: number;
     milesThisWeek: number;
+    milesLastWeek: number;
     milesThisMonth: number;
   };
   // Pace & Projections
@@ -209,6 +210,18 @@ export const useStatsStore = create<StatsStore>(() => ({
       endOfWeek,
     );
 
+    // Last week
+    const startOfLastWeek = new Date(startOfWeek);
+    startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+    const endOfLastWeek = new Date(startOfWeek);
+    endOfLastWeek.setDate(endOfLastWeek.getDate() - 1);
+    endOfLastWeek.setHours(23, 59, 59, 999);
+    const milesLastWeek = getMilesInRange(
+      distanceEntries,
+      startOfLastWeek,
+      endOfLastWeek,
+    );
+
     const startOfMonth = getStartOfMonth(now);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     endOfMonth.setHours(23, 59, 59, 999);
@@ -259,6 +272,7 @@ export const useStatsStore = create<StatsStore>(() => ({
         currentStreak,
         longestStreak,
         milesThisWeek,
+        milesLastWeek,
         milesThisMonth,
       },
       pace: {

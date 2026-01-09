@@ -20,6 +20,7 @@ export function TrackingOptions({
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const devMode = useSettingsStore(state => state.devMode);
   const setDevMode = useSettingsStore(state => state.setDevMode);
+  const useMiles = useSettingsStore(state => state.useMiles);
 
   return (
     <View style={styles.container}>
@@ -54,7 +55,7 @@ export function TrackingOptions({
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.optionText]}
         >
-          Manually add or edit miles
+          Add or edit {useMiles ? 'miles' : 'kilometers'}
         </Text>
       </Pressable>
 

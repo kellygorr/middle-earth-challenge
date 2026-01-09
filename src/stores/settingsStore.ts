@@ -15,6 +15,7 @@ interface SettingsStore extends UserSettings {
   setShowWelcome: (show: boolean) => void;
   setReducedMapTitles: (reduced: boolean) => void;
   setDevMode: (enabled: boolean) => void;
+  setUseMiles: (useMiles: boolean) => void;
   // Sync actions
   setSyncEnabled: (enabled: boolean) => void;
   setSyncProvider: (provider: SyncProvider) => void;
@@ -35,6 +36,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   showWelcome: true,
   reducedMapTitles: true,
   devMode: false,
+  useMiles: true,
   isLoaded: false,
   // Sync settings
   syncEnabled: false,
@@ -83,6 +85,11 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     database.updateUserSettings({ devMode: enabled });
   },
 
+  setUseMiles: useMiles => {
+    set({ useMiles });
+    database.updateUserSettings({ useMiles });
+  },
+
   // Sync actions
   setSyncEnabled: enabled => {
     set({ syncEnabled: enabled });
@@ -124,6 +131,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
           settings.devMode === undefined || settings.devMode === null
             ? true
             : settings.devMode,
+        useMiles: settings.useMiles ?? true,
         syncEnabled: settings.syncEnabled ?? false,
         syncProvider: settings.syncProvider ?? 'none',
         syncStartDate: settings.syncStartDate ?? null,

@@ -33,6 +33,7 @@ class Database {
         colorize_map INTEGER NOT NULL DEFAULT 0,
         reduced_map_titles INTEGER NOT NULL DEFAULT 1,
         dev_mode INTEGER NOT NULL DEFAULT 0,
+        use_miles INTEGER NOT NULL DEFAULT 1,
         sync_enabled INTEGER NOT NULL DEFAULT 0,
         sync_provider TEXT NOT NULL DEFAULT 'none',
         sync_start_date INTEGER,
@@ -113,6 +114,7 @@ class Database {
         (row as any).dev_mode === 1 ||
         (row as any).dev_mode === true ||
         (row as any).dev_mode === '1',
+      useMiles: (row as any).use_miles !== 0,
       syncEnabled: (row as any).sync_enabled === 1,
       syncProvider: ((row as any).sync_provider as SyncProvider) ?? 'none',
       syncStartDate: (row as any).sync_start_date ?? null,
@@ -156,6 +158,10 @@ class Database {
     if (updates.devMode !== undefined) {
       fields.push('dev_mode = ?');
       values.push(updates.devMode ? 1 : 0);
+    }
+    if (updates.useMiles !== undefined) {
+      fields.push('use_miles = ?');
+      values.push(updates.useMiles ? 1 : 0);
     }
     if (updates.syncEnabled !== undefined) {
       fields.push('sync_enabled = ?');

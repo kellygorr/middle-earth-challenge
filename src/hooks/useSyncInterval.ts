@@ -28,6 +28,7 @@ export function useSyncInterval() {
   const setIsSyncing = useProgressStore(state => state.setIsSyncing);
   const setSyncMessage = useProgressStore(state => state.setSyncMessage);
   const setSyncError = useProgressStore(state => state.setSyncError);
+  const useMiles = useSettingsStore(state => state.useMiles);
   const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
   const updateDistanceEntry = useProgressStore(
     state => state.updateDistanceEntry,
@@ -80,7 +81,7 @@ export function useSyncInterval() {
           '[useSyncInterval] Initial sync - showing message immediately',
         );
         syncStartTimeRef.current = Date.now();
-        setSyncMessage('Syncing miles...');
+        setSyncMessage(useMiles ? 'Syncing miles...' : 'Syncing kilometers...');
         isInitialSyncRef.current = false;
       }
 
@@ -272,10 +273,8 @@ export function useSyncInterval() {
         syncStartTimeRef.current = null;
       } else if (milesChanged > 0.01) {
         // Live sync with new miles
-        console.log(
-          '[useSyncInterval] Setting syncMessage to "Syncing miles..."',
-        );
-        setSyncMessage('Syncing miles...');
+        console.log('[useSyncInterval] Setting syncMessage to "Syncing..."');
+        setSyncMessage(useMiles ? 'Syncing miles...' : 'Syncing kilometers...');
 
         messageTimeoutRef.current = setTimeout(() => {
           setSyncMessage(null);
@@ -311,7 +310,9 @@ export function useSyncInterval() {
         );
         // Set sync error for UI to display
         setSyncError(
-          'It looks like your health data connection was disconnected. If this was unintentional, you can reconnect here or in Settings. Otherwise, you can continue adding miles using the + button.',
+          `It looks like your health data connection was disconnected. If this was unintentional, you can reconnect here or in Settings. Otherwise, you can continue adding ${
+            useMiles ? 'miles' : 'kilometers'
+          } using the + button.`,
         );
         // Disable sync
         setSyncEnabled(false);

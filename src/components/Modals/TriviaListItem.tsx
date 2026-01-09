@@ -7,6 +7,7 @@ import { Text, StyleSheet, Pressable } from 'react-native';
 import { useTheme } from '../../stores/settingsStore';
 import { typographyThemed } from '../../styles/typography';
 import { spacing } from '../../styles/global';
+import { formatDistance } from '../../utils/date';
 
 interface TriviaListItemProps {
   /** Trivia name */
@@ -30,8 +31,7 @@ export default function TriviaListItem({
         {name}
       </Text>
       <Text style={[typographyThemed(theme).bodySecondary, styles.miles]}>
-        {miles}
-        <Text style={styles.milesSuffix}> miles</Text>
+        {formatDistance(miles, true)}
       </Text>
     </Pressable>
   );
@@ -49,9 +49,5 @@ const styles = StyleSheet.create({
   },
   miles: {
     textAlign: 'right',
-  },
-  milesSuffix: {
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

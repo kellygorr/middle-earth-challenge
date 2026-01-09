@@ -48,7 +48,7 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     scrollType: 'default',
   },
   miles: {
-    title: 'Miles',
+    title: 'Distance',
     content: MilesContent,
     footer: MilesFooter,
     smallHeader: true,

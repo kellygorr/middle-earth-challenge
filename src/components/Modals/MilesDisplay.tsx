@@ -2,10 +2,12 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 import { useTheme } from '../../stores/settingsStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useProgressStore } from '../../stores/progressStore';
 import { useInfoStore } from '../../stores/infoStore';
 import { typography, typographyThemed } from '../../styles/typography';
 import { spacing, borderRadius } from '../../styles/global';
+import { formatDistance } from '../../utils/date';
 
 /**
  * MilesDisplay - Shows the 2-column miles information
@@ -13,6 +15,8 @@ import { spacing, borderRadius } from '../../styles/global';
  */
 export function MilesDisplay() {
   const theme = useTheme();
+  const useMiles = useSettingsStore(state => state.useMiles);
+  const unitLabel = useMiles ? ' miles' : ' kilometers';
   const { currentItem, itemType } = useInfoStore();
   const getPointFromIndex = useProgressStore(state => state.getPointFromIndex);
   const getRemainingMilesTo = useProgressStore(
@@ -78,7 +82,7 @@ export function MilesDisplay() {
               titleColor ? { color: titleColor } : null,
             ]}
           >
-            {isCheckpointView ? 'Checkpoint' : 'Total miles'}
+            {isCheckpointView ? 'Checkpoint' : 'Total distance'}
           </Text>
         </View>
         <View style={[styles.col, !showRightColumn && styles.hidden]}>
@@ -105,11 +109,15 @@ export function MilesDisplay() {
                 { color: theme.colors.checkpointLabel },
               ]}
             >
-              {checkpointMiles}
+              {formatDistance(checkpointMiles, {
+                useLargeUnit: true,
+                noDecimals: true,
+                useMiles,
+              })}
               <Text
                 style={[styles.suffix, { color: theme.colors.checkpointLabel }]}
               >
-                miles
+                {unitLabel}
               </Text>
             </Text>
           </View>
@@ -123,11 +131,22 @@ export function MilesDisplay() {
                 { color: theme.colors.checkpointLabel },
               ]}
             >
-              {isLocked ? '-' + remaining : milesToNextCheckpoint ?? remaining}
+              {isLocked
+                ? '-' +
+                  formatDistance(remaining, {
+                    useLargeUnit: true,
+                    noDecimals: true,
+                    useMiles,
+                  })
+                : formatDistance(milesToNextCheckpoint ?? remaining, {
+                    useLargeUnit: true,
+                    noDecimals: true,
+                    useMiles,
+                  })}
               <Text
                 style={[styles.suffix, { color: theme.colors.checkpointLabel }]}
               >
-                miles
+                {unitLabel}
               </Text>
             </Text>
           </View>
