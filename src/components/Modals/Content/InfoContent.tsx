@@ -4,14 +4,13 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { useTheme } from '../../../stores/settingsStore';
 import { useInfoStore } from '../../../stores/infoStore';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing, borderRadius } from '../../../styles/global';
-import { modalStyles } from '../../../styles/modalStyles';
 import { motion } from '../../../styles/motion';
 import { LockedCheckpointBanner } from '../LockedCheckpointBanner';
 import { TrackingOptions } from '../../TrackingOptions';
@@ -140,14 +139,7 @@ export default function InfoContent() {
   }
 
   return (
-    <ScrollView
-      style={modalStyles.scrollView}
-      contentContainerStyle={modalStyles.scrollContent}
-      showsVerticalScrollIndicator={false}
-      bounces={true}
-      scrollEventThrottle={16}
-      keyboardShouldPersistTaps="handled"
-    >
+    <>
       {/* Location name */}
       <Text
         style={[
@@ -221,7 +213,7 @@ export default function InfoContent() {
         {/* Miles display */}
         <MilesDisplay />
       </View>
-    </ScrollView>
+    </>
   );
 }
 

@@ -34,7 +34,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   colorizeMap: true,
   showWelcome: true,
   reducedMapTitles: true,
-  devMode: true,
+  devMode: false,
   isLoaded: false,
   // Sync settings
   syncEnabled: false,

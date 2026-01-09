@@ -66,6 +66,6 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     content: InfoContent,
     footer: InfoFooter,
     narrow: true,
-    scrollType: 'custom',
+    scrollType: 'default',
   },
 };

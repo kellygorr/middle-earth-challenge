@@ -14,6 +14,7 @@ import Button from '../../Buttons';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { DistanceEntry } from '../../../types';
+import { formatDistance } from '../../../utils/date';
 
 /**
  * MilesFooter - Footer content for the Miles modal.
@@ -39,7 +40,6 @@ export default function MilesFooter() {
   const pendingDeletions = useUIStore(state => state.pendingDeletions);
   const editingEntry = useUIStore(state => state.editingEntry);
   const addPendingEntry = useUIStore(state => state.addPendingEntry);
-  const setEditingEntry = useUIStore(state => state.setEditingEntry);
 
   const handleAdd = () => {
     const delta = parseFloat(addInput);
@@ -59,10 +59,6 @@ export default function MilesFooter() {
     setAddInput('');
     inputRef.current?.blur();
     Keyboard.dismiss();
-  };
-
-  const cancelEditing = () => {
-    setEditingEntry(null);
   };
 
   // Calculate total including pending changes
@@ -91,7 +87,7 @@ export default function MilesFooter() {
           <Text
             style={[typographyThemed(theme).bodySecondary, styles.totalText]}
           >
-            Total: {displayTotal.toFixed(2)} miles
+            Total: {formatDistance(displayTotal)} miles
           </Text>
         )}
       </View>
@@ -115,11 +111,7 @@ export default function MilesFooter() {
           keyboardType="decimal-pad"
           disableFullscreenUI={true}
           placeholder={isInputFocused ? '' : '0'}
-          onFocus={() => {
-            setIsInputFocused(true);
-            // Cancel any edit mode when focusing the add input
-            if (editingEntry) cancelEditing();
-          }}
+          onFocus={() => setIsInputFocused(true)}
           onBlur={() => setIsInputFocused(false)}
           placeholderTextColor={theme.colors.textSecondary}
         />

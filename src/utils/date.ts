@@ -81,11 +81,44 @@ export function formatDate(date: Date | null): string {
   });
 }
 
+const FEET_PER_MILE = 5280;
+
 /**
- * Format miles with one decimal if needed, otherwise as integer.
- * e.g., 5 -> "5", 5.5 -> "5.5", 5.123 -> "5.1"
+ * Format distance intelligently:
+ * - For values >= 1 mile: show miles (integers without decimals, or 1-2 decimals)
+ * - For values < 1 mile: convert to feet for easier understanding
+ * - Optional includeUnits parameter to append unit label
+ *
+ * Examples:
+ *   formatDistance(5) -> "5"
+ *   formatDistance(5, true) -> "5 mi"
+ *   formatDistance(0.5) -> "2640"
+ *   formatDistance(0.5, true) -> "2640 ft"
  */
-export function formatMiles(miles: number): string {
-  if (miles === Math.floor(miles)) return miles.toString();
-  return miles.toFixed(1);
+export function formatDistance(miles: number, includeUnits = false): string {
+  if (miles === 0) return includeUnits ? '0 mi' : '0';
+
+  // For values >= 1 mile, display in miles
+  if (miles >= 1) {
+    let value: string;
+    if (miles === Math.floor(miles)) {
+      value = miles.toString();
+    } else {
+      // Try 1 decimal first
+      const oneDecimal = miles.toFixed(1);
+      if (parseFloat(oneDecimal) === miles || miles >= 10) {
+        value = oneDecimal;
+      } else {
+        value = miles.toFixed(2);
+      }
+      // Remove trailing zeros after decimal
+      value = value.replace(/\.?0+$/, '');
+    }
+    return includeUnits ? `${value} mi` : value;
+  }
+
+  // For values < 1 mile, convert to feet
+  const feet = Math.round(miles * FEET_PER_MILE);
+  if (feet === 0) return includeUnits ? '>0 ft' : '>0';
+  return includeUnits ? `${feet} ft` : feet.toString();
 }

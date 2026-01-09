@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Switch,
-  ScrollView,
   Pressable,
   useWindowDimensions,
   Alert,
@@ -18,8 +17,9 @@ import {
   iconButtonSizes,
   borderRadius,
 } from '../../../styles/global';
-import { modalStyles } from '../../../styles/modalStyles';
 import Button, { IconButton } from '../../Buttons';
+import SectionHeader from '../SectionHeader';
+import Section from '../Section';
 import { SyncIcon, DevModeIcon } from '../../../assets/icons';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useUIStore } from '../../../stores/uiStore';
@@ -68,56 +68,33 @@ export default function SettingsContent() {
   };
 
   return (
-    <ScrollView
-      style={modalStyles.scrollView}
-      contentContainerStyle={modalStyles.scrollContent}
-      showsVerticalScrollIndicator={false}
-      bounces={true}
-      scrollEventThrottle={16}
-      keyboardShouldPersistTaps="handled"
-    >
+    <>
       {/* Theme Selection */}
-      <View style={modalStyles.section}>
-        <Text
-          style={[
-            typographyThemed(theme).subtitleLargePrimary,
-            modalStyles.sectionTitle,
-          ]}
-        >
-          Theme
-        </Text>
-        <View style={styles.themeButtons}>
-          <View style={styles.themeButtonWrapper}>
-            <Button
-              onPress={() => setTheme('minimalist')}
-              variant={currentTheme === 'minimalist' ? 'brand' : 'outline'}
-              size={isLandscape ? 'default' : 'large'}
-            >
-              Minimal
-            </Button>
-          </View>
-          <View style={styles.themeButtonWrapper}>
-            <Button
-              onPress={() => setTheme('classic')}
-              variant={currentTheme === 'classic' ? 'brand' : 'outline'}
-              size={isLandscape ? 'default' : 'large'}
-            >
-              Classic
-            </Button>
-          </View>
+      <SectionHeader title="Theme" />
+      <View style={styles.themeButtons}>
+        <View style={styles.themeButtonWrapper}>
+          <Button
+            onPress={() => setTheme('minimalist')}
+            variant={currentTheme === 'minimalist' ? 'brand' : 'outline'}
+            size={isLandscape ? 'default' : 'large'}
+          >
+            Minimal
+          </Button>
+        </View>
+        <View style={styles.themeButtonWrapper}>
+          <Button
+            onPress={() => setTheme('classic')}
+            variant={currentTheme === 'classic' ? 'brand' : 'outline'}
+            size={isLandscape ? 'default' : 'large'}
+          >
+            Classic
+          </Button>
         </View>
       </View>
 
       {/* Map Options */}
-      <View style={modalStyles.section}>
-        <Text
-          style={[
-            typographyThemed(theme).subtitleLargePrimary,
-            modalStyles.sectionTitle,
-          ]}
-        >
-          Map
-        </Text>
+      <Section>
+        <SectionHeader title="Map" />
 
         {/* Large Labels */}
         <View
@@ -180,18 +157,11 @@ export default function SettingsContent() {
             thumbColor={theme.colors.surface}
           />
         </View>
-      </View>
+      </Section>
 
       {/* Health Data Sync */}
-      <View style={modalStyles.section}>
-        <Text
-          style={[
-            typographyThemed(theme).subtitleLargePrimary,
-            modalStyles.sectionTitle,
-          ]}
-        >
-          Health data
-        </Text>
+      <Section>
+        <SectionHeader title="Health data" />
 
         {/* Sync option - show toggle with icon */}
         <View
@@ -351,18 +321,11 @@ export default function SettingsContent() {
             Delete
           </Button>
         </View>
-      </View>
+      </Section>
 
       {/* Developer Settings */}
-      <View style={modalStyles.section}>
-        <Text
-          style={[
-            typographyThemed(theme).subtitleLargePrimary,
-            modalStyles.sectionTitle,
-          ]}
-        >
-          Developer settings
-        </Text>
+      <Section>
+        <SectionHeader title="Developer settings" />
 
         <Pressable
           style={[
@@ -395,7 +358,7 @@ export default function SettingsContent() {
             thumbColor={theme.colors.surface}
           />
         </Pressable>
-      </View>
+      </Section>
 
       {/* Footer info */}
       <View style={{ paddingTop: spacing.lg }}>
@@ -417,7 +380,7 @@ export default function SettingsContent() {
           to track your journey progress. No data is sent to external servers.
         </Text>
       </View>
-    </ScrollView>
+    </>
   );
 }
 

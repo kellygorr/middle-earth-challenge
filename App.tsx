@@ -5,7 +5,7 @@ import {
   SafeAreaProvider,
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
-import { StyleSheet, View, Animated } from 'react-native';
+import { StyleSheet, View, Animated, StatusBar } from 'react-native';
 
 import MapScreen from './src/screens/MapScreen';
 import WelcomeModal from './src/screens/WelcomeModal';
@@ -82,6 +82,11 @@ function App(): React.JSX.Element {
 
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent={true}
+      />
       <View style={styles.container}>
         <NavigationContainer>
           <Stack.Navigator

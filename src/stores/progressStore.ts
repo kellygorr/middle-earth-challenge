@@ -128,8 +128,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       return; // Already exists
     }
 
-    // Update store first (immediate UI feedback)
-    set({ distanceEntries: [entry, ...state.distanceEntries] });
+    // Update store with new entry AND increment miles snapshot
+    set({
+      distanceEntries: [entry, ...state.distanceEntries],
+      miles: state.miles + entry.miles,
+    });
 
     // Persist to database
     try {
@@ -146,12 +149,17 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   },
 
   updateDistanceEntry: async entry => {
-    // Update store first
-    set(state => ({
+    const state = get();
+    const oldEntry = state.distanceEntries.find(e => e.id === entry.id);
+    const milesDelta = oldEntry ? entry.miles - oldEntry.miles : 0;
+
+    // Update store with entry change AND adjust miles snapshot
+    set({
       distanceEntries: state.distanceEntries.map(e =>
         e.id === entry.id ? entry : e,
       ),
-    }));
+      miles: state.miles + milesDelta,
+    });
 
     // Persist to database
     try {
@@ -168,10 +176,15 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   },
 
   removeDistanceEntry: async id => {
-    // Update store first
-    set(state => ({
+    const state = get();
+    const entryToRemove = state.distanceEntries.find(e => e.id === id);
+    const milesToRemove = entryToRemove?.miles ?? 0;
+
+    // Update store with entry removed AND decrement miles snapshot
+    set({
       distanceEntries: state.distanceEntries.filter(d => d.id !== id),
-    }));
+      miles: Math.max(0, state.miles - milesToRemove),
+    });
 
     // Persist to database
     try {

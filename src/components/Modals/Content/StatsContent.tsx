@@ -3,10 +3,10 @@ import { View, StyleSheet } from 'react-native';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useStatsStore, Stats } from '../../../stores/statsStore';
 import { spacing } from '../../../styles/global';
-import { modalStyles } from '../../../styles/modalStyles';
-import { formatDate, formatMiles } from '../../../utils/date';
+import { formatDate, formatDistance } from '../../../utils/date';
 import JourneyProgressBar from '../../JourneyProgressBar';
 import SectionHeader from '../SectionHeader';
+import Section from '../Section';
 import StatRow from '../StatRow';
 import EmptyState from '../EmptyState';
 
@@ -39,36 +39,35 @@ export default function StatsContent() {
   return (
     <>
       {/* Journey Progress Section */}
-      <View style={modalStyles.section}>
-        <SectionHeader title="Journey progress" />
+      <SectionHeader title="Journey progress" />
+      <StatRow
+        label="Checkpoints completed"
+        value={`${stats.journey.checkpointsCompleted} / ${stats.journey.checkpointsTotal}`}
+      />
+      <StatRow
+        label="Miles completed"
+        value={`${formatDistance(stats.journey.milesCompleted)} / ${
+          stats.journey.milesTotalJourney
+        } mi`}
+      />
+      <StatRow
+        label="Miles remaining"
+        value={formatDistance(stats.journey.milesRemaining, true)}
+        isLast={!stats.journey.nextCheckpointName}
+      />
+      {stats.journey.nextCheckpointName && (
         <StatRow
-          label="Checkpoints completed"
-          value={`${stats.journey.checkpointsCompleted} / ${stats.journey.checkpointsTotal}`}
+          label="Next checkpoint"
+          value={`${stats.journey.nextCheckpointName} (${formatDistance(
+            stats.journey.milesUntilNextCheckpoint,
+            true,
+          )})`}
+          isLast
         />
-        <StatRow
-          label="Miles completed"
-          value={`${formatMiles(stats.journey.milesCompleted)} / ${
-            stats.journey.milesTotalJourney
-          }`}
-        />
-        <StatRow
-          label="Miles remaining"
-          value={formatMiles(stats.journey.milesRemaining)}
-          isLast={!stats.journey.nextCheckpointName}
-        />
-        {stats.journey.nextCheckpointName && (
-          <StatRow
-            label="Next checkpoint"
-            value={`${stats.journey.nextCheckpointName} (${formatMiles(
-              stats.journey.milesUntilNextCheckpoint,
-            )} mi)`}
-            isLast
-          />
-        )}
-      </View>
+      )}
 
       {/* Activity Section */}
-      <View style={modalStyles.section}>
+      <Section>
         <SectionHeader title="Activity" />
         <StatRow
           label="Date started"
@@ -79,9 +78,10 @@ export default function StatsContent() {
           label="Best day"
           value={
             stats.activity.bestDayMiles > 0
-              ? `${formatMiles(stats.activity.bestDayMiles)} mi (${formatDate(
-                  stats.activity.bestDayDate,
-                )})`
+              ? `${formatDistance(
+                  stats.activity.bestDayMiles,
+                  true,
+                )} (${formatDate(stats.activity.bestDayDate)})`
               : '—'
           }
         />
@@ -94,26 +94,25 @@ export default function StatsContent() {
           value={`${stats.activity.longestStreak} days`}
         />
         <StatRow
-          label="Miles this week"
-          value={formatMiles(stats.activity.milesThisWeek)}
+          label="This week"
+          value={formatDistance(stats.activity.milesThisWeek, true)}
         />
         <StatRow
-          label="Miles this month"
-          value={formatMiles(stats.activity.milesThisMonth)}
+          label="This month"
+          value={formatDistance(stats.activity.milesThisMonth, true)}
           isLast
         />
-      </View>
+      </Section>
 
-      {/* Pace & Projections Section */}
-      <View style={modalStyles.section}>
+      <Section>
         <SectionHeader title="Pace & projections" />
         <StatRow
-          label="Avg miles/day"
-          value={formatMiles(stats.pace.averageMilesPerDay)}
+          label="Daily average"
+          value={formatDistance(stats.pace.averageMilesPerDay, true)}
         />
         <StatRow
-          label="Avg miles/active day"
-          value={formatMiles(stats.pace.averageMilesPerActiveDay)}
+          label="Daily average (excluding missed days)"
+          value={formatDistance(stats.pace.averageMilesPerActiveDay, true)}
           isLast={
             !stats.pace.estimatedDaysRemaining &&
             !stats.pace.estimatedCompletionDate
@@ -133,7 +132,7 @@ export default function StatsContent() {
             isLast
           />
         )}
-      </View>
+      </Section>
 
       {/* Journey Progress Bar at bottom */}
       <View style={styles.progressBarSection}>

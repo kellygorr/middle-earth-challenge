@@ -392,6 +392,16 @@ export function useSyncInterval() {
     return () => {
       subscription.remove();
       stopInterval();
+      // Clear any pending message timeout and the message itself
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+        messageTimeoutRef.current = null;
+      }
+      // If we're unmounting with a sync message showing, clear it
+      // (the message lives in the store and persists across remounts)
+      if (useProgressStore.getState().syncMessage) {
+        setSyncMessage(null);
+      }
     };
   }, [syncEnabled, liveSyncEnabled, performSync]);
 

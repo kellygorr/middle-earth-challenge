@@ -27,8 +27,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
 import { useInfoStore } from '../stores/infoStore';
 import { typographyThemed } from '../styles/typography';
-import { spacing, iconSizes } from '../styles/global';
-import { modalStyles, modalConstants } from '../styles/modalStyles';
+import { spacing, iconSizes, shadows, scrollStyles } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
 import Button, { IconButton } from '../components/Buttons';
@@ -97,7 +96,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
   const ContentComponent = config?.content ?? null;
 
   const containerHeight = Math.round(
-    height * modalConstants.portraitHeightRatio,
+    height * MODAL_CONSTANTS.portraitHeightRatio,
   );
 
   const {
@@ -199,8 +198,8 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
       ? theme.colors.modalCelebrationGold
       : theme.colors.modalOverlay;
   const maxWidth = config?.narrow
-    ? modalConstants.maxWidthNarrow
-    : modalConstants.maxWidth;
+    ? MODAL_CONSTANTS.maxWidthNarrow
+    : MODAL_CONSTANTS.maxWidth;
 
   // Render left button based on config and stack state
   const renderLeftButton = () => {
@@ -260,8 +259,8 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
     // Default: wrap in ScrollView
     return (
       <ScrollView
-        style={modalStyles.scrollView}
-        contentContainerStyle={modalStyles.scrollContent}
+        style={scrollStyles.scrollView}
+        contentContainerStyle={scrollStyles.scrollContent}
         showsVerticalScrollIndicator={false}
         bounces={true}
         scrollEventThrottle={16}
@@ -287,7 +286,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
   const contentView = (
     <Animated.View
       style={[
-        modalStyles.contentWrapper,
+        styles.contentWrapper,
         { maxWidth },
         !isLandscape && { maxHeight: containerHeight },
         animatedContentStyle,
@@ -296,24 +295,21 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
       {/* Portrait: Title above modal */}
       {!isLandscape && (
         <Text
-          style={[
-            typographyThemed(theme).titleMediumInverted,
-            modalStyles.title,
-          ]}
+          style={[typographyThemed(theme).titleMediumInverted, styles.title]}
         >
           {title}
         </Text>
       )}
 
       {/* Horizontal container: vertical title on left (landscape only) + modal card */}
-      <View style={modalStyles.horizontalLayout}>
+      <View style={styles.horizontalLayout}>
         {/* Vertical Title - Running up the left side (landscape only) */}
         {isLandscape && (
-          <View style={modalStyles.verticalTitleContainer}>
+          <View style={styles.verticalTitleContainer}>
             <Text
               style={[
                 typographyThemed(theme).titleMediumInverted,
-                modalStyles.verticalTitle,
+                styles.verticalTitle,
               ]}
             >
               {title}
@@ -321,11 +317,11 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
           </View>
         )}
 
-        <Animated.View style={[modalStyles.modalContainer, animatedCardStyle]}>
+        <Animated.View style={[styles.modalContainer, animatedCardStyle]}>
           {/* Header row with navigation buttons */}
-          <View style={localStyles.headerRow}>
-            <View style={localStyles.headerLeft}>{leftButtonElement}</View>
-            <View style={localStyles.headerRight}>
+          <View style={styles.headerRow}>
+            <View style={styles.headerLeft}>{leftButtonElement}</View>
+            <View style={styles.headerRight}>
               <IconButton
                 icon={<CloseIcon size={iconSizes.medium} />}
                 onPress={() => handleDismiss()}
@@ -362,7 +358,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <Animated.View
           style={[
-            modalStyles.overlay,
+            styles.overlay,
             { backgroundColor: finalOverlayColor },
             animatedBackgroundStyle,
           ]}
@@ -372,13 +368,13 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
           </TouchableWithoutFeedback>
 
           <SafeAreaView
-            style={modalStyles.safeArea}
+            style={styles.safeArea}
             edges={['top', 'bottom']}
             pointerEvents="box-none"
           >
             {keyboardAvoiding ? (
               <KeyboardAvoidingView
-                style={localStyles.keyboardAvoidingView}
+                style={styles.keyboardAvoidingView}
                 behavior={'padding'}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? spacing.lg : 0}
               >
@@ -401,7 +397,68 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
   );
 }
 
-const localStyles = StyleSheet.create({
+/**
+ * Modal dimension and layout constants
+ */
+const MODAL_CONSTANTS = {
+  portraitHeightRatio: 0.8,
+  maxWidth: 540,
+  maxWidthNarrow: 440,
+  headerHeightLarge: 64,
+  headerHeightSmall: 48,
+};
+
+const styles = StyleSheet.create({
+  // Overlay that covers the screen behind the modal
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  // SafeAreaView container
+  safeArea: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Main content wrapper with max-width constraint
+  contentWrapper: {
+    width: '100%',
+    maxWidth: 540,
+    flex: 1,
+    paddingVertical: spacing.sm,
+  },
+  // Portrait mode: title above modal
+  title: {
+    marginBottom: spacing.sm,
+  },
+  // Horizontal layout for landscape mode
+  horizontalLayout: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  // Landscape mode: vertical title container on left side
+  verticalTitleContainer: {
+    width: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Landscape mode: rotated title text
+  verticalTitle: {
+    transform: [{ rotate: '-90deg' }],
+    width: 200,
+    textAlign: 'center',
+  },
+  // Modal card container
+  modalContainer: {
+    flex: 1,
+    borderRadius: 16,
+    ...shadows.large,
+  },
+  // Header and layout styles
   keyboardAvoidingView: {
     flex: 1,
     width: '100%',
@@ -435,7 +492,7 @@ export function useModalLayout() {
   const insets = useSafeAreaInsets();
   const safeHeight = Math.max(0, height - insets.top - insets.bottom);
   const containerHeight = Math.round(
-    safeHeight * modalConstants.portraitHeightRatio,
+    safeHeight * MODAL_CONSTANTS.portraitHeightRatio,
   );
 
   return {

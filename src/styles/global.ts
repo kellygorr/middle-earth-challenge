@@ -64,3 +64,16 @@ export const iconButtonSizes = {
   medium: 48, // close to previous 50
   large: 56,
 } as const;
+
+// Scroll container styles for modals and lists
+export const scrollStyles = {
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    padding: spacing.lg,
+    paddingTop: 0,
+    gap: spacing.md,
+  },
+} as const;

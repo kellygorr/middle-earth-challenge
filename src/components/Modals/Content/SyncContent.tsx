@@ -1,17 +1,8 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Platform,
-  Alert,
-  Linking,
-  ScrollView,
-} from 'react-native';
+import { View, Text, StyleSheet, Platform, Alert, Linking } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
-import { modalStyles } from '../../../styles/modalStyles';
 import { SyncProvider } from '../../../types';
 import { fitnessService } from '../../../services/fitnessService';
 import Button from '../../Buttons/Button';
@@ -214,12 +205,7 @@ export default function SyncContent() {
   };
 
   return (
-    <ScrollView
-      style={modalStyles.scrollView}
-      contentContainerStyle={[modalStyles.scrollContent, styles.container]}
-      showsVerticalScrollIndicator={false}
-      bounces={true}
-    >
+    <>
       <SectionHeader title="Sync options" />
 
       {syncEnabled && (
@@ -350,14 +336,11 @@ export default function SyncContent() {
           to track your journey progress. No data is sent to external servers.
         </Text>
       </View>
-    </ScrollView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: spacing.lg,
-  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'center',
