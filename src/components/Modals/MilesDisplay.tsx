@@ -150,8 +150,7 @@ export function MilesDisplay() {
               ]}
             >
               {isLocked
-                ? '-' +
-                  formatDistance(remaining, {
+                ? formatDistance(Math.abs(remaining), {
                     useLargeUnit: true,
                     noDecimals: true,
                     useMiles,

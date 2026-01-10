@@ -6,12 +6,14 @@ import {
   StyleSheet,
   useWindowDimensions,
 } from 'react-native';
-import { useTheme } from '../stores/settingsStore';
-import { spacing, borderRadius } from '../styles/global';
+import { useTheme, useSettingsStore } from '../stores/settingsStore';
+import { spacing, borderRadius, iconSizes } from '../styles/global';
 import { useProgressStore } from '../stores/progressStore';
 
-import Button from './Buttons';
+import Button, { IconButton } from './Buttons';
+import { DevModeIcon } from '../assets/icons';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
+import { formatDistance } from '../utils/date';
 
 interface DevMilesProps {
   keyboardOffset: number;
@@ -23,6 +25,8 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
   const isLandscape = width > height;
   const setTestOverrideMiles = useProgressStore(state => state.setTestMiles);
   const isTestOverride = useProgressStore(state => state.isTestOverride);
+  const setDevMode = useSettingsStore(state => state.setDevMode);
+  const useMiles = useSettingsStore(state => state.useMiles);
   const [testMiles, setTestMiles] = useState('0');
   const inputRef = useRef<TextInput>(null);
 
@@ -38,16 +42,18 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
       style={[
         styles.container,
         {
-          bottom: keyboardOffset,
+          bottom: keyboardOffset || spacing.md,
           backgroundColor: theme.colors.modalOverlay,
           justifyContent: isLandscape ? 'center' : 'space-between',
         },
       ]}
     >
       <View style={[styles.leftGroup, isLandscape && styles.centeredGroup]}>
-        <Text style={[styles.label, { color: theme.colors.textInverted }]}>
-          Set distance:
-        </Text>
+        <IconButton
+          icon={<DevModeIcon size={iconSizes.medium} />}
+          variant="primary"
+          onPress={() => setDevMode(false)}
+        />
         <TextInput
           ref={inputRef}
           style={[
@@ -66,7 +72,13 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
           placeholderTextColor={theme.colors.textSecondary}
         />
         <Text style={[styles.label, { color: theme.colors.textInverted }]}>
-          / {TOTAL_JOURNEY_MILES}
+          /{' '}
+          {formatDistance(TOTAL_JOURNEY_MILES, {
+            useLargeUnit: true,
+            noDecimals: true,
+            includeUnits: true,
+            useMiles,
+          })}
         </Text>
       </View>
       <Button
@@ -74,7 +86,7 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
           const parsed = parseFloat(testMiles);
           setTestOverrideMiles(isNaN(parsed) ? 0 : parsed);
         }}
-        variant="primary"
+        variant="brand"
         size="default"
         isMediumText={false}
       >
@@ -94,11 +106,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
   },
   leftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
   },
   centeredGroup: {
     marginRight: spacing.md,

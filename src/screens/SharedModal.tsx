@@ -219,9 +219,19 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
     showCelebration && modalType === 'info'
       ? theme.colors.modalCelebrationGold
       : theme.colors.modalOverlay;
-  const maxWidth = config?.narrow
-    ? MODAL_CONSTANTS.maxWidthNarrow
-    : MODAL_CONSTANTS.maxWidth;
+  // In landscape, use percentage-based width with min/max constraints
+  const landscapeWidth = Math.min(
+    MODAL_CONSTANTS.landscapeMaxWidth,
+    Math.max(
+      MODAL_CONSTANTS.landscapeMinWidth,
+      width * MODAL_CONSTANTS.landscapeWidthRatio,
+    ),
+  );
+  const maxWidth = isLandscape
+    ? landscapeWidth
+    : config?.narrow
+      ? MODAL_CONSTANTS.maxWidthNarrow
+      : MODAL_CONSTANTS.maxWidth;
 
   // Render left button based on config and stack state
   const renderLeftButton = () => {
@@ -427,6 +437,9 @@ const MODAL_CONSTANTS = {
   portraitHeightRatio: 0.8,
   maxWidth: 540,
   maxWidthNarrow: 440,
+  landscapeWidthRatio: 0.65,
+  landscapeMinWidth: 300,
+  landscapeMaxWidth: 600,
   headerHeightLarge: 64,
   headerHeightSmall: 48,
 };

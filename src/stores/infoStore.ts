@@ -92,7 +92,7 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
           ? typeof checkpointNumber === 'number'
             ? `Checkpoint #${checkpointNumber}`
             : 'Checkpoint'
-          : currentItem.name || 'Trivia';
+          : 'Trivia';
       useUIStore.getState().pushModal({
         type: 'info',
         title,

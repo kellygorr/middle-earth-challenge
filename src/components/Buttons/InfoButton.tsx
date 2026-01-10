@@ -18,10 +18,9 @@ const InfoButton = forwardRef<any, InfoButtonProps>(
 
     // Generate display text based on type
     const getDisplayText = () => {
-      const idx = item.index as number | undefined;
-      const n = typeof idx === 'number' && idx >= 0 ? idx + 1 : undefined;
       if (type === 'checkpoint') {
-        return typeof n === 'number' ? `Checkpoint #${n}` : 'Checkpoint';
+        // Show location name for checkpoints
+        return item.name || 'Checkpoint';
       }
       // Trivia button should show the trivia's name
       return item.name || 'Trivia';

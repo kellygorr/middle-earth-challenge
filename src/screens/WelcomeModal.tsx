@@ -6,11 +6,13 @@ import {
   Modal,
   TouchableWithoutFeedback,
   Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import {
   SafeAreaProvider,
   SafeAreaView,
+  useSafeAreaInsets,
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
 import { useTheme } from '../stores/settingsStore';
@@ -35,6 +37,9 @@ export default function WelcomeModal({
   onDismiss,
 }: WelcomeModalProps) {
   const theme = useTheme();
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isLandscape = width > height;
   const miles = useProgressStore(state => state.miles) || 0;
   const syncError = useProgressStore(state => state.syncError);
   const setSyncError = useProgressStore(state => state.setSyncError);
@@ -92,11 +97,14 @@ export default function WelcomeModal({
           </TouchableWithoutFeedback>
           <SafeAreaView
             style={styles.safeArea}
-            edges={['top', 'bottom']}
             pointerEvents="box-none"
           >
             <Animated.View
-              style={[styles.contentWrapper, animatedContentStyle]}
+              style={[
+                styles.contentWrapper,
+                isLandscape && styles.contentWrapperLandscape,
+                animatedContentStyle,
+              ]}
             >
               <View style={styles.welcomeContainer}>
                 <Text
@@ -142,7 +150,7 @@ export default function WelcomeModal({
               </View>
             </Animated.View>
             {miles > 0 && (
-              <View style={styles.bottomProgressContainer}>
+              <View style={[styles.bottomProgressContainer, { paddingHorizontal: spacing.xl }]}>
                 <JourneyProgressBar isLocked={false} darkMode />
               </View>
             )}
@@ -166,13 +174,18 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     width: '100%',
+  },
+  contentWrapper: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 500,
+    alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  contentWrapper: {
-    width: '100%',
-    maxWidth: 500,
-    alignItems: 'center',
+  contentWrapperLandscape: {
+    justifyContent: 'flex-start',
+    paddingTop: spacing.sm,
   },
   welcomeContainer: {
     alignItems: 'center',
@@ -187,10 +200,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
   },
   bottomProgressContainer: {
-    position: 'absolute',
-    bottom: spacing.xl,
-    left: spacing.xl,
-    right: spacing.xl,
+    width: '100%',
+    paddingBottom: spacing.xl,
     alignItems: 'center',
   },
   syncIndicatorContainer: {

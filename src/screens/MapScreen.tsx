@@ -1,11 +1,22 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  StatusBar,
+  Keyboard,
+  Platform,
+  Pressable,
+} from 'react-native';
 import {
   GestureHandlerRootView,
   GestureDetector,
 } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 // Modals are rendered globally in App.tsx
 import { IconButton } from '../components/Buttons';
 import {
@@ -22,7 +33,8 @@ import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import DevMiles from '../components/DevMiles';
 import SyncIndicator from '../components/SyncIndicator';
 
-import { spacing } from '../styles/global';
+import { spacing, borderRadius } from '../styles/global';
+import { formatDistance } from '../utils/date';
 
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
@@ -54,6 +66,7 @@ const triviaData = triviaDataRaw as PointType[];
 export default function MapScreen() {
   const theme = useTheme();
   const { width, height } = useReactiveDimensions(); // reactive
+  const insets = useSafeAreaInsets();
   const pushModal = useUIStore(state => state.pushModal);
 
   const keyboardOffset = useKeyboardOffset(20);
@@ -69,6 +82,7 @@ export default function MapScreen() {
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const reducedMapTitles = useSettingsStore(state => state.reducedMapTitles);
   const labelSize = useSettingsStore(state => state.labelSize);
+  const useMiles = useSettingsStore(state => state.useMiles);
 
   // Info store for checkpoint/trivia info
   const {
@@ -337,34 +351,79 @@ export default function MapScreen() {
         </View>
       </GestureDetector>
 
-      {/* UI Overlay - SafeAreaView handles spacing from notch/Dynamic Island */}
+      {/* Black bar for notch safe area in landscape */}
+      {insets.left > 0 && (
+        <View
+          style={[styles.notchBar, { left: 0, width: insets.left }]}
+          pointerEvents="none"
+        />
+      )}
+
+      {/* Traveled Miles Display - opens stats modal */}
+      {miles > 0 && (
+        <Animated.View
+          style={[
+            styles.milesContainer,
+            {
+              backgroundColor: theme.colors.buttonPrimaryBackground,
+              top: insets.top + 60,
+              left: insets.left,
+            },
+            settingsEnterStyle,
+          ]}
+        >
+          <Pressable
+            onPress={() => {
+              clearStickyInfo();
+              pushModal({ type: 'stats' });
+            }}
+          >
+            <Text
+              style={[
+                styles.milesText,
+                { color: theme.colors.buttonPrimaryText },
+              ]}
+            >
+              {formatDistance(miles, {
+                includeUnits: true,
+                useLargeUnit: true,
+                noDecimals: true,
+                useMiles,
+              })}
+            </Text>
+          </Pressable>
+        </Animated.View>
+      )}
+
+      {/* UI Overlay - SafeAreaView handles all edges */}
       <SafeAreaView style={styles.uiOverlay} pointerEvents="box-none">
         {/* Top Row */}
         <View style={styles.topRow} pointerEvents="box-none">
-          {/* Info System - Checkpoint/Trivia Info (derived via store selector) */}
-          {currentItem && shouldShowInfoButton ? (
-            <Animated.View
-              style={[styles.infoContainer, infoEnterStyle]}
-              pointerEvents="box-none"
-            >
-              <InfoButton
-                ref={infoButtonRef}
-                item={currentItem}
-                type={itemType!}
-              />
-              {/* Tooltip - positioned directly below InfoButton using relative layout */}
-              {showStartupTooltip && (
-                <TooltipButton
-                  onPress={() => {
-                    if (showStartupTooltip) setShowStartupTooltip(false);
-                    openModal();
-                  }}
+          {/* Left Column: InfoButton */}
+          <View style={styles.topLeftColumn} pointerEvents="box-none">
+            {/* Info System - Checkpoint/Trivia Info (derived via store selector) */}
+            {currentItem && shouldShowInfoButton ? (
+              <Animated.View
+                style={[styles.infoContainer, infoEnterStyle]}
+                pointerEvents="box-none"
+              >
+                <InfoButton
+                  ref={infoButtonRef}
+                  item={currentItem}
+                  type={itemType!}
                 />
-              )}
-            </Animated.View>
-          ) : (
-            <View />
-          )}
+                {/* Tooltip - positioned directly below InfoButton using relative layout */}
+                {showStartupTooltip && (
+                  <TooltipButton
+                    onPress={() => {
+                      if (showStartupTooltip) setShowStartupTooltip(false);
+                      openModal();
+                    }}
+                  />
+                )}
+              </Animated.View>
+            ) : null}
+          </View>
 
           {/* Right side buttons - column layout */}
           <View style={styles.topRightColumn} pointerEvents="box-none">
@@ -455,8 +514,6 @@ export default function MapScreen() {
         </View>
       </SafeAreaView>
 
-
-
       {/* Dev Miles (Developer mode) */}
       {devMode && !showWelcome && <DevMiles keyboardOffset={keyboardOffset} />}
 
@@ -491,7 +548,6 @@ export const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    // SafeAreaView handles top/bottom safe area padding automatically
   },
   topRow: {
     flexDirection: 'row',
@@ -507,8 +563,23 @@ export const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: spacing.md,
   },
+  topLeftColumn: {
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
   infoContainer: {
     zIndex: 100,
+  },
+  milesContainer: {
+    position: 'absolute',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderTopRightRadius: borderRadius.md,
+    borderBottomRightRadius: borderRadius.md,
+  },
+  milesText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   bottomRow: {
     alignItems: 'flex-end',
@@ -518,6 +589,13 @@ export const styles = StyleSheet.create({
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000000',
+  },
+  notchBar: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#000000',
+    zIndex: 50,
   },
   syncIndicatorContainer: {
     position: 'absolute',

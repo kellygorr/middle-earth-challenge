@@ -18,11 +18,13 @@ export function useUniformMapLayout(
   svgWidth: number,
   svgHeight: number,
   firstCheckpoint: PointType,
-  targetX: number = 50,
+  targetXPortrait: number = 50,
   targetYPortrait: number = 300,
   targetYLandscape: number = 100,
+  targetXLandscape: number = 200,
 ): UniformMapLayout {
   const isLandscape = width > height;
+  const targetX = isLandscape ? targetXLandscape : targetXPortrait;
   const targetY = isLandscape ? targetYLandscape : targetYPortrait;
 
   const minDimension = Math.min(width, height);
