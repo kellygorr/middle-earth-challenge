@@ -143,8 +143,8 @@ export function formatDistance(
     return includeUnits ? `${floored} ${largeUnit}` : floored.toString();
   }
 
-  // For useLargeUnit mode or values >= 1, display in large units
-  if (useLargeUnit || distance >= 1) {
+  // For useLargeUnit mode or values >= 1 (by magnitude), display in large units
+  if (useLargeUnit || Math.abs(distance) >= 1) {
     let value: string;
     if (distance === Math.floor(distance)) {
       value = distance.toString();

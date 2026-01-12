@@ -179,7 +179,7 @@ export default function DataContent() {
     <>
       {/* Data Management */}
       <Section>
-        <SectionHeader title="Data" />
+        <SectionHeader title="Manage data" />
 
         {/* Delete synced data */}
         <View
