@@ -6,9 +6,7 @@ import {
   Switch,
   Pressable,
   useWindowDimensions,
-  Alert,
 } from 'react-native';
-import { database } from '../../../services/database';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
 import {
@@ -20,8 +18,7 @@ import {
 import Button, { IconButton } from '../../Buttons';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
-import { SyncIcon, DevModeIcon } from '../../../assets/icons';
-import { useProgressStore } from '../../../stores/progressStore';
+import { SyncIcon, DevModeIcon, DataIcon } from '../../../assets/icons';
 import { useUIStore } from '../../../stores/uiStore';
 import { fitnessService } from '../../../services/fitnessService';
 
@@ -56,8 +53,6 @@ export default function SettingsContent() {
   const setLiveSyncEnabled = useSettingsStore(
     state => state.setLiveSyncEnabled,
   );
-  const distanceEntries = useProgressStore(state => state.distanceEntries);
-  const hasSyncedData = distanceEntries.some(e => e.source !== 'manual');
   const pushModal = useUIStore(state => state.pushModal);
 
   const handleDisconnectSync = async () => {
@@ -279,73 +274,6 @@ export default function SettingsContent() {
             thumbColor={theme.colors.surface}
           />
         </View>
-
-        {/* Delete synced data button - always visible, disabled if no synced data */}
-        <View
-          style={[
-            styles.contentRow,
-            styles.contentRowSpaceBetween,
-            styles.contentRowBorderTop,
-            { borderTopColor: theme.colors.divider },
-          ]}
-        >
-          <Text style={[typographyThemed(theme).bodySecondary, styles.flex1]}>
-            {hasSyncedData ? 'Delete synced data' : 'No synced data to delete'}
-          </Text>
-          <Button
-            onPress={() => {
-              Alert.alert(
-                'Delete Synced Data',
-                'Are you sure you want to delete all synced data? This cannot be undone.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                      const syncedEntries = distanceEntries.filter(
-                        e => e.source !== 'manual',
-                      );
-                      const totalToRemove = syncedEntries.reduce(
-                        (sum, e) => sum + (e?.miles ?? 0),
-                        0,
-                      );
-                      // Remove from store and database
-                      for (const entry of syncedEntries) {
-                        useProgressStore
-                          .getState()
-                          .removeDistanceEntry(entry.id);
-                        try {
-                          await database.removeDistanceEntry(entry.id);
-                        } catch (err) {
-                          console.warn('Failed to remove synced entry:', err);
-                        }
-                      }
-                      // Update miles total
-                      const currentMiles =
-                        useProgressStore.getState().miles ?? 0;
-                      const newMiles = Math.max(
-                        0,
-                        currentMiles - totalToRemove,
-                      );
-                      useProgressStore.getState().setMiles(newMiles);
-                      try {
-                        await database.setMilesSnapshot('default', newMiles);
-                      } catch (err) {
-                        console.warn('Failed to update miles snapshot:', err);
-                      }
-                    },
-                  },
-                ],
-              );
-            }}
-            variant="outline"
-            size={'default'}
-            disabled={!hasSyncedData}
-          >
-            Delete
-          </Button>
-        </View>
       </Section>
 
       {/* Developer Settings */}
@@ -385,26 +313,57 @@ export default function SettingsContent() {
         </Pressable>
       </Section>
 
-      {/* Footer info */}
-      <View style={{ paddingTop: spacing.lg }}>
-        <Text
+      {/* Data Management */}
+      <Section>
+        <SectionHeader title="Data" />
+
+        {/* Data use info */}
+        <View style={{ paddingBottom: spacing.md }}>
+          <Text
+            style={[
+              typographyThemed(theme).captionPrimary,
+              { fontWeight: '600' },
+            ]}
+          >
+            Data use
+          </Text>
+          <Text
+            style={[
+              typographyThemed(theme).captionSecondary,
+              { marginTop: spacing.xs },
+            ]}
+          >
+            Your distance data is stored locally on your device and is only used
+            to track your journey progress. No data is sent to external servers.
+          </Text>
+        </View>
+
+        <Pressable
           style={[
-            typographyThemed(theme).captionPrimary,
-            { fontWeight: '600' },
+            styles.contentRow,
+            styles.contentRowSpaceBetween,
+            styles.contentRowWithGap,
+            styles.contentRowBorderTop,
+            { borderTopColor: theme.colors.divider },
           ]}
+          onPress={() => pushModal({ type: 'data' })}
         >
-          Data use
-        </Text>
-        <Text
-          style={[
-            typographyThemed(theme).captionSecondary,
-            { marginTop: spacing.xs },
-          ]}
-        >
-          Your distance data is stored locally on your device and is only used
-          to track your journey progress. No data is sent to external servers.
-        </Text>
-      </View>
+          <View style={styles.iconButtonContainer}>
+            <IconButton
+              icon={<DataIcon size={iconSizes.medium} />}
+              variant="primary"
+            />
+          </View>
+          <View style={styles.flex1}>
+            <Text style={[typographyThemed(theme).bodyPrimary]}>
+              Manage data
+            </Text>
+            <Text style={[typographyThemed(theme).captionSecondary]}>
+              Delete synced data, reset progress, or clear settings
+            </Text>
+          </View>
+        </Pressable>
+      </Section>
     </>
   );
 }

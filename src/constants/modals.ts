@@ -10,10 +10,17 @@ import {
   SyncContent,
   DistanceContent,
   InfoContent,
+  DataContent,
 } from '../components/Modals/Content';
 import { MilesFooter, InfoFooter } from '../components/Modals/Footers';
 
-export type ModalType = 'stats' | 'settings' | 'miles' | 'sync' | 'info';
+export type ModalType =
+  | 'stats'
+  | 'settings'
+  | 'miles'
+  | 'sync'
+  | 'info'
+  | 'data';
 
 export interface ModalConfig {
   /** Modal title (displayed above card in portrait, left side in landscape) */
@@ -66,6 +73,13 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     content: InfoContent,
     footer: InfoFooter,
     narrow: true,
+    scrollType: 'default',
+  },
+  data: {
+    title: 'Data',
+    content: DataContent,
+    smallHeader: true,
+    leftButton: 'back',
     scrollType: 'default',
   },
 };
