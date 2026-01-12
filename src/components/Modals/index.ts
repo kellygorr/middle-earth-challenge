@@ -6,7 +6,7 @@ export * from './Footers';
 
 // Supporting components
 export { default as JourneyProgressBar } from './JourneyProgressBar';
-export { MilesDisplay } from './MilesDisplay';
+export { DistanceDisplay } from './DistanceDisplay';
 export { LockedCheckpointBanner } from './LockedCheckpointBanner';
 export { TrackingOptions } from './TrackingOptions';
 export { default as DateStepper } from './DateStepper';

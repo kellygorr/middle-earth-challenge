@@ -14,7 +14,7 @@ import { spacing, borderRadius } from '../../../styles/global';
 import { motion } from '../../../styles/motion';
 import { LockedCheckpointBanner } from '../LockedCheckpointBanner';
 import { TrackingOptions } from '../../TrackingOptions';
-import { MilesDisplay } from '../MilesDisplay';
+import { DistanceDisplay } from '../DistanceDisplay';
 import TriviaListItem from '../TriviaListItem';
 
 const CELEBRATION_MAX_MS = motion.checkpointCelebration.maxRunMs;
@@ -224,7 +224,7 @@ export default function InfoContent() {
         )}
 
         {/* Miles display */}
-        <MilesDisplay />
+        <DistanceDisplay />
       </View>
     </>
   );

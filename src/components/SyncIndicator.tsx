@@ -24,11 +24,6 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
   const [isVisible, setIsVisible] = useState(false);
   const showTimeRef = useRef<number>(0);
 
-  // Debug logging
-  useEffect(() => {
-    console.log('[SyncIndicator] syncMessage changed:', syncMessage);
-  }, [syncMessage]);
-
   // Opacity animation - fade in/out based on syncMessage
   const opacity = useSharedValue(0);
 

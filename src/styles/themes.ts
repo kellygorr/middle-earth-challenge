@@ -160,8 +160,8 @@ export const classicTheme: Theme = {
     // Pressed state
     buttonPressed: 'rgba(107, 89, 67, 1)',
     // Success state
-    successBg: '#E8F5E9',
-    successText: '#2E7D32',
+    successBg: '#F5EFE0',
+    successText: '#A0826D',
 
     // SVG layer colors
     ...svgLayerColors,
@@ -238,8 +238,8 @@ export const minimalistTheme: Theme = {
     // Pressed state
     buttonPressed: '#757575',
     // Success state
-    successBg: '#E8F5E9',
-    successText: '#1B5E20',
+    successBg: '#E0E0E0',
+    successText: '#757575',
 
     // SVG layer colors
     ...svgLayerColors,

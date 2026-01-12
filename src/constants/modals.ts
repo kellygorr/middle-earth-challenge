@@ -8,7 +8,7 @@ import {
   StatsContent,
   SettingsContent,
   SyncContent,
-  MilesContent,
+  DistanceContent,
   InfoContent,
 } from '../components/Modals/Content';
 import { MilesFooter, InfoFooter } from '../components/Modals/Footers';
@@ -49,7 +49,7 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
   },
   miles: {
     title: 'Distance',
-    content: MilesContent,
+    content: DistanceContent,
     footer: MilesFooter,
     smallHeader: true,
     keyboardAvoiding: true,

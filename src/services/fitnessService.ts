@@ -76,7 +76,6 @@ class FitnessService implements FitnessServiceInterface {
       }
 
       const status = await hc.getSdkStatus();
-      console.log('[FitnessService] Health Connect SDK status:', status);
 
       if (status === hc.SdkAvailabilityStatus.SDK_AVAILABLE) {
         return { available: true, status: 'available' };
@@ -102,25 +101,14 @@ class FitnessService implements FitnessServiceInterface {
       if (Platform.OS === 'ios') {
         const appleHealth = await getAppleHealthModule();
         if (!appleHealth) {
-          console.log(
-            '[FitnessService] iOS: Apple Health module not available',
-          );
           return false;
         }
         // Check if HealthKit is available on this device
         return new Promise(resolve => {
           appleHealth.default.isAvailable((err, available) => {
             if (err) {
-              console.log(
-                '[FitnessService] iOS: HealthKit availability check error:',
-                err,
-              );
               resolve(false);
             } else {
-              console.log(
-                '[FitnessService] iOS: HealthKit available:',
-                available,
-              );
               resolve(available);
             }
           });
@@ -169,7 +157,6 @@ class FitnessService implements FitnessServiceInterface {
           return;
         }
 
-        console.log('[FitnessService] iOS: HealthKit initialized');
         this.isInitialized = true;
       } else if (Platform.OS === 'android') {
         const selectedProvider = provider || 'health-connect';
@@ -203,7 +190,6 @@ class FitnessService implements FitnessServiceInterface {
             this.isInitialized = false;
             return;
           }
-          console.log('[FitnessService] Android: Health Connect initialized');
           this.isInitialized = true;
         }
       }
@@ -245,24 +231,13 @@ class FitnessService implements FitnessServiceInterface {
           },
         } as Parameters<typeof appleHealth.default.initHealthKit>[0];
 
-        console.log(
-          '[FitnessService] iOS: Requesting HealthKit permissions...',
-        );
-
         return new Promise(resolve => {
           appleHealth.default.initHealthKit(permissions, (err: string) => {
             if (err) {
-              console.log(
-                '[FitnessService] iOS: Permission request error:',
-                err,
-              );
               // Note: On iOS, we can't distinguish between "denied" and "not determined"
               // The user may have denied, or it may be the first time asking
               resolve(false);
             } else {
-              console.log(
-                '[FitnessService] iOS: HealthKit permissions granted',
-              );
               this.isInitialized = true;
               resolve(true);
             }
@@ -296,12 +271,6 @@ class FitnessService implements FitnessServiceInterface {
             p => p.recordType === 'Steps' && p.accessType === 'read',
           );
           const granted = distanceGranted || stepsGranted;
-          console.log(
-            '[FitnessService] Android: Health Connect permissions - Distance:',
-            distanceGranted,
-            'Steps:',
-            stepsGranted,
-          );
           return granted;
         }
       }
@@ -326,17 +295,10 @@ class FitnessService implements FitnessServiceInterface {
         const hc = await getHealthConnectModule();
         if (hc) {
           await hc.revokeAllPermissions();
-          console.log(
-            '[FitnessService] Android: Health Connect permissions revoked',
-          );
         }
-      } else if (Platform.OS === 'ios') {
-        // iOS HealthKit doesn't support programmatic permission revocation
-        // User must revoke permissions manually in Settings → Health → Middle Earth Challenge
-        console.log(
-          '[FitnessService] iOS: User must revoke permissions in Settings → Health → Middle Earth Challenge',
-        );
       }
+      // Note: iOS HealthKit doesn't support programmatic permission revocation
+      // User must revoke permissions manually in Settings → Health → Middle Earth Challenge
 
       this.isInitialized = false;
       this.currentProvider = 'none';
@@ -401,15 +363,9 @@ class FitnessService implements FitnessServiceInterface {
           options,
           (err: string, results: { value: number }) => {
             if (err) {
-              console.log('[FitnessService] iOS: Distance query error:', err);
               reject(err);
             } else {
               // Distance is returned in miles
-              console.log(
-                '[FitnessService] iOS: Got distance:',
-                results?.value,
-                'miles',
-              );
               resolve(results?.value || 0);
             }
           },
@@ -420,9 +376,7 @@ class FitnessService implements FitnessServiceInterface {
         return distance;
       }
     } catch {
-      console.log(
-        '[FitnessService] iOS: Distance not available, trying steps fallback',
-      );
+      // Distance not available, trying steps fallback
     }
 
     // Fallback to steps if no distance data
@@ -432,10 +386,8 @@ class FitnessService implements FitnessServiceInterface {
           options,
           (err: string, results: { value: number }) => {
             if (err) {
-              console.log('[FitnessService] iOS: Steps query error:', err);
               reject(err);
             } else {
-              console.log('[FitnessService] iOS: Got steps:', results?.value);
               resolve(results?.value || 0);
             }
           },
@@ -444,17 +396,10 @@ class FitnessService implements FitnessServiceInterface {
 
       if (steps > 0) {
         const miles = this.stepsToMiles(steps);
-        console.log(
-          '[FitnessService] iOS: Steps fallback:',
-          steps,
-          'steps =',
-          miles,
-          'miles',
-        );
         return miles;
       }
     } catch {
-      console.log('[FitnessService] iOS: Steps also not available');
+      // Steps also not available
     }
 
     return 0;
@@ -481,17 +426,10 @@ class FitnessService implements FitnessServiceInterface {
         0,
       );
       if (totalMeters > 0) {
-        console.log(
-          '[FitnessService] Android: Using distance data:',
-          totalMeters,
-          'meters',
-        );
         return this.metersToMiles(totalMeters);
       }
     } catch {
-      console.log(
-        '[FitnessService] Android: Distance data not available, trying steps fallback',
-      );
+      // Distance data not available, trying steps fallback
     }
 
     // Fallback to steps if no distance data
@@ -509,17 +447,10 @@ class FitnessService implements FitnessServiceInterface {
       );
       if (totalSteps > 0) {
         const miles = this.stepsToMiles(totalSteps);
-        console.log(
-          '[FitnessService] Android: Using steps fallback:',
-          totalSteps,
-          'steps =',
-          miles,
-          'miles',
-        );
         return miles;
       }
     } catch {
-      console.log('[FitnessService] Android: Steps data also not available');
+      // Steps data also not available
     }
 
     return 0;
@@ -605,17 +536,8 @@ class FitnessService implements FitnessServiceInterface {
             }>,
           ) => {
             if (err) {
-              console.log(
-                '[FitnessService] iOS: Distance samples query error:',
-                err,
-              );
               reject(err);
             } else {
-              console.log(
-                '[FitnessService] iOS: Got',
-                results?.length || 0,
-                'distance samples',
-              );
               resolve(results || []);
             }
           },
@@ -636,17 +558,10 @@ class FitnessService implements FitnessServiceInterface {
       }
 
       if (records.length > 0) {
-        console.log(
-          '[FitnessService] iOS: Returning',
-          records.length,
-          'distance records',
-        );
         return records;
       }
     } catch {
-      console.log(
-        '[FitnessService] iOS: Distance samples not available, trying steps fallback',
-      );
+      // Distance samples not available, trying steps fallback
     }
 
     // Fallback to step samples if no distance data
@@ -671,17 +586,8 @@ class FitnessService implements FitnessServiceInterface {
             }>,
           ) => {
             if (err) {
-              console.log(
-                '[FitnessService] iOS: Step samples query error:',
-                err,
-              );
               reject(err);
             } else {
-              console.log(
-                '[FitnessService] iOS: Got',
-                results?.length || 0,
-                'step samples',
-              );
               resolve(results || []);
             }
           },
@@ -700,14 +606,8 @@ class FitnessService implements FitnessServiceInterface {
           });
         }
       }
-
-      console.log(
-        '[FitnessService] iOS: Returning',
-        records.length,
-        'step-based records',
-      );
     } catch {
-      console.log('[FitnessService] iOS: Step samples also not available');
+      // Step samples also not available
     }
 
     return records;
@@ -740,17 +640,8 @@ class FitnessService implements FitnessServiceInterface {
         }),
       );
 
-      console.log(
-        '[FitnessService] Android: Got',
-        records.length,
-        'distance records from Health Connect',
-      );
       return records;
     } catch (error) {
-      console.log(
-        '[FitnessService] Android: Failed to get distance records:',
-        error,
-      );
       // Re-throw permission errors so they can be handled by the caller
       const errorMessage = String(error);
       if (
@@ -782,7 +673,6 @@ class FitnessService implements FitnessServiceInterface {
       // TODO: Implement platform-specific queries
       // This should aggregate data by day and return an array
       // For now, return empty array
-      console.log('[FitnessService] Health data range query required');
       return [];
     } catch (error) {
       console.error('[FitnessService] Get health data range error:', error);
@@ -854,7 +744,7 @@ export class MockFitnessService implements FitnessServiceInterface {
   private mockInterval: ReturnType<typeof setInterval> | null = null;
 
   async initialize(): Promise<void> {
-    console.log('Mock fitness service initialized');
+    // Mock initialized
   }
 
   async isAvailable(): Promise<boolean> {
@@ -869,12 +759,10 @@ export class MockFitnessService implements FitnessServiceInterface {
   }
 
   async requestPermissions(): Promise<boolean> {
-    console.log('Mock permissions granted');
     return true;
   }
 
   async disconnect(): Promise<void> {
-    console.log('Mock fitness service disconnected');
     this.stopRealTimeUpdates();
     this.mockDistance = 0;
   }

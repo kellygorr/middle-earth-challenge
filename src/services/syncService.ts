@@ -3,8 +3,6 @@ import { fitnessService } from './fitnessService';
 /**
  * Sync service - Coordinates fitness data synchronization with the database
  * Handles background sync and real-time updates
- *
- * TODO: Implement fitness sync when watch/phone data integration is ready
  */
 
 export interface SyncResult {
@@ -20,11 +18,9 @@ class SyncService {
 
   /**
    * Perform a full sync of fitness data
-   * TODO: Implement when fitness integration is ready
    */
   async sync(): Promise<SyncResult> {
     // Placeholder - fitness sync not yet implemented
-    console.log('Fitness sync not yet implemented');
     return {
       success: false,
       milesAdded: 0,
@@ -43,8 +39,7 @@ class SyncService {
     }
 
     try {
-      // TODO: Implement with react-native-background-fetch
-      console.log('Background sync setup required');
+      // Background sync setup placeholder
       this.isBackgroundSyncSetup = true;
     } catch (error) {
       console.error('Background sync setup error:', error);
@@ -56,9 +51,7 @@ class SyncService {
    * Useful during active workouts
    */
   startRealTimeSync(): void {
-    fitnessService.startRealTimeUpdates(async distance => {
-      console.log('Real-time distance update:', distance);
-      // TODO: Trigger sync when implemented
+    fitnessService.startRealTimeUpdates(async _distance => {
       await this.sync();
     });
   }

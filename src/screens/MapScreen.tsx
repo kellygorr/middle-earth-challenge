@@ -5,7 +5,6 @@ import {
   StyleSheet,
   StatusBar,
   Keyboard,
-  Platform,
   Pressable,
 } from 'react-native';
 import {

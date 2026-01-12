@@ -66,13 +66,10 @@ export default function SyncContent() {
   }, []);
 
   const handleSelectProvider = async (provider: SyncProvider) => {
-    console.log('handleSelectProvider called with:', provider);
-
     // For Health Connect, check SDK availability first
     if (provider === 'health-connect') {
       try {
         const sdkStatus = await fitnessService.checkSdkStatus();
-        console.log('Health Connect SDK status:', sdkStatus);
 
         if (sdkStatus.status === 'unavailable') {
           Alert.alert(
@@ -142,14 +139,11 @@ export default function SyncContent() {
   const attemptSync = async (provider: SyncProvider) => {
     try {
       // Initialize the fitness service with the selected provider
-      console.log('Initializing fitness service...');
       await fitnessService.initialize(provider);
-      console.log('Fitness service initialized, requesting permissions...');
 
       let granted = false;
       try {
         granted = await fitnessService.requestPermissions(provider);
-        console.log('Permission result:', granted);
       } catch (permError) {
         console.error('Permission request failed:', permError);
         Alert.alert(
@@ -161,16 +155,12 @@ export default function SyncContent() {
         return;
       }
 
-      console.log('Permission granted:', granted);
-
       if (granted) {
-        console.log('Setting sync provider...');
         setSyncProvider(provider);
         setSyncStartDate(Date.now());
         setSyncEnabled(true);
         // Don't auto-dismiss - let user see connected state and dismiss manually
       } else {
-        console.log('Permission denied, showing alert...');
         const providerName =
           provider === 'health-connect' ? 'Health Connect' : 'Apple Health';
         Alert.alert(

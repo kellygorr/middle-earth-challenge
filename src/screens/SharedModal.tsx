@@ -230,8 +230,8 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
   const maxWidth = isLandscape
     ? landscapeWidth
     : config?.narrow
-      ? MODAL_CONSTANTS.maxWidthNarrow
-      : MODAL_CONSTANTS.maxWidth;
+    ? MODAL_CONSTANTS.maxWidthNarrow
+    : MODAL_CONSTANTS.maxWidth;
 
   // Render left button based on config and stack state
   const renderLeftButton = () => {

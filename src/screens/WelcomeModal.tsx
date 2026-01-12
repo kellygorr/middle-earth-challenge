@@ -95,18 +95,16 @@ export default function WelcomeModal({
           <TouchableWithoutFeedback onPress={handleDismiss}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
-          <SafeAreaView
-            style={styles.safeArea}
-            pointerEvents="box-none"
-          >
+          <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
             <Animated.View
               style={[
                 styles.contentWrapper,
                 isLandscape && styles.contentWrapperLandscape,
                 animatedContentStyle,
               ]}
+              pointerEvents="box-none"
             >
-              <View style={styles.welcomeContainer}>
+              <View style={styles.welcomeContainer} pointerEvents="box-none">
                 <Text
                   style={[
                     styles.title,
@@ -150,7 +148,12 @@ export default function WelcomeModal({
               </View>
             </Animated.View>
             {miles > 0 && (
-              <View style={[styles.bottomProgressContainer, { paddingHorizontal: spacing.xl }]}>
+              <View
+                style={[
+                  styles.bottomProgressContainer,
+                  { paddingHorizontal: spacing.xl },
+                ]}
+              >
                 <JourneyProgressBar isLocked={false} darkMode />
               </View>
             )}

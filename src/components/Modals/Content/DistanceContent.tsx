@@ -43,36 +43,6 @@ const getStartOfDay = (timestamp: number): number => {
   return date.getTime();
 };
 
-// TEST DATA: Generate fake entries for pagination testing
-const generateTestEntries = (): DistanceEntry[] => {
-  const entries: DistanceEntry[] = [];
-  const now = Date.now();
-  const DAY_MS = 24 * 60 * 60 * 1000;
-
-  // Generate 60 days of fake data (starting from 6 days ago to not overlap with real data)
-  for (let dayOffset = 6; dayOffset <= 65; dayOffset++) {
-    const baseDate = now - dayOffset * DAY_MS;
-    // 1-3 entries per day
-    const entriesPerDay = Math.floor(Math.random() * 3) + 1;
-
-    for (let i = 0; i < entriesPerDay; i++) {
-      const hourOffset = Math.floor(Math.random() * 12) + 6; // 6am - 6pm
-      const entryDate = getStartOfDay(baseDate) + hourOffset * 60 * 60 * 1000;
-      entries.push({
-        id: `test_${dayOffset}_${i}`,
-        saveId: 'default',
-        date: entryDate,
-        miles: Math.round((Math.random() * 4 + 0.5) * 100) / 100, // 0.5 - 4.5 miles
-        source: 'manual',
-      });
-    }
-  }
-  return entries;
-};
-
-// Cache test entries so they don't regenerate on every render
-const TEST_ENTRIES = generateTestEntries();
-
 // Type for grouped day data
 interface DayGroup {
   dayKey: number;
@@ -84,12 +54,12 @@ interface DayGroup {
 const DaySeparator = () => <View style={styles.daySeparator} />;
 
 /**
- * MilesContent - FlatList content for the Miles modal.
+ * DistanceContent - FlatList content for the Distance modal.
  * Displays distance entries grouped by day with collapsible sections.
  * Uses pagination to load older days on scroll.
  * Uses uiStore for pending state shared with MilesFooter.
  */
-export default function MilesContent() {
+export default function DistanceContent() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
   const editInputRef = useRef<TextInput>(null);
@@ -153,7 +123,6 @@ export default function MilesContent() {
         d => !pendingDeletions.some(pd => pd.id === d.id),
       ),
       ...pendingEntries,
-      ...TEST_ENTRIES, // TODO: Remove test data after pagination testing
     ];
   }, [distanceEntries, pendingEntries, pendingDeletions]);
 
@@ -288,11 +257,6 @@ export default function MilesContent() {
   useEffect(() => {
     if (!editingEntry) return;
     if (keyboardInset === 0) return; // Wait for keyboard to open
-
-    console.log('[MilesContent] Scroll effect triggered', {
-      editingEntryId: editingEntry.id,
-      keyboardInset,
-    });
 
     // Wait for editSection to render and layout (it only exists when isEditing is true)
     // Need longer delay because the edit section has to mount first

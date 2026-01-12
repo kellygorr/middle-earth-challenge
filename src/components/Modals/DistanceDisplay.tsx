@@ -10,10 +10,10 @@ import { spacing, borderRadius } from '../../styles/global';
 import { formatDistance } from '../../utils/date';
 
 /**
- * MilesDisplay - Shows the 2-column miles information
+ * DistanceDisplay - Shows the 2-column distance information
  * Handles all the calculations internally based on the current item
  */
-export function MilesDisplay() {
+export function DistanceDisplay() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
   const unitLabel = useMiles ? ' miles' : ' kilometers';

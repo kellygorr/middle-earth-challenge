@@ -41,45 +41,23 @@ export function useSyncInterval() {
   const isInitialSyncRef = useRef(true); // Track if this is the first sync after app start
   const syncStartTimeRef = useRef<number | null>(null); // Track when sync started
 
-  // Log sync state on mount
-  useEffect(() => {
-    console.log('[useSyncInterval] Hook mounted with state:', {
-      syncEnabled,
-      liveSyncEnabled,
-      syncProvider,
-      syncStartDate,
-    });
-  }, [syncEnabled, liveSyncEnabled, syncProvider, syncStartDate]);
-
   // Perform the actual sync
   const performSync = useCallback(async () => {
-    console.log('[useSyncInterval] performSync called', {
-      syncEnabled,
-      liveSyncEnabled,
-      syncProvider,
-      syncStartDate,
-    });
-
     if (
       !syncEnabled ||
       !liveSyncEnabled ||
       syncProvider === 'none' ||
       !syncStartDate
     ) {
-      console.log('[useSyncInterval] Sync skipped - conditions not met');
       return;
     }
 
     try {
-      console.log('[useSyncInterval] Starting sync...');
       setIsSyncing(true);
 
       // For initial sync, show message immediately to give user confidence
       const isInitialSync = isInitialSyncRef.current;
       if (isInitialSync) {
-        console.log(
-          '[useSyncInterval] Initial sync - showing message immediately',
-        );
         syncStartTimeRef.current = Date.now();
         setSyncMessage(useMiles ? 'Syncing miles...' : 'Syncing kilometers...');
         isInitialSyncRef.current = false;
@@ -113,11 +91,7 @@ export function useSyncInterval() {
           e => e.source === 'apple-health',
         );
         if (existingAppleHealthEntries.length > 0) {
-          console.log(
-            '[useSyncInterval] iOS: Had',
-            existingAppleHealthEntries.length,
-            'apple-health entries but sync returned 0 - possible permission revocation',
-          );
+          // Had entries but sync returned 0 - possible permission revocation
           // Don't immediately disable - user may just have no new data
           // The error handler below will catch actual permission errors
         }
@@ -245,8 +219,6 @@ export function useSyncInterval() {
       // Update last sync timestamp
       setLastSyncTimestamp(Date.now());
 
-      console.log('[useSyncInterval] milesChanged:', milesChanged);
-
       // Clear any existing timeout
       if (messageTimeoutRef.current) {
         clearTimeout(messageTimeoutRef.current);
@@ -273,24 +245,12 @@ export function useSyncInterval() {
         syncStartTimeRef.current = null;
       } else if (milesChanged > 0.01) {
         // Live sync with new miles
-        console.log('[useSyncInterval] Setting syncMessage to "Syncing..."');
         setSyncMessage(useMiles ? 'Syncing miles...' : 'Syncing kilometers...');
 
         messageTimeoutRef.current = setTimeout(() => {
           setSyncMessage(null);
         }, SYNC_MESSAGE_DURATION_MS);
       }
-
-      console.log(
-        'Sync completed:',
-        newRecords.length,
-        'new,',
-        updatedRecords.length,
-        'updated,',
-        milesChanged.toFixed(2),
-        'miles changed, total:',
-        totalMiles.toFixed(2),
-      );
     } catch (error) {
       console.error('[useSyncInterval] Sync error caught:', error);
 
@@ -300,14 +260,11 @@ export function useSyncInterval() {
 
       // Check if this is a permission error
       const errorMessage = String(error);
-      console.log('[useSyncInterval] Error message:', errorMessage);
       if (
         errorMessage.includes('SecurityException') ||
         errorMessage.includes('permission')
       ) {
-        console.log(
-          '[useSyncInterval] Permission error detected, disabling sync',
-        );
+        // Permission error detected, disabling sync
         // Set sync error for UI to display
         setSyncError(
           `It looks like your health data connection was disconnected. If this was unintentional, you can reconnect here or in Settings. Otherwise, you can continue adding ${
@@ -349,7 +306,6 @@ export function useSyncInterval() {
 
         // Set up the interval
         intervalRef.current = setInterval(performSync, SYNC_INTERVAL_MS);
-        console.log('Sync interval started (every 1 minute)');
       }
     };
 
@@ -357,7 +313,6 @@ export function useSyncInterval() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
-        console.log('Sync interval stopped');
       }
     };
 

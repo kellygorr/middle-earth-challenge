@@ -1,124 +1,51 @@
 # Middle-earth Challenge
 
-A fitness tracker app that maps your progress across Middle-earth - from Bag End to Mount Doom (1,235 miles).
+A fitness tracking app that maps your real-world walking and running distance onto the journey from Bag End to Mount Doom — 1,779 km (1,235 miles) across Middle-earth.
 
-## Features (In Development)
+## Features
 
-### ✅ Completed
+- **Interactive Map** — Pan and zoom across a detailed map of Middle-earth rendered with React Native Skia
+- **Health Integration** — Syncs with Apple Health (iOS) and Health Connect (Android) to track your distance
+- **8 Checkpoints** — Celebrate milestones at iconic locations: Bag End, Bree, Rivendell, Moria, Lothlórien, Rauros Falls, Minas Morgul, and Mount Doom
+- **18 Trivia Stops** — Discover Lord of the Rings lore as you progress along the path
+- **Multiple Saves** — Maintain up to 3 separate journeys
+- **Themes** — Choose between Classic and Minimalist visual styles
+- **Offline-First** — All data stored locally with SQLite
 
-- Basic app structure with React Native 0.83
-- Navigation setup (header hidden for full-screen map)
-- Dark theme for map background
-- Welcome overlay screen
+## Tech Stack
 
-### 🚧 TODO
+- React Native 0.83
+- React Native Skia for map rendering
+- Zustand for state management
+- OP-SQLite for local persistence
+- react-native-health / react-native-health-connect for fitness data
 
-- **Authentication/Sign-in** - Deferred for later
-- Map visualization with SVG
-- **Map initial position** - Position map to show first checkpoint (Bag End) on app load
-- Progress tracking
-- 8 Checkpoints with celebrations
-- 18 Trivia stops
-- Multiple save system
-- Classic/Minimalist themes
-- Health data integration
-- **SVG Styling** - Currently using CSS descendant selectors to style specific groups (e.g., `#mountains_and_forests .st17` targets only mountains). This works but may need refactoring if SVG groups are reorganized. The SVG is transformed at build time by `react-native-svg-transformer`, so inline `fill` attributes and descendant CSS selectors work, but dynamic theming of individual groups is limited. Consider splitting SVG into separate files or converting to React Native SVG components for more flexible theming.
+## Getting Started
 
----
+### Prerequisites
 
-# Getting Started
+- Node.js 20+
+- Xcode 15+ (iOS)
+- Android Studio (Android)
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
-
-## Step 1: Start Metro
-
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
-
-To start the Metro dev server, run the following command from the root of your React Native project:
+### Installation
 
 ```sh
-# Using npm
+npm install
+cd ios && bundle install && bundle exec pod install && cd ..
+```
+
+### Running
+
+```sh
 npm start
-
-# OR using Yarn
-yarn start
+npm run ios   # or npm run android
 ```
 
-## Step 2: Build and run your app
+## Credits
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+- [Map SVG source](https://github.com/k1tesurfen/mapome)
 
-### Android
+## License
 
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
-- [ map svg source](https://github.com/k1tesurfen/mapome)
+MIT
