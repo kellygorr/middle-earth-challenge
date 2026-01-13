@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="logo.png" width="120" alt="Middle-earth Challenge">
+  <img src="logo.png" width="120" alt="Middle Earth Challenge">
 </p>
 
-# Middle-earth Challenge
+# Middle Earth Challenge
 
-A fitness tracking app that maps your real-world walking and running distance onto the journey from Bag End to Mount Doom — 1,779 km (1,235 miles) across Middle-earth.
+This app maps your real-world distance onto Frodo’s journey from Bag End to Mount Doom — 1,235 miles across Middle-earth.  You can walk, run, or move however you like, every step counts towards your progress.
 
 <p align="center">
   <img src="screen1.jpg" width="200" alt="Screenshot 1">
@@ -14,7 +14,7 @@ A fitness tracking app that maps your real-world walking and running distance on
 
 ### Features
 
-- **Interactive Map** — Pan and zoom across a detailed map of Middle-earth
+- **Interactive Map** — Pan and zoom across a detailed map of Middle Earth
 - **Health Integration** — Syncs with Health Connect (Android) to track your distance automatically
 - **Manual Entry** — Add distance manually if you prefer
 - **Offline-First** — All data stored locally on your device
