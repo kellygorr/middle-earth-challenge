@@ -29,7 +29,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   // Initial state
   id: 'default',
   labelSize: 'regular',
-  currentTheme: 'classic',
+  currentTheme: 'minimalist',
   showTriviaMarkers: true,
   showPointLabels: true,
   colorizeMap: true,
