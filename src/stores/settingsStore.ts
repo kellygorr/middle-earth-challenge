@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { UserSettings, LabelSize, SyncProvider } from '../types';
 import { ThemeName, themes } from '../styles/themes';
 import { database } from '../services/database';
+import { useProgressStore } from './progressStore';
 
 interface SettingsStore extends UserSettings {
   showWelcome: boolean;
@@ -83,6 +84,10 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   setDevMode: enabled => {
     set({ devMode: enabled });
     database.updateUserSettings({ devMode: enabled });
+    // When disabling dev mode, restore the real miles
+    if (!enabled) {
+      useProgressStore.getState().clearTestOverride();
+    }
   },
 
   setUseMiles: useMiles => {

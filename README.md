@@ -1,6 +1,16 @@
+<p align="center">
+  <img src="logo.png" width="120" alt="Middle-earth Challenge">
+</p>
+
 # Middle-earth Challenge
 
 A fitness tracking app that maps your real-world walking and running distance onto the journey from Bag End to Mount Doom — 1,779 km (1,235 miles) across Middle-earth.
+
+<p align="center">
+  <img src="screen1.jpg" width="200" alt="Screenshot 1">
+  <img src="screen2.jpg" width="200" alt="Screenshot 2">
+  <img src="screen3.jpg" width="200" alt="Screenshot 3">
+</p>
 
 ### Features
 

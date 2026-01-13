@@ -113,7 +113,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
           : state.miles ?? 0,
     })),
   clearTestOverride: () =>
-    set({ isTestOverride: false, testOverrideBaseMiles: null }),
+    set(state => ({
+      miles: state.testOverrideBaseMiles ?? state.miles,
+      isTestOverride: false,
+      testOverrideBaseMiles: null,
+    })),
 
   setTriviaUnlocks: unlocks => set({ triviaUnlocks: unlocks }),
 

@@ -25,17 +25,18 @@ export default function DevMiles({ keyboardOffset }: DevMilesProps) {
   const isLandscape = width > height;
   const setTestOverrideMiles = useProgressStore(state => state.setTestMiles);
   const isTestOverride = useProgressStore(state => state.isTestOverride);
+  const currentMiles = useProgressStore(state => state.miles);
   const setDevMode = useSettingsStore(state => state.setDevMode);
   const useMiles = useSettingsStore(state => state.useMiles);
-  const [testMiles, setTestMiles] = useState('0');
+  const [testMiles, setTestMiles] = useState('');
   const inputRef = useRef<TextInput>(null);
 
-  // Clear the test miles input whenever the test override is no longer active
+  // Initialize with current miles when opening, clear when test override ends
   useEffect(() => {
-    if (!isTestOverride) {
-      setTestMiles('');
+    if (!isTestOverride && currentMiles !== null) {
+      setTestMiles(String(Math.round(currentMiles * 100) / 100));
     }
-  }, [isTestOverride]);
+  }, [isTestOverride, currentMiles]);
 
   return (
     <View
