@@ -66,7 +66,6 @@ export interface UserSettings {
   id: string;
   labelSize: LabelSize;
   currentTheme: ThemeName;
-  showTriviaMarkers: boolean;
   showPointLabels: boolean;
   colorizeMap: boolean;
   reducedMapTitles: boolean;

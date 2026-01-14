@@ -28,9 +28,8 @@ class Database {
         id TEXT PRIMARY KEY,
         label_size TEXT NOT NULL DEFAULT 'regular',
         current_theme TEXT NOT NULL DEFAULT 'minimalist',
-        show_trivia_markers INTEGER NOT NULL DEFAULT 1,
         show_checkpoint_labels INTEGER NOT NULL DEFAULT 1,
-        colorize_map INTEGER NOT NULL DEFAULT 0,
+        colorize_map INTEGER NOT NULL DEFAULT 1,
         reduced_map_titles INTEGER NOT NULL DEFAULT 1,
         dev_mode INTEGER NOT NULL DEFAULT 0,
         use_miles INTEGER NOT NULL DEFAULT 1,
@@ -68,8 +67,8 @@ class Database {
 
     // Use INSERT OR IGNORE to avoid UNIQUE constraint errors on race conditions
     this.db.executeSync(
-      `INSERT OR IGNORE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp)
-       VALUES ('default', 'regular', 'classic', 1, 1, 0, 1, 0, 0, 'none', NULL, NULL)`,
+      `INSERT OR IGNORE INTO user_settings (id, label_size, current_theme, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, use_miles, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp, live_sync_enabled)
+       VALUES ('default', 'regular', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
     );
   }
 
@@ -87,8 +86,8 @@ class Database {
     // If no settings found, create defaults
     if (!row) {
       this.db.executeSync(
-        `INSERT OR REPLACE INTO user_settings (id, label_size, current_theme, show_trivia_markers, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp)
-         VALUES ('default', 'regular', 'classic', 1, 1, 0, 1, 0, 0, 'none', NULL, NULL)`,
+        `INSERT OR REPLACE INTO user_settings (id, label_size, current_theme, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, use_miles, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp, live_sync_enabled)
+         VALUES ('default', 'regular', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
       );
 
       const newResult = this.db.executeSync(
@@ -106,7 +105,6 @@ class Database {
       id: row.id as string,
       labelSize: row.label_size as LabelSize,
       currentTheme: row.current_theme as ThemeName,
-      showTriviaMarkers: row.show_trivia_markers === 1,
       showPointLabels: row.show_checkpoint_labels === 1,
       colorizeMap: row.colorize_map === 1,
       reducedMapTitles: row.reduced_map_titles === 1,
@@ -138,10 +136,6 @@ class Database {
     if (updates.currentTheme !== undefined) {
       fields.push('current_theme = ?');
       values.push(updates.currentTheme);
-    }
-    if (updates.showTriviaMarkers !== undefined) {
-      fields.push('show_trivia_markers = ?');
-      values.push(updates.showTriviaMarkers ? 1 : 0);
     }
     if (updates.showPointLabels !== undefined) {
       fields.push('show_checkpoint_labels = ?');

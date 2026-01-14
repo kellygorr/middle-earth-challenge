@@ -10,7 +10,6 @@ interface SettingsStore extends UserSettings {
   // Actions
   setLabelSize: (size: LabelSize) => void;
   setTheme: (theme: ThemeName) => void;
-  setShowTriviaMarkers: (show: boolean) => void;
   setShowPointLabels: (show: boolean) => void;
   setColorizeMap: (colorize: boolean) => void;
   setShowWelcome: (show: boolean) => void;
@@ -31,7 +30,6 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   id: 'default',
   labelSize: 'regular',
   currentTheme: 'minimalist',
-  showTriviaMarkers: true,
   showPointLabels: true,
   colorizeMap: true,
   showWelcome: true,
@@ -55,11 +53,6 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   setTheme: theme => {
     set({ currentTheme: theme });
     database.updateUserSettings({ currentTheme: theme });
-  },
-
-  setShowTriviaMarkers: show => {
-    set({ showTriviaMarkers: show });
-    database.updateUserSettings({ showTriviaMarkers: show });
   },
 
   setShowPointLabels: show => {
