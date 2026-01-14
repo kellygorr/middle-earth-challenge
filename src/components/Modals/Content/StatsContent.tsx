@@ -95,19 +95,24 @@ export default function StatsContent() {
         />
         <TwoColumnRow
           labels={[
-            `This week (${
-              stats.activity.milesThisWeek - stats.activity.milesLastWeek >= 0
-                ? '+'
-                : ''
-            }${formatDistance(
-              stats.activity.milesThisWeek - stats.activity.milesLastWeek,
-              true,
-            )})`,
+            stats.activity.milesLastWeek > 0
+              ? `This week (${
+                  stats.activity.milesThisWeek - stats.activity.milesLastWeek >=
+                  0
+                    ? '+'
+                    : ''
+                }${formatDistance(
+                  stats.activity.milesThisWeek - stats.activity.milesLastWeek,
+                  true,
+                )})`
+              : 'This week',
             'Last week',
           ]}
           values={[
             formatDistance(stats.activity.milesThisWeek, true),
-            formatDistance(stats.activity.milesLastWeek, true),
+            stats.activity.milesLastWeek > 0
+              ? formatDistance(stats.activity.milesLastWeek, true)
+              : '—',
           ]}
           isLast
         />

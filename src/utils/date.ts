@@ -138,8 +138,12 @@ export function formatDistance(
   const smallPerLarge = useMiles ? FEET_PER_MILE : METERS_PER_KM;
 
   // Handle noDecimals - round down (floor) to prevent early completion display
+  // Show "<1" for values between 0 and 1 to indicate progress
   if (noDecimals) {
     const floored = Math.floor(Math.abs(distance)) * Math.sign(distance);
+    if (floored === 0 && distance > 0) {
+      return includeUnits ? `<1 ${largeUnit}` : '<1';
+    }
     return includeUnits ? `${floored} ${largeUnit}` : floored.toString();
   }
 
