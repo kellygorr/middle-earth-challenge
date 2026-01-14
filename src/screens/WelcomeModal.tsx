@@ -12,7 +12,6 @@ import Animated from 'react-native-reanimated';
 import {
   SafeAreaProvider,
   SafeAreaView,
-  useSafeAreaInsets,
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
 import { useTheme } from '../stores/settingsStore';
@@ -38,7 +37,6 @@ export default function WelcomeModal({
 }: WelcomeModalProps) {
   const theme = useTheme();
   const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
   const miles = useProgressStore(state => state.miles) || 0;
   const syncError = useProgressStore(state => state.syncError);
@@ -111,7 +109,7 @@ export default function WelcomeModal({
                     typographyThemed(theme).titleLargeInverted,
                   ]}
                 >
-                  Middle Earth
+                  Middle Earth Challenge
                 </Text>
                 <Text
                   style={[
@@ -119,7 +117,7 @@ export default function WelcomeModal({
                     typographyThemed(theme).subtitleLargeInverted,
                   ]}
                 >
-                  1,235 miles from Bag End to Mount Doom
+                  Walk from Bag End to Mount Doom
                 </Text>
                 <Button onPress={handleDismiss} variant="brand" size="large">
                   {miles > 0 ? 'Continue journey' : 'Begin journey'}

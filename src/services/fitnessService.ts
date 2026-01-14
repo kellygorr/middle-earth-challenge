@@ -356,7 +356,10 @@ class FitnessService implements FitnessServiceInterface {
       endDate: new Date().toISOString(),
     };
 
-    // Try to get walking/running distance first
+    let distanceMiles = 0;
+    let stepsMiles = 0;
+
+    // Get walking/running distance
     try {
       const distance = await new Promise<number>((resolve, reject) => {
         appleHealth.default.getDistanceWalkingRunning(
@@ -371,15 +374,12 @@ class FitnessService implements FitnessServiceInterface {
           },
         );
       });
-
-      if (distance > 0) {
-        return distance;
-      }
+      distanceMiles = distance;
     } catch {
-      // Distance not available, trying steps fallback
+      // Distance not available
     }
 
-    // Fallback to steps if no distance data
+    // Get steps and convert to miles
     try {
       const steps = await new Promise<number>((resolve, reject) => {
         appleHealth.default.getStepCount(
@@ -395,14 +395,14 @@ class FitnessService implements FitnessServiceInterface {
       });
 
       if (steps > 0) {
-        const miles = this.stepsToMiles(steps);
-        return miles;
+        stepsMiles = this.stepsToMiles(steps);
       }
     } catch {
-      // Steps also not available
+      // Steps not available
     }
 
-    return 0;
+    // Return the higher value to capture all activity
+    return Math.max(distanceMiles, stepsMiles);
   }
 
   /**
@@ -412,7 +412,10 @@ class FitnessService implements FitnessServiceInterface {
     const hc = await getHealthConnectModule();
     if (!hc) return 0;
 
-    // Try to get distance data first
+    let distanceMiles = 0;
+    let stepsMiles = 0;
+
+    // Get distance data
     try {
       const distanceResult = await hc.readRecords('Distance', {
         timeRangeFilter: {
@@ -425,14 +428,12 @@ class FitnessService implements FitnessServiceInterface {
         (sum, record) => sum + (record.distance?.inMeters || 0),
         0,
       );
-      if (totalMeters > 0) {
-        return this.metersToMiles(totalMeters);
-      }
+      distanceMiles = this.metersToMiles(totalMeters);
     } catch {
-      // Distance data not available, trying steps fallback
+      // Distance data not available
     }
 
-    // Fallback to steps if no distance data
+    // Get steps and convert to miles
     try {
       const stepsResult = await hc.readRecords('Steps', {
         timeRangeFilter: {
@@ -446,14 +447,14 @@ class FitnessService implements FitnessServiceInterface {
         0,
       );
       if (totalSteps > 0) {
-        const miles = this.stepsToMiles(totalSteps);
-        return miles;
+        stepsMiles = this.stepsToMiles(totalSteps);
       }
     } catch {
-      // Steps data also not available
+      // Steps data not available
     }
 
-    return 0;
+    // Return the higher value to capture all activity
+    return Math.max(distanceMiles, stepsMiles);
   }
 
   /**
