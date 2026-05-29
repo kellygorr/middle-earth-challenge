@@ -16,7 +16,7 @@ import {
 } from 'react-native-safe-area-context';
 import { useTheme } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
-import { typography, typographyThemed } from '../styles/typography';
+import { typographyThemed } from '../styles/typography';
 import { spacing, borderRadius, iconSizes } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
@@ -141,6 +141,7 @@ export default function WelcomeModal({
                     />
                     <Text
                       style={[
+                        typographyThemed(theme).body,
                         styles.syncErrorText,
                         { color: theme.colors.textInverted },
                       ]}
@@ -168,6 +169,11 @@ export default function WelcomeModal({
                 )}
               </View>
             </Animated.View>
+            {/* Sync indicator + progress bar, stacked in flow so the pill
+                never overlaps the journey progress bar. */}
+            <View style={styles.syncIndicatorContainer} pointerEvents="none">
+              <SyncIndicator />
+            </View>
             {miles > 0 && (
               <View
                 style={[
@@ -175,13 +181,9 @@ export default function WelcomeModal({
                   { paddingHorizontal: spacing.xl },
                 ]}
               >
-                <JourneyProgressBar isLocked={false} darkMode />
+                <JourneyProgressBar darkMode />
               </View>
             )}
-            {/* Sync indicator - matches MapScreen position */}
-            <View style={styles.syncIndicatorContainer} pointerEvents="none">
-              <SyncIndicator />
-            </View>
           </SafeAreaView>
         </Animated.View>
       </SafeAreaProvider>
@@ -216,11 +218,9 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   title: {
-    ...typography.titleLarge,
     marginBottom: spacing.md,
   },
   subtitle: {
-    ...typography.subtitleLarge,
     marginBottom: spacing.xxl,
   },
   bottomProgressContainer: {
@@ -229,11 +229,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   syncIndicatorContainer: {
-    position: 'absolute',
-    bottom: 100,
-    left: 0,
-    right: 0,
+    width: '100%',
     alignItems: 'center',
+    paddingBottom: spacing.md,
   },
   syncErrorContainer: {
     flexDirection: 'row',
@@ -246,7 +244,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   syncErrorText: {
-    ...typography.body,
     flex: 1,
     opacity: 0.9,
   },
