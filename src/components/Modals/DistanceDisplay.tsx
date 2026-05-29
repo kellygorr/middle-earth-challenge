@@ -5,7 +5,7 @@ import { useTheme } from '../../stores/settingsStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useProgressStore } from '../../stores/progressStore';
 import { useUIStore } from '../../stores/uiStore';
-import { typography, typographyThemed } from '../../styles/typography';
+import { typographyThemed } from '../../styles/typography';
 import { spacing, borderRadius } from '../../styles/global';
 import { formatDistance } from '../../utils/date';
 
@@ -122,7 +122,7 @@ export function DistanceDisplay() {
           <View style={[styles.pill, { backgroundColor: pillBackground }]}>
             <Text
               style={[
-                typography.titleLarge,
+                typographyThemed(theme).titleLarge,
                 styles.value,
                 { color: theme.colors.checkpointLabel },
               ]}
@@ -133,7 +133,11 @@ export function DistanceDisplay() {
                 useMiles,
               })}
               <Text
-                style={[styles.suffix, { color: theme.colors.checkpointLabel }]}
+                style={[
+                  typographyThemed(theme).button,
+                  styles.suffix,
+                  { color: theme.colors.checkpointLabel },
+                ]}
               >
                 {unitLabel}
               </Text>
@@ -144,7 +148,7 @@ export function DistanceDisplay() {
           <View style={[styles.pill, { backgroundColor: pillBackground }]}>
             <Text
               style={[
-                typography.titleLarge,
+                typographyThemed(theme).titleLarge,
                 styles.value,
                 { color: theme.colors.checkpointLabel },
               ]}
@@ -161,7 +165,11 @@ export function DistanceDisplay() {
                     useMiles,
                   })}
               <Text
-                style={[styles.suffix, { color: theme.colors.checkpointLabel }]}
+                style={[
+                  typographyThemed(theme).button,
+                  styles.suffix,
+                  { color: theme.colors.checkpointLabel },
+                ]}
               >
                 {unitLabel}
               </Text>
@@ -207,7 +215,6 @@ const styles = StyleSheet.create({
     textAlign: 'left',
   },
   suffix: {
-    fontSize: 12,
     fontWeight: '600',
   },
 });

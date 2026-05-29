@@ -31,6 +31,7 @@ import {
   formatDistance,
 } from '../../../utils/date';
 import EmptyState from '../EmptyState';
+import { TrackingOptions } from '../../TrackingOptions';
 import { useScrollIntoView } from '../../../hooks/useScrollIntoView';
 
 // Number of days to load at a time
@@ -328,12 +329,36 @@ export default function DistanceContent() {
   };
 
   if (dayGroups.length === 0) {
+    const unit = useMiles ? 'miles' : 'kilometers';
     return (
       <EmptyState
-        message={`Add ${
-          useMiles ? 'miles' : 'kilometers'
-        } to get started tracking your journey!\n\nOr start syncing your health data from the Settings screen`}
-      />
+        message={
+          <Text
+            style={[
+              typographyThemed(theme).bodySecondary,
+              styles.emptyStateText,
+            ]}
+          >
+            Add {unit} to get started tracking your journey
+          </Text>
+        }
+      >
+        <Text
+          style={[
+            typographyThemed(theme).captionSecondary,
+            styles.emptyStateText,
+          ]}
+        >
+          — or —
+        </Text>
+        <TrackingOptions
+          showAddOption={false}
+          showDevToggle={false}
+          onOpenSyncModal={() =>
+            useUIStore.getState().pushModal({ type: 'sync' })
+          }
+        />
+      </EmptyState>
     );
   }
 
@@ -552,6 +577,9 @@ export default function DistanceContent() {
 }
 
 const styles = StyleSheet.create({
+  emptyStateText: {
+    textAlign: 'center',
+  },
   dayHeader: {
     flexDirection: 'row',
     alignItems: 'center',

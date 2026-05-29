@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../../stores/settingsStore';
-import { typography } from '../../styles/typography';
+import { typographyThemed } from '../../styles/typography';
 import { spacing, borderRadius, iconSizes } from '../../styles/global';
 import { LockIcon } from '../../assets/icons';
 
@@ -18,7 +18,7 @@ export function LockedCheckpointBanner() {
       <View style={styles.content}>
         <Text
           style={[
-            typography.caption,
+            typographyThemed(theme).caption,
             styles.text,
             { color: theme.colors.checkpointLabel },
           ]}

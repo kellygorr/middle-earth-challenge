@@ -42,10 +42,15 @@ export default function PositionedPoint({
 }: PositionedPointProps) {
   const labelSize = useSettingsStore(state => state.labelSize);
 
-  const LABEL_HEIGHT_REGULAR = 24;
-  const LABEL_HEIGHT_LARGE = 28;
+  const LABEL_HEIGHT_SMALL = 20;
+  const LABEL_HEIGHT_MEDIUM = 26;
+  const LABEL_HEIGHT_LARGE = 30;
   const labelHeight =
-    labelSize === 'large' ? LABEL_HEIGHT_LARGE : LABEL_HEIGHT_REGULAR;
+    labelSize === 'large'
+      ? LABEL_HEIGHT_LARGE
+      : labelSize === 'small'
+      ? LABEL_HEIGHT_SMALL
+      : LABEL_HEIGHT_MEDIUM;
 
   const animatedStyle = useAnimatedStyle(() => {
     const labelOffset = item.labelPosition === 'top' ? labelHeight : 0;

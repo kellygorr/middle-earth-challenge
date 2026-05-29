@@ -34,6 +34,8 @@ export default function SettingsContent() {
   const setTheme = useSettingsStore(state => state.setTheme);
   const labelSize = useSettingsStore(state => state.labelSize);
   const setLabelSize = useSettingsStore(state => state.setLabelSize);
+  const textSize = useSettingsStore(state => state.textSize);
+  const setTextSize = useSettingsStore(state => state.setTextSize);
   const colorizeMap = useSettingsStore(state => state.colorizeMap);
   const setColorizeMap = useSettingsStore(state => state.setColorizeMap);
   const reducedMapTitles = useSettingsStore(state => state.reducedMapTitles);
@@ -93,7 +95,7 @@ export default function SettingsContent() {
       <Section>
         <SectionHeader title="Map" />
 
-        {/* Large Labels */}
+        {/* Map label size */}
         <View
           style={[
             styles.contentRow,
@@ -103,17 +105,46 @@ export default function SettingsContent() {
           ]}
         >
           <Text style={[typographyThemed(theme).bodyPrimary, styles.flex1]}>
-            Large labels
+            Map label size
           </Text>
-          <Switch
-            value={labelSize === 'large'}
-            onValueChange={value => setLabelSize(value ? 'large' : 'regular')}
-            trackColor={{
-              false: theme.colors.switchInactive,
-              true: theme.colors.buttonPrimary,
-            }}
-            thumbColor={theme.colors.surface}
-          />
+          <View style={styles.labelSizeGroup}>
+            {(['small', 'medium', 'large'] as const).map(size => (
+              <Button
+                key={size}
+                onPress={() => setLabelSize(size)}
+                variant={labelSize === size ? 'brand' : 'outline'}
+                size="xs"
+              >
+                {size === 'small' ? 'S' : size === 'medium' ? 'M' : 'L'}
+              </Button>
+            ))}
+          </View>
+        </View>
+
+        {/* Text size */}
+        <View
+          style={[
+            styles.contentRow,
+            styles.contentRowSpaceBetween,
+            styles.contentRowBorderBottom,
+            { borderBottomColor: theme.colors.divider },
+          ]}
+        >
+          <Text style={[typographyThemed(theme).bodyPrimary, styles.flex1]}>
+            Text size
+          </Text>
+          <View style={styles.labelSizeGroup}>
+            {(['small', 'medium', 'large'] as const).map(size => (
+              <Button
+                key={size}
+                onPress={() => setTextSize(size)}
+                variant={textSize === size ? 'brand' : 'outline'}
+                size="xs"
+              >
+                {size === 'small' ? 'S' : size === 'medium' ? 'M' : 'L'}
+              </Button>
+            ))}
+          </View>
         </View>
 
         {/* Map Colors */}
@@ -139,7 +170,7 @@ export default function SettingsContent() {
           />
         </View>
 
-        {/* Reduced Map Titles */}
+        {/* Subtle map labels */}
         <View
           style={[
             styles.contentRow,
@@ -149,7 +180,7 @@ export default function SettingsContent() {
           ]}
         >
           <Text style={[typographyThemed(theme).bodyPrimary, styles.flex1]}>
-            Reduced map titles
+            Subtle map labels
           </Text>
           <Switch
             value={reducedMapTitles}
@@ -375,6 +406,10 @@ const styles = StyleSheet.create({
   },
   themeButtonWrapper: {
     flex: 1,
+  },
+  labelSizeGroup: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   flex1: {
     flex: 1,

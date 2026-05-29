@@ -25,6 +25,7 @@ import { SyncIcon } from '../assets/icons';
 import { useProgressStore } from '../stores/progressStore';
 import JourneyProgressBar from '../components/JourneyProgressBar';
 import SyncIndicator from '../components/SyncIndicator';
+import SettingsRef from '../components/SettingsRef';
 
 interface WelcomeModalProps {
   visible: boolean;
@@ -39,8 +40,13 @@ export default function WelcomeModal({
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const miles = useProgressStore(state => state.miles) || 0;
-  const syncError = useProgressStore(state => state.syncError);
-  const setSyncError = useProgressStore(state => state.setSyncError);
+  const syncStatus = useProgressStore(state => state.syncStatus);
+  const setSyncStatus = useProgressStore(state => state.setSyncStatus);
+  // Only show a user-actionable reconnect prompt for permission errors.
+  const syncErrorMessage =
+    syncStatus.error?.kind === 'permission' ? syncStatus.error.message : null;
+  const clearSyncError = () =>
+    setSyncStatus(prev => ({ ...prev, phase: 'idle', error: null }));
   const pushModal = useUIStore(state => state.pushModal);
 
   const {
@@ -58,7 +64,7 @@ export default function WelcomeModal({
 
   const handleReconnect = () => {
     // Clear the error and dismiss welcome modal, then open sync modal after exit animation
-    setSyncError(null);
+    clearSyncError();
     dismiss(() => {
       pushModal({ type: 'sync' });
     });
@@ -67,8 +73,8 @@ export default function WelcomeModal({
 
   const handleDismiss = () => {
     // Clear sync error when user dismisses welcome modal
-    if (syncError) {
-      setSyncError(null);
+    if (syncErrorMessage) {
+      clearSyncError();
     }
     onDismiss();
   };
@@ -124,7 +130,7 @@ export default function WelcomeModal({
                 </Button>
 
                 {/* Sync error message */}
-                {syncError && (
+                {syncErrorMessage && (
                   <Pressable
                     style={styles.syncErrorContainer}
                     onPress={handleReconnect}
@@ -139,7 +145,24 @@ export default function WelcomeModal({
                         { color: theme.colors.textInverted },
                       ]}
                     >
-                      {syncError}
+                      {(() => {
+                        const parts = syncErrorMessage.split(/\bSettings\b/);
+                        const elements: React.ReactNode[] = [];
+                        parts.forEach((part, i) => {
+                          if (part.length > 0) {
+                            elements.push(<Text key={`t-${i}`}>{part}</Text>);
+                          }
+                          if (i < parts.length - 1) {
+                            elements.push(
+                              <SettingsRef
+                                key={`s-${i}`}
+                                color={theme.colors.textInverted}
+                              />,
+                            );
+                          }
+                        });
+                        return elements;
+                      })()}
                     </Text>
                   </Pressable>
                 )}

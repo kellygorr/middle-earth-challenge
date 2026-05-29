@@ -2,6 +2,14 @@ import { open, type DB } from '@op-engineering/op-sqlite';
 import { UserSettings, LabelSize, SyncProvider } from '../types';
 import { ThemeName } from '../styles/themes';
 
+// Coerce legacy 'regular' (pre-three-tier label size) to 'medium'.
+function normalizeLabelSize(value: unknown): LabelSize {
+  if (value === 'small' || value === 'medium' || value === 'large') {
+    return value;
+  }
+  return 'medium';
+}
+
 class Database {
   private db: DB | null = null;
 
@@ -26,7 +34,7 @@ class Database {
     this.db.executeSync(`
       CREATE TABLE IF NOT EXISTS user_settings (
         id TEXT PRIMARY KEY,
-        label_size TEXT NOT NULL DEFAULT 'regular',
+        label_size TEXT NOT NULL DEFAULT 'medium',
         current_theme TEXT NOT NULL DEFAULT 'minimalist',
         show_checkpoint_labels INTEGER NOT NULL DEFAULT 1,
         colorize_map INTEGER NOT NULL DEFAULT 1,
@@ -68,7 +76,7 @@ class Database {
     // Use INSERT OR IGNORE to avoid UNIQUE constraint errors on race conditions
     this.db.executeSync(
       `INSERT OR IGNORE INTO user_settings (id, label_size, current_theme, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, use_miles, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp, live_sync_enabled)
-       VALUES ('default', 'regular', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
+       VALUES ('default', 'medium', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
     );
   }
 
@@ -87,7 +95,7 @@ class Database {
     if (!row) {
       this.db.executeSync(
         `INSERT OR REPLACE INTO user_settings (id, label_size, current_theme, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, use_miles, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp, live_sync_enabled)
-         VALUES ('default', 'regular', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
+         VALUES ('default', 'medium', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
       );
 
       const newResult = this.db.executeSync(
@@ -103,7 +111,7 @@ class Database {
 
     return {
       id: row.id as string,
-      labelSize: row.label_size as LabelSize,
+      labelSize: normalizeLabelSize(row.label_size),
       currentTheme: row.current_theme as ThemeName,
       showPointLabels: row.show_checkpoint_labels === 1,
       colorizeMap: row.colorize_map === 1,

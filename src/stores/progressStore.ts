@@ -4,8 +4,53 @@ import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 import trivia from '../constants/trivia.json';
 import { database } from '../services/database';
+import {
+  LONG_SYNC_CHUNK_THRESHOLD,
+  LONG_SYNC_TIME_THRESHOLD_MS,
+} from '../constants/sync';
 
 const SAVE_ID = 'default';
+
+/**
+ * Discriminated error kinds surfaced by the sync pipeline.
+ * `permission` mirrors the existing disconnect message; the rest are new with chunked sync.
+ */
+export type SyncError =
+  | { kind: 'permission'; message: string }
+  | {
+      kind: 'timeout';
+      chunkStart: number;
+      chunkEnd: number;
+      chunksDone: number;
+      chunksTotal: number;
+    }
+  | {
+      kind: 'stalled';
+      chunksDone: number;
+      chunksTotal: number;
+      lastProgressAt: number;
+    }
+  | { kind: 'unknown'; message: string };
+
+export interface SyncStatus {
+  phase: 'idle' | 'syncing' | 'error';
+  chunksDone: number;
+  chunksTotal: number;
+  milesAdded: number;
+  startedAt: number | null;
+  lastProgressAt: number | null;
+  error: SyncError | null;
+}
+
+export const initialSyncStatus: SyncStatus = {
+  phase: 'idle',
+  chunksDone: 0,
+  chunksTotal: 0,
+  milesAdded: 0,
+  startedAt: null,
+  lastProgressAt: null,
+  error: null,
+};
 
 interface ProgressStore {
   // State
@@ -13,9 +58,7 @@ interface ProgressStore {
   triviaUnlocks: TriviaUnlock[];
   distanceEntries: DistanceEntry[];
   lastSyncDate: string | null;
-  isSyncing: boolean;
-  syncMessage: string | null; // Message to show during sync (e.g., "+0.5 miles")
-  syncError: string | null; // Error message when sync fails (e.g., permissions lost)
+  syncStatus: SyncStatus;
   // Dev/test override state
   isTestOverride: boolean;
   testOverrideBaseMiles: number | null;
@@ -34,9 +77,10 @@ interface ProgressStore {
   removeDistanceEntry: (id: string) => Promise<void>;
   setDistanceEntries: (entries: DistanceEntry[]) => void;
   setLastSyncDate: (date: string) => void;
-  setIsSyncing: (syncing: boolean) => void;
-  setSyncMessage: (message: string | null) => void;
-  setSyncError: (error: string | null) => void;
+  setSyncStatus: (
+    status: SyncStatus | ((prev: SyncStatus) => SyncStatus),
+  ) => void;
+  resetSyncStatus: () => void;
   resetProgress: () => Promise<void>;
   persistMilesSnapshot: () => Promise<void>;
 
@@ -73,9 +117,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   triviaUnlocks: [],
   distanceEntries: [],
   lastSyncDate: null,
-  isSyncing: false,
-  syncMessage: null,
-  syncError: null,
+  syncStatus: initialSyncStatus,
   isTestOverride: false,
   testOverrideBaseMiles: null,
 
@@ -203,11 +245,13 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
 
   setLastSyncDate: date => set({ lastSyncDate: date }),
 
-  setIsSyncing: syncing => set({ isSyncing: syncing }),
+  setSyncStatus: status =>
+    set(state => ({
+      syncStatus:
+        typeof status === 'function' ? status(state.syncStatus) : status,
+    })),
 
-  setSyncMessage: message => set({ syncMessage: message }),
-
-  setSyncError: error => set({ syncError: error }),
+  resetSyncStatus: () => set({ syncStatus: initialSyncStatus }),
 
   persistMilesSnapshot: async () => {
     const miles = get().miles;
@@ -224,8 +268,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       triviaUnlocks: [],
       distanceEntries: [],
       lastSyncDate: null,
-      isSyncing: false,
-      syncError: null,
+      syncStatus: initialSyncStatus,
       isTestOverride: false,
       testOverrideBaseMiles: null,
     });
@@ -400,3 +443,44 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     return null;
   },
 }));
+
+// ---------------------------------------------------------------------------
+// Sync selectors
+//
+// Thresholds live in src/constants/sync.ts. These helpers operate on a
+// SyncStatus value (or read it from the store) so components stay declarative.
+// ---------------------------------------------------------------------------
+
+/** True once we believe the sync is long enough to warrant the overlay UI. */
+export function selectIsLongSync(status: SyncStatus): boolean {
+  if (status.phase !== 'syncing') return false;
+  if (status.chunksTotal > LONG_SYNC_CHUNK_THRESHOLD) return true;
+  if (
+    status.startedAt !== null &&
+    Date.now() - status.startedAt > LONG_SYNC_TIME_THRESHOLD_MS
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Rough seconds-remaining estimate based on chunks completed so far. */
+export function selectSyncEtaSeconds(status: SyncStatus): number | null {
+  if (
+    status.phase !== 'syncing' ||
+    status.chunksDone === 0 ||
+    status.startedAt === null
+  ) {
+    return null;
+  }
+  const elapsedMs = Date.now() - status.startedAt;
+  const msPerChunk = elapsedMs / status.chunksDone;
+  const remainingChunks = Math.max(0, status.chunksTotal - status.chunksDone);
+  return Math.round((remainingChunks * msPerChunk) / 1000);
+}
+
+/** Fraction (0..1) of chunks completed - useful for a progress bar. */
+export function selectSyncDayProgress(status: SyncStatus): number {
+  if (status.chunksTotal <= 0) return 0;
+  return Math.min(1, status.chunksDone / status.chunksTotal);
+}

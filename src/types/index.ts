@@ -59,7 +59,7 @@ export interface TriviaUnlock {
 }
 
 // User settings types
-export type LabelSize = 'regular' | 'large';
+export type LabelSize = 'small' | 'medium' | 'large';
 export type SyncProvider = 'none' | 'health-connect' | 'apple-health';
 
 export interface UserSettings {
