@@ -8,9 +8,13 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import { useTheme } from '../stores/settingsStore';
-import { useProgressStore } from '../stores/progressStore';
+import { useTheme, useSettingsStore } from '../stores/settingsStore';
+import {
+  useProgressStore,
+  selectSyncEtaSeconds,
+} from '../stores/progressStore';
 import { spacing, borderRadius } from '../styles/global';
+import { CHUNK_DAYS } from '../constants/sync';
 
 const MIN_DISPLAY_TIME = 1000; // Minimum time to show indicator (ms)
 
@@ -20,15 +24,61 @@ interface SyncIndicatorProps {
 
 export default function SyncIndicator({ style }: SyncIndicatorProps) {
   const theme = useTheme();
-  const syncMessage = useProgressStore(state => state.syncMessage);
+  const useMiles = useSettingsStore(state => state.useMiles);
+  const syncStatus = useProgressStore(state => state.syncStatus);
+
+  // Pill is shown for the entire sync window (including long syncs) plus a
+  // brief moment for non-permission errors so the user sees the failure.
+  const isSyncing = syncStatus.phase === 'syncing';
+  const isTransientError =
+    syncStatus.phase === 'error' &&
+    !!syncStatus.error &&
+    syncStatus.error.kind !== 'permission';
+  const showPill = isSyncing || isTransientError;
+
+  // Build the message text. Line 1 is always the top-level state. Line 2
+  // carries progress / ETA / error detail. Both are centered in the pill.
+  const units = useMiles ? 'miles' : 'kilometers';
+  let lineOne: string;
+  let lineTwo: string | null;
+  if (isSyncing) {
+    lineOne = `Syncing ${units}`;
+    if (syncStatus.chunksTotal > 1) {
+      const eta = selectSyncEtaSeconds(syncStatus);
+      const etaLabel =
+        eta !== null && eta > 0
+          ? eta < 60
+            ? ` ~${eta}s left`
+            : ` ~${Math.ceil(eta / 60)}m left`
+          : '';
+      // Translate opaque chunk progress into something the user understands:
+      // approx days of health data caught up so far / total in this sync.
+      const daysDone = syncStatus.chunksDone * CHUNK_DAYS;
+      const daysTotal = syncStatus.chunksTotal * CHUNK_DAYS;
+      const dayWord = daysTotal === 1 ? 'day' : 'days';
+      lineTwo = `${daysDone} of ${daysTotal} ${dayWord}${etaLabel}`;
+    } else {
+      lineTwo = null;
+    }
+  } else if (isTransientError && syncStatus.error?.kind === 'timeout') {
+    lineOne = 'Sync is taking a while';
+    lineTwo = null;
+  } else if (isTransientError && syncStatus.error?.kind === 'stalled') {
+    lineOne = 'Sync stalled';
+    lineTwo = 'Will retry';
+  } else {
+    lineOne = 'Sync hit a snag';
+    lineTwo = null;
+  }
+
   const [isVisible, setIsVisible] = useState(false);
   const showTimeRef = useRef<number>(0);
 
-  // Opacity animation - fade in/out based on syncMessage
+  // Opacity animation - fade in/out based on showPill
   const opacity = useSharedValue(0);
 
   useEffect(() => {
-    if (syncMessage) {
+    if (showPill) {
       showTimeRef.current = Date.now();
       setIsVisible(true);
       opacity.value = withTiming(1, {
@@ -36,7 +86,6 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
         easing: Easing.out(Easing.ease),
       });
     } else if (isVisible) {
-      // Only fade out if we were visible (prevents initial null trigger)
       const elapsed = Date.now() - showTimeRef.current;
       const remainingTime = Math.max(0, MIN_DISPLAY_TIME - elapsed);
 
@@ -62,14 +111,13 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
         fadeOut();
       }
     }
-  }, [syncMessage, opacity, isVisible]);
+  }, [showPill, opacity, isVisible]);
 
-  // Rotating animation for sync icon - step-based rotation in a circle
+  // Rotating animation for sync icon
   const syncRotation = useSharedValue(0);
 
   useEffect(() => {
-    if (syncMessage) {
-      // Step rotation: move 45 degrees every 350ms
+    if (showPill) {
       const interval = setInterval(() => {
         syncRotation.value = withTiming(syncRotation.value + 45, {
           duration: 150,
@@ -78,8 +126,7 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
       }, 350);
       return () => clearInterval(interval);
     }
-    // Don't reset rotation when exiting - let it fade out at current position
-  }, [syncMessage, syncRotation]);
+  }, [showPill, syncRotation]);
 
   const containerStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -113,9 +160,25 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
             />
           </Svg>
         </Animated.View>
-        <Text style={[styles.text, { color: theme.colors.checkpointLabel }]}>
-          Syncing miles...
-        </Text>
+        <View style={styles.textColumn}>
+          <Text
+            style={[styles.text, { color: theme.colors.checkpointLabel }]}
+            numberOfLines={1}
+          >
+            {lineOne}
+          </Text>
+          {lineTwo && (
+            <Text
+              style={[
+                styles.textSecondary,
+                { color: theme.colors.checkpointLabel },
+              ]}
+              numberOfLines={1}
+            >
+              {lineTwo}
+            </Text>
+          )}
+        </View>
       </View>
     </Animated.View>
   );
@@ -123,18 +186,31 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
 
 const styles = StyleSheet.create({
   container: {
-    // Default positioning - can be overridden via style prop
+    // Default positioning - can be overridden via style prop.
+    flexShrink: 1,
   },
   content: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full,
-    gap: spacing.sm,
+    borderRadius: borderRadius.lg,
+    gap: spacing.md,
+    flexShrink: 1,
+  },
+  textColumn: {
+    flexShrink: 1,
+    alignItems: 'center',
   },
   text: {
     fontSize: 14,
     fontWeight: '600',
+    flexShrink: 1,
+  },
+  textSecondary: {
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.85,
+    flexShrink: 1,
   },
 });

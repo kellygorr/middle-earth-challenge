@@ -28,7 +28,7 @@ interface SettingsStore extends UserSettings {
 export const useSettingsStore = create<SettingsStore>(set => ({
   // Initial state
   id: 'default',
-  labelSize: 'regular',
+  labelSize: 'medium',
   currentTheme: 'minimalist',
   showPointLabels: true,
   colorizeMap: true,
@@ -121,7 +121,6 @@ export const useSettingsStore = create<SettingsStore>(set => ({
         id: settings.id,
         labelSize: settings.labelSize,
         currentTheme: settings.currentTheme,
-        showTriviaMarkers: settings.showTriviaMarkers,
         showPointLabels: settings.showPointLabels,
         colorizeMap: settings.colorizeMap,
         reducedMapTitles: settings.reducedMapTitles,

@@ -8,6 +8,7 @@ import { fitnessService } from '../../../services/fitnessService';
 import Button from '../../Buttons/Button';
 import SectionHeader from '../SectionHeader';
 import ToggleRow from '../ToggleRow';
+import SettingsRef from '../../SettingsRef';
 
 interface SyncOption {
   id: SyncProvider;
@@ -263,8 +264,8 @@ export default function SyncContent() {
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.sectionText]}
         >
-          You can disable syncing or delete synced data at any time from the
-          Settings menu.
+          You can disable syncing or delete synced data at any time from{' '}
+          <SettingsRef />.
         </Text>
       </View>
 
