@@ -9,6 +9,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { spacing, borderRadius, iconSizes } from '../styles/global';
+import { typographyThemed } from '../styles/typography';
 import { useProgressStore } from '../stores/progressStore';
 
 import Button, { IconButton } from './Buttons';
@@ -112,6 +113,7 @@ export default function DevMiles({
           <TextInput
             ref={inputRef}
             style={[
+              typographyThemed(theme).body,
               styles.input,
               {
                 backgroundColor: theme.colors.surface,
@@ -126,7 +128,13 @@ export default function DevMiles({
             placeholder="0"
             placeholderTextColor={theme.colors.textSecondary}
           />
-          <Text style={[styles.label, { color: theme.colors.textInverted }]}>
+          <Text
+            style={[
+              typographyThemed(theme).caption,
+              styles.label,
+              { color: theme.colors.textInverted },
+            ]}
+          >
             /{' '}
             {formatDistance(TOTAL_JOURNEY_MILES, {
               useLargeUnit: true,
@@ -179,13 +187,12 @@ const styles = StyleSheet.create({
   centeredGroup: {
     marginRight: spacing.md,
   },
-  label: { fontSize: 14, marginHorizontal: spacing.sm },
+  label: { marginHorizontal: spacing.sm },
   input: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.sm,
     minWidth: 80,
-    fontSize: 16,
     textAlign: 'center',
   },
 });

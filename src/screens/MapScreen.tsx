@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
 import {
   GestureHandlerRootView,
@@ -71,9 +71,6 @@ export default function MapScreen() {
   const pushModal = useUIStore(state => state.pushModal);
 
   const keyboardOffset = useKeyboardOffset(20);
-  // Measured height of the DevMiles panel (when devMode is on) so we can
-  // lift the SyncIndicator above it instead of letting them overlap.
-  const [devPanelHeight, setDevPanelHeight] = useState(0);
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const phase = useInitializationStore(state => state.phase);
   const setPhase = useInitializationStore(state => state.setPhase);
@@ -351,6 +348,17 @@ export default function MapScreen() {
 
   // Keyboard offset handled by useKeyboardOffset
 
+  console.log('[MapScreen] render', {
+    phase,
+    showWelcome,
+    miles,
+    mapBg: theme.colors.mapBackground,
+    width,
+    height,
+    mapWidth,
+    mapHeight,
+  });
+
   return (
     <GestureHandlerRootView
       style={[
@@ -467,6 +475,7 @@ export default function MapScreen() {
                 : 'default'
             }
             flatSide="left"
+            isLabelButton
           >
             {formatDistance(miles, {
               includeUnits: true,
@@ -554,6 +563,7 @@ export default function MapScreen() {
                     : 'default'
                 }
                 hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+                isLabelButton
               >
                 Labels
               </Button>
@@ -561,7 +571,10 @@ export default function MapScreen() {
           </View>
         </View>
 
-        {/* Bottom Row */}
+        {/* Bottom Row: sync pill on the left, icon column (recenter / +) on the
+            right. flexDirection: row + alignItems: flex-end keeps the pill's
+            bottom edge level with the + button's bottom edge, regardless of
+            their differing heights. */}
         <View
           style={[
             styles.bottomRow,
@@ -571,65 +584,53 @@ export default function MapScreen() {
           ]}
           pointerEvents="box-none"
         >
-          {/* Recenter Button */}
-          <Animated.View
-            style={[{ alignSelf: 'flex-end' }, recenterButtonStyle]}
-          >
-            <IconButton
-              icon={
-                <RecenterIcon
-                  size={iconSizes.medium}
-                  color={theme.colors.mapBackground}
-                />
-              }
-              onPress={() => {
-                clearStickyInfo();
-                handleRecenter();
-              }}
-              hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
-            />
-          </Animated.View>
+          {/* Sync pill: flex:1 so it takes the remaining horizontal space and
+              centers itself. WelcomeModal renders its own pill so we hide this
+              one while welcome is up to avoid duplicates. */}
+          <View style={styles.syncPillSlot} pointerEvents="none">
+            {!showWelcome && <SyncIndicator />}
+          </View>
 
-          {/* Add Miles Button */}
-          <Animated.View
-            style={[{ alignSelf: 'flex-end' }, settingsEnterStyle]}
-          >
-            <IconButton
-              icon={<PlusIcon size={iconSizes.medium} />}
-              onPress={() => {
-                clearStickyInfo();
-                pushModal({ type: 'miles' });
-              }}
-              hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
-            />
-          </Animated.View>
-        </View>
+          {/* Icon column: recenter on top, + on bottom. */}
+          <View style={styles.bottomIconColumn} pointerEvents="box-none">
+            {/* Recenter Button */}
+            <Animated.View
+              style={[{ alignSelf: 'flex-end' }, recenterButtonStyle]}
+            >
+              <IconButton
+                icon={
+                  <RecenterIcon
+                    size={iconSizes.medium}
+                    color={theme.colors.mapBackground}
+                  />
+                }
+                onPress={() => {
+                  clearStickyInfo();
+                  handleRecenter();
+                }}
+                hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+              />
+            </Animated.View>
 
-        {/* Sync indicator - lives inside SafeAreaView so it sits at the same
-            vertical position as the bottom-row buttons on both platforms.
-            The horizontal gutter padding keeps it clear of the recenter /
-            add-miles icon buttons. Lifted above the dev panel when mounted. */}
-        <View
-          style={[
-            styles.syncIndicatorContainer,
-            devMode &&
-              !showWelcome && {
-                bottom: devPanelHeight + spacing.md,
-              },
-          ]}
-          pointerEvents="none"
-        >
-          <SyncIndicator />
+            {/* Add Miles Button */}
+            <Animated.View
+              style={[{ alignSelf: 'flex-end' }, settingsEnterStyle]}
+            >
+              <IconButton
+                icon={<PlusIcon size={iconSizes.medium} />}
+                onPress={() => {
+                  clearStickyInfo();
+                  pushModal({ type: 'miles' });
+                }}
+                hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
+              />
+            </Animated.View>
+          </View>
         </View>
       </SafeAreaView>
 
       {/* Dev Miles (Developer mode) */}
-      {devMode && !showWelcome && (
-        <DevMiles
-          keyboardOffset={keyboardOffset}
-          onLayoutHeight={setDevPanelHeight}
-        />
-      )}
+      {devMode && !showWelcome && <DevMiles keyboardOffset={keyboardOffset} />}
 
       {/* Loading overlay - hides map until ready */}
       {phase === 'loading' && <View style={styles.loadingOverlay} />}
@@ -683,13 +684,25 @@ export const styles = StyleSheet.create({
     position: 'absolute',
   },
   bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.md,
+  },
+  syncPillSlot: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    // Keep the pill from butting against the recenter / + icons on the right.
+    paddingRight: spacing.sm,
+  },
+  bottomIconColumn: {
     alignItems: 'flex-end',
     gap: spacing.md,
   },
 
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000000',
+    backgroundColor: '#00FF00',
   },
   notchBar: {
     position: 'absolute',
@@ -697,16 +710,5 @@ export const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: '#000000',
     zIndex: 50,
-  },
-  syncIndicatorContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    // Reserve space on both sides so the pill never overlaps the recenter /
-    // add-miles icon buttons in the bottom row.
-    paddingHorizontal: spacing.sm,
   },
 });
