@@ -9,8 +9,8 @@ import { typographyThemed } from '../../styles/typography';
 import { spacing } from '../../styles/global';
 
 interface EmptyStateProps {
-  /** Message to display */
-  message: string;
+  /** Message to display. Accepts a string or composed JSX. */
+  message: React.ReactNode;
   /** Optional children (e.g., progress bar, CTA buttons) */
   children?: React.ReactNode;
 }
@@ -20,11 +20,13 @@ export default function EmptyState({ message, children }: EmptyStateProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.messageContainer}>
+      {typeof message === 'string' ? (
         <Text style={[typographyThemed(theme).bodySecondary, styles.message]}>
           {message}
         </Text>
-      </View>
+      ) : (
+        message
+      )}
       {children && <View style={styles.childrenContainer}>{children}</View>}
     </View>
   );
@@ -36,17 +38,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-  },
-  messageContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: spacing.lg,
   },
   message: {
     textAlign: 'center',
   },
   childrenContainer: {
     width: '100%',
-    paddingBottom: spacing.md,
+    gap: spacing.lg,
   },
 });

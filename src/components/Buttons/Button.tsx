@@ -19,17 +19,29 @@ import Animated, {
   interpolateColor,
   interpolate,
 } from 'react-native-reanimated';
-import { useTheme } from '../../stores/settingsStore';
-import { typography } from '../../styles/typography';
-import { spacing, borderRadius } from '../../styles/global';
+import { useTheme, useSettingsStore } from '../../stores/settingsStore';
+import {
+  typography,
+  textSizeScale,
+  scaleTextStyle,
+} from '../../styles/typography';
+import { spacing, borderRadius, buttonTokens } from '../../styles/global';
 import { ButtonVariant, getButtonTextColor } from './buttonColors';
 
 interface ButtonProps {
   onPress: () => void;
   children: string;
   variant?: ButtonVariant;
-  size?: 'small' | 'default' | 'large';
-  isMediumText?: boolean;
+  /**
+   * Visual category:
+   * - `'regular'` (default) — standard button chrome driven by `size`.
+   * - `'label'` — tighter chrome used for on-map text chips. Same `size` axis,
+   *   different padding/radius scale.
+   */
+  type?: 'regular' | 'label';
+  size?: 'xs' | 'small' | 'default' | 'large';
+  /** Override text size independently of the button's padding size. */
+  textSize?: 'small' | 'default' | 'large';
   isOpen?: boolean;
   disabled?: boolean;
   hitSlop?:
@@ -40,6 +52,14 @@ interface ButtonProps {
   iconBefore?: ReactNode;
   /** Self-alignment within parent container */
   align?: 'left' | 'center' | 'right';
+  /** Remove corner rounding on one side (useful for buttons docked to a screen edge). */
+  flatSide?: 'left' | 'right';
+  /**
+   * On-map buttons (checkpoint name labels, miles pill, info button, on-map
+   * Labels toggle) must be sized only by the Label size setting. Pass `true`
+   * to skip global Text size scaling.
+   */
+  isLabelButton?: boolean;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -51,18 +71,22 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       onPress,
       children,
       variant = 'primary',
+      type = 'regular',
       size = 'default',
-      isMediumText,
+      textSize,
       isOpen,
       disabled = false,
       hitSlop,
       style,
       iconBefore,
       align,
+      flatSide,
+      isLabelButton = false,
     }: ButtonProps,
     ref,
   ) {
     const theme = useTheme();
+    const textSizePref = useSettingsStore(s => s.textSize);
     const isFilled = variant !== 'transparent';
 
     // Background/border animation
@@ -166,13 +190,18 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       return iconBefore;
     };
 
-    // Text size: large for size 'large'; medium when isMediumText is true; else default
-    const baseTextStyle =
-      size === 'large'
+    // Text size: explicit `textSize` wins; else 'large' button size implies large text; else default.
+    const rawTextStyle =
+      textSize === 'large' || size === 'large'
         ? typography.buttonLarge
-        : isMediumText
+        : textSize === 'default'
         ? typography.buttonMedium
         : typography.button;
+
+    // Apply global Text size scaling unless this is an on-map label button.
+    const baseTextStyle = isLabelButton
+      ? rawTextStyle
+      : scaleTextStyle(rawTextStyle, textSizeScale[textSizePref]);
 
     const alignSelf =
       align === 'left'
@@ -191,18 +220,38 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         ? { paddingRight: spacing.sm }
         : undefined;
 
+    const flatSideStyle =
+      flatSide === 'left'
+        ? styles.flatLeft
+        : flatSide === 'right'
+        ? styles.flatRight
+        : undefined;
+
+    // Resolve chrome from tokens. `type` selects the padding/radius scale;
+    // `size` indexes into it. `xs` is regular-only; label falls back to small.
+    const padScale = buttonTokens.padding[type] as Record<
+      string,
+      { vertical: number; horizontal: number }
+    >;
+    const radiusScale = buttonTokens.radius[type] as Record<string, number>;
+    const resolvedSize = padScale[size] ? size : 'small';
+    const pad = padScale[resolvedSize];
+    const chromeStyle = {
+      paddingVertical: pad.vertical,
+      paddingHorizontal: pad.horizontal,
+      borderRadius: radiusScale[resolvedSize],
+    };
+
     return (
       <AnimatedPressable
         ref={ref}
         style={[
-          size === 'small'
-            ? styles.buttonSmall
-            : size === 'large'
-            ? styles.buttonLarge
-            : styles.button,
+          styles.buttonBase,
+          chromeStyle,
           animatedStyle,
           alignSelf ? { alignSelf } : undefined,
           alignPadding,
+          flatSideStyle,
           style,
           { opacity: opacityValue },
         ]}
@@ -244,32 +293,32 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
 
 export default Button;
 
+/**
+ * Map a user-facing label-size preference (small / medium / large) onto the
+ * Button `size` / `textSize` axis (small / default / large). Used by the
+ * on-map buttons that scale with the label-size setting.
+ */
+export function labelSizeToButtonSize(
+  labelSize: 'small' | 'medium' | 'large',
+): 'small' | 'default' | 'large' {
+  if (labelSize === 'small') return 'small';
+  if (labelSize === 'large') return 'large';
+  return 'default';
+}
+
 const styles = StyleSheet.create({
-  button: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
+  buttonBase: {
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
   },
-  buttonSmall: {
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: borderRadius.sm,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+  flatLeft: {
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
   },
-  buttonLarge: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+  flatRight: {
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
   },
 });

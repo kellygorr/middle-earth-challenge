@@ -2,25 +2,39 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
+import { useProgressStore } from '../stores/progressStore';
 import { IconButton } from './Buttons';
 import { SyncIcon, PlusIcon, DevModeIcon } from '../assets/icons';
+import SettingsRef from './SettingsRef';
 import { typographyThemed } from '../styles/typography';
 import { spacing, iconSizes } from '../styles/global';
 
 interface TrackingOptionsProps {
-  onDismiss: (afterCallback?: () => void) => void;
+  /** Required when `showAddOption` is true (default). */
+  onDismiss?: (afterCallback?: () => void) => void;
   onOpenSyncModal: () => void;
+  /** Show the manual "Add or edit miles" row. Default true. */
+  showAddOption?: boolean;
+  /** Show the dev-mode toggle row. Default true. */
+  showDevToggle?: boolean;
 }
 
 export function TrackingOptions({
   onDismiss,
   onOpenSyncModal,
+  showAddOption = true,
+  showDevToggle = true,
 }: TrackingOptionsProps) {
   const theme = useTheme();
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const devMode = useSettingsStore(state => state.devMode);
   const setDevMode = useSettingsStore(state => state.setDevMode);
   const useMiles = useSettingsStore(state => state.useMiles);
+  // Disable manual miles entry while a sync is in progress — avoids racing
+  // user edits against chunked writes from the sync service.
+  const isSyncing = useProgressStore(
+    state => state.syncStatus.phase === 'syncing',
+  );
 
   return (
     <View style={styles.container}>
@@ -30,59 +44,86 @@ export function TrackingOptions({
           icon={<SyncIcon size={iconSizes.medium} />}
           variant={syncEnabled ? 'brand' : 'outline'}
         />
-        <Text
-          style={[typographyThemed(theme).captionSecondary, styles.optionText]}
-        >
-          {syncEnabled
-            ? 'Health sync enabled. Tap to manage sync options'
-            : 'Sync health data from device (optional). Manage this at any time from Settings'}
-        </Text>
+        {syncEnabled ? (
+          <Text
+            style={[
+              typographyThemed(theme).captionSecondary,
+              styles.optionText,
+            ]}
+          >
+            Health sync enabled. Tap to manage sync options
+          </Text>
+        ) : (
+          <Text
+            style={[
+              typographyThemed(theme).captionSecondary,
+              styles.optionText,
+            ]}
+          >
+            Sync health data from device (optional). Manage this at any time
+            from <SettingsRef variant="captionSecondary" />.
+          </Text>
+        )}
       </Pressable>
 
       {/* Manual add button - dismisses InfoModal first, then opens MilesModal */}
-      <Pressable
-        style={styles.option}
-        onPress={() => {
-          // Set returnTo so MilesModal returns to info when closed
-          useUIStore.getState().setReturnTo({ modal: 'info' });
-          // Dismiss InfoModal, then open Miles modal after exit animation completes
-          onDismiss(() => {
-            useUIStore.getState().pushModal({ type: 'miles' });
-          });
-        }}
-      >
-        <IconButton icon={<PlusIcon size={iconSizes.medium} />} />
-        <Text
-          style={[typographyThemed(theme).captionSecondary, styles.optionText]}
+      {showAddOption && (
+        <Pressable
+          style={[styles.option, isSyncing && { opacity: 0.5 }]}
+          disabled={isSyncing}
+          onPress={() => {
+            // Set returnTo so MilesModal returns to info when closed
+            useUIStore.getState().setReturnTo({ modal: 'info' });
+            // Dismiss InfoModal, then open Miles modal after exit animation completes
+            onDismiss?.(() => {
+              useUIStore.getState().pushModal({ type: 'miles' });
+            });
+          }}
         >
-          Add or edit {useMiles ? 'miles' : 'kilometers'}
-        </Text>
-      </Pressable>
+          <IconButton
+            icon={<PlusIcon size={iconSizes.medium} />}
+            disabled={isSyncing}
+          />
+          <Text
+            style={[
+              typographyThemed(theme).captionSecondary,
+              styles.optionText,
+            ]}
+          >
+            {isSyncing
+              ? `Add ${useMiles ? 'miles' : 'kilometers'} after syncing\u2026`
+              : `Add or edit ${useMiles ? 'miles' : 'kilometers'}`}
+          </Text>
+        </Pressable>
+      )}
 
       {/* Dev mode toggle */}
-      <Pressable style={styles.option} onPress={() => setDevMode(!devMode)}>
-        <IconButton
-          icon={<DevModeIcon size={iconSizes.medium} />}
-          variant={devMode ? 'brand' : 'outline'}
-        />
-        <Text
-          style={[typographyThemed(theme).captionSecondary, styles.optionText]}
-        >
-          {devMode
-            ? 'Dev mode is enabled. Tap to disable'
-            : 'Not ready to commit? Explore the map in dev mode'}
-        </Text>
-      </Pressable>
+      {showDevToggle && (
+        <Pressable style={styles.option} onPress={() => setDevMode(!devMode)}>
+          <IconButton
+            icon={<DevModeIcon size={iconSizes.medium} />}
+            variant={devMode ? 'brand' : 'outline'}
+          />
+          <Text
+            style={[
+              typographyThemed(theme).captionSecondary,
+              styles.optionText,
+            ]}
+          >
+            {devMode
+              ? 'Dev mode is enabled. Tap to disable'
+              : 'Not ready to commit? Explore the map in dev mode'}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     flexDirection: 'column',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+    alignSelf: 'stretch',
     gap: spacing.md,
   },
   option: {

@@ -5,9 +5,9 @@ export * from './Content';
 export * from './Footers';
 
 // Supporting components
-export { default as JourneyProgressBar } from './JourneyProgressBar';
+export { default as JourneyProgressBar } from '../JourneyProgressBar';
 export { DistanceDisplay } from './DistanceDisplay';
 export { LockedCheckpointBanner } from './LockedCheckpointBanner';
-export { TrackingOptions } from './TrackingOptions';
+export { TrackingOptions } from '../TrackingOptions';
 export { default as DateStepper } from './DateStepper';
 export { default as CelebrationBorder } from './CelebrationBorder';

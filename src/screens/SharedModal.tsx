@@ -33,6 +33,7 @@ import { motion } from '../styles/motion';
 import Button, { IconButton } from '../components/Buttons';
 import { CloseIcon, ChevronIcon, HomeIcon } from '../assets/icons';
 import CelebrationBorder from '../components/Modals/CelebrationBorder';
+import SyncSpinner from '../components/SyncSpinner';
 import { MODAL_CONFIG } from '../constants/modals';
 
 /**
@@ -316,6 +317,13 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
   const keyboardAvoiding = config?.keyboardAvoiding ?? false;
   const leftButtonElement = renderLeftButton();
 
+  // Show a spinning sync indicator beside the modal title whenever a
+  // sync is in progress — a single consistent affordance across every
+  // modal instead of bespoke per-modal copy.
+  const isSyncing = useProgressStore(
+    state => state.syncStatus.phase === 'syncing',
+  );
+
   const contentView = (
     <Animated.View
       style={[
@@ -325,13 +333,22 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
         animatedContentStyle,
       ]}
     >
-      {/* Portrait: Title above modal */}
+      {/* Portrait: Title above modal. Spinner is absolutely positioned
+          to the left of the centered title so its appearance/disappearance
+          during sync does not push the title around. */}
       {!isLandscape && (
-        <Text
-          style={[typographyThemed(theme).titleMediumInverted, styles.title]}
-        >
-          {title}
-        </Text>
+        <View style={styles.titleRow}>
+          <Text
+            style={[typographyThemed(theme).titleMediumInverted, styles.title]}
+          >
+            {title}
+          </Text>
+          {isSyncing && (
+            <View style={styles.titleRowSpinner} pointerEvents="none">
+              <SyncSpinner size={24} />
+            </View>
+          )}
+        </View>
       )}
 
       {/* Horizontal container: vertical title on left (landscape only) + modal card */}
@@ -339,6 +356,11 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
         {/* Vertical Title - Running up the left side (landscape only) */}
         {isLandscape && (
           <View style={styles.verticalTitleContainer}>
+            {isSyncing && (
+              <View style={styles.verticalTitleSpinner}>
+                <SyncSpinner size={24} />
+              </View>
+            )}
             <Text
               style={[
                 typographyThemed(theme).titleMediumInverted,
@@ -467,8 +489,21 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   // Portrait mode: title above modal
-  title: {
+  titleRow: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    alignItems: 'center',
     marginBottom: spacing.sm,
+  },
+  titleRowSpinner: {
+    position: 'absolute',
+    left: -32,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  title: {
+    marginBottom: 0,
   },
   // Horizontal layout for landscape mode
   horizontalLayout: {
@@ -487,6 +522,11 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '-90deg' }],
     width: 200,
     textAlign: 'center',
+  },
+  verticalTitleSpinner: {
+    position: 'absolute',
+    top: spacing.sm,
+    alignSelf: 'center',
   },
   // Modal card container
   modalContainer: {

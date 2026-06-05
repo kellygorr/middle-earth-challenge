@@ -16,6 +16,7 @@ import { useSyncInterval } from './src/hooks/useSyncInterval';
 import { useInitializationStore } from './src/stores/initializationStore';
 import { database } from './src/services/database';
 import { useProgressStore } from './src/stores/progressStore';
+import { setupDevMockLongSyncIfEnabled } from './src/services/devSyncMock';
 
 const Stack = createStackNavigator();
 
@@ -63,14 +64,23 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     const initApp = async () => {
+      console.log('[App] initApp: start');
       try {
         await database.init();
+        console.log('[App] initApp: db ready');
         await loadSettings();
+        console.log('[App] initApp: settings loaded');
         // Initialize progress store from database (single source of truth)
         await initFromDatabase();
+        console.log('[App] initApp: progress loaded');
+        // Dev-only: if DEV_MOCK_LONG_SYNC is on, swap in mock fitness data
+        // before useSyncInterval's initial sync runs.
+        await setupDevMockLongSyncIfEnabled();
+        console.log('[App] initApp: dev mock setup done');
       } catch (error) {
         console.error('Failed to initialize app:', error);
       } finally {
+        console.log('[App] initApp: finally -> setLoading(false), phase=ready');
         // Loading complete
         setLoading(false);
         setPhase('ready');

@@ -20,6 +20,41 @@ export const borderRadius = {
   full: 9999,
 } as const;
 
+// Button chrome tokens. Two `type`s share a `size` axis but index different
+// padding & radius scales:
+// - `regular` — standard chrome for modals/controls. Adds an `xs` size for
+//   tight inline controls like segmented selectors.
+// - `label` — tighter chrome for on-map text chips (checkpoint names) so they
+//   never visually collide with regular buttons.
+export const buttonTokens = {
+  padding: {
+    regular: {
+      xs: { vertical: 4, horizontal: 12 },
+      small: { vertical: 8, horizontal: 8 },
+      default: { vertical: 8, horizontal: 16 },
+      large: { vertical: 8, horizontal: 8 },
+    },
+    label: {
+      small: { vertical: 2, horizontal: 6 },
+      default: { vertical: 2, horizontal: 4 },
+      large: { vertical: 4, horizontal: 6 },
+    },
+  },
+  radius: {
+    regular: {
+      xs: 6,
+      small: 8,
+      default: 8,
+      large: 8,
+    },
+    label: {
+      small: 4,
+      default: 6,
+      large: 6,
+    },
+  },
+} as const;
+
 // Shadow styles for views and text
 export const shadows = {
   small: {

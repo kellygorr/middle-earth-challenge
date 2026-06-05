@@ -1,18 +1,26 @@
 import React from 'react';
 import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { useTheme } from '../stores/settingsStore';
-import { typography, typographyThemed } from '../styles/typography';
+import { typographyThemed } from '../styles/typography';
 import { spacing, borderRadius } from '../styles/global';
 import checkpoints from '../constants/checkpoints.json';
 import { useProgressStore } from '../stores/progressStore';
 
 interface JourneyProgressBarProps {
-  isLocked: boolean;
   darkMode?: boolean;
 }
 
+/**
+ * JourneyProgressBar - The user's overall journey progress.
+ *
+ * Previously had an `isLocked` prop that greyed out the fill + percent
+ * pill when shown inside a locked-checkpoint context. That treatment
+ * has been removed: the user's accumulated progress is an achievement
+ * and shouldn't be visually suppressed just because the surrounding UI
+ * is in an inactive state. Locked context is already communicated by
+ * the surrounding greys.
+ */
 export default function JourneyProgressBar({
-  isLocked,
   darkMode = false,
 }: JourneyProgressBarProps) {
   const theme = useTheme();
@@ -41,10 +49,13 @@ export default function JourneyProgressBar({
   const firstName = (checkpoints[0] as any)?.name ?? '';
   const lastName = (checkpoints[checkpoints.length - 1] as any)?.name ?? '';
 
-  // Text style based on darkMode
-  const labelStyle = darkMode
-    ? typographyThemed(theme).captionInverted
-    : typographyThemed(theme).captionPrimary;
+  // Side / header label style: scaled `button` token (12px base) with
+  // dark-mode-aware color. Using a token (not a hardcoded fontSize) is what
+  // lets these labels respond to the Text size setting.
+  const labelStyle = {
+    ...typographyThemed(theme).button,
+    color: darkMode ? theme.colors.textInverted : theme.colors.textPrimary,
+  };
 
   return (
     <View style={styles.container}>
@@ -75,9 +86,7 @@ export default function JourneyProgressBar({
                 style={[
                   styles.progressBarFill,
                   {
-                    backgroundColor: isLocked
-                      ? theme.colors.infoModalInactive
-                      : theme.colors.pathProgress,
+                    backgroundColor: theme.colors.pathProgress,
                     width: fillWidth,
                   },
                 ]}
@@ -92,9 +101,7 @@ export default function JourneyProgressBar({
             style={[
               styles.progressPercentPillBox,
               {
-                backgroundColor: isLocked
-                  ? theme.colors.infoModalInactive
-                  : darkMode
+                backgroundColor: darkMode
                   ? theme.colors.modalOverlay2
                   : theme.colors.checkpointTextBackground,
               },
@@ -102,7 +109,7 @@ export default function JourneyProgressBar({
           >
             <Text
               style={[
-                typography.caption,
+                typographyThemed(theme).caption,
                 styles.progressPercentageText,
                 { color: theme.colors.checkpointLabel },
               ]}
@@ -136,13 +143,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   progressSideLabel: {
-    fontSize: 12,
     fontWeight: '500',
     maxWidth: '48%',
     textAlign: 'left',
   },
   headerLabel: {
-    fontSize: 12,
     fontWeight: '500',
     marginBottom: spacing.sm,
   },
@@ -163,11 +168,9 @@ const styles = StyleSheet.create({
   },
   progressPercentageText: {
     textAlign: 'right',
-    fontSize: 14,
   },
   progressMilesText: {
     textAlign: 'right',
-    fontSize: 12,
     marginTop: spacing.xs,
   },
   progressPercentFixed: {

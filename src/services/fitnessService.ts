@@ -16,6 +16,10 @@ export interface FitnessServiceInterface {
   getDistanceToday(): Promise<number>;
   getDistanceSince(startDate: Date): Promise<number>;
   getDistanceRecordsSince(startDate: Date): Promise<HealthDistanceRecord[]>;
+  getDistanceRecordsBetween(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<HealthDistanceRecord[]>;
   getHealthDataForDateRange(
     startDate: Date,
     endDate: Date,
@@ -465,6 +469,18 @@ class FitnessService implements FitnessServiceInterface {
   async getDistanceRecordsSince(
     startDate: Date,
   ): Promise<HealthDistanceRecord[]> {
+    return this.getDistanceRecordsBetween(startDate, new Date());
+  }
+
+  /**
+   * Get individual distance records between two dates.
+   * @param startDate inclusive start
+   * @param endDate exclusive end
+   */
+  async getDistanceRecordsBetween(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<HealthDistanceRecord[]> {
     try {
       if (!this.isInitialized) {
         console.warn('[FitnessService] Fitness service not initialized');
@@ -472,9 +488,9 @@ class FitnessService implements FitnessServiceInterface {
       }
 
       if (Platform.OS === 'ios') {
-        return await this.getDistanceRecordsSinceIOS(startDate);
+        return await this.getDistanceRecordsBetweenIOS(startDate, endDate);
       } else if (Platform.OS === 'android') {
-        return await this.getDistanceRecordsSinceAndroid(startDate);
+        return await this.getDistanceRecordsBetweenAndroid(startDate, endDate);
       }
 
       return [];
@@ -496,8 +512,9 @@ class FitnessService implements FitnessServiceInterface {
    * iOS-specific distance records query
    * Uses daily samples to get individual records with timestamps
    */
-  private async getDistanceRecordsSinceIOS(
+  private async getDistanceRecordsBetweenIOS(
     startDate: Date,
+    endDate: Date,
   ): Promise<HealthDistanceRecord[]> {
     const appleHealth = await getAppleHealthModule();
     if (!appleHealth) {
@@ -507,7 +524,7 @@ class FitnessService implements FitnessServiceInterface {
 
     const options = {
       startDate: startDate.toISOString(),
-      endDate: new Date().toISOString(),
+      endDate: endDate.toISOString(),
       ascending: true,
       // Get daily samples for better granularity
       includeManuallyAdded: true,
@@ -617,8 +634,9 @@ class FitnessService implements FitnessServiceInterface {
   /**
    * Android-specific distance records query
    */
-  private async getDistanceRecordsSinceAndroid(
+  private async getDistanceRecordsBetweenAndroid(
     startDate: Date,
+    endDate: Date,
   ): Promise<HealthDistanceRecord[]> {
     const hc = await getHealthConnectModule();
     if (!hc) return [];
@@ -628,7 +646,7 @@ class FitnessService implements FitnessServiceInterface {
         timeRangeFilter: {
           operator: 'between',
           startTime: startDate.toISOString(),
-          endTime: new Date().toISOString(),
+          endTime: endDate.toISOString(),
         },
       });
 
@@ -735,14 +753,124 @@ class FitnessService implements FitnessServiceInterface {
 
 // Export singleton instance
 export const fitnessService = new FitnessService();
-
-/**
- * Mock fitness service for development/testing
- * Simulates gradual distance accumulation
- */
 export class MockFitnessService implements FitnessServiceInterface {
   private mockDistance = 0;
   private mockInterval: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Synthetic distance records. Each entry is one HealthKit/Health-Connect
+   * sample (typically 1-5 minutes wide, fractions of a mile). Real devices
+   * produce dozens-to-hundreds of these per active day from background
+   * motion tracking, so the mock matches that shape.
+   */
+  private syntheticHistory: Array<{
+    id: string;
+    startTime: Date;
+    endTime: Date;
+    distanceMiles: number;
+  }> = [];
+  /** Artificial per-call delay (ms). Useful for stall/timeout testing. */
+  private artificialDelayMs = 0;
+  /** When true, every call rejects with a fake timeout. */
+  private simulateTimeout = false;
+
+  /**
+   * Seed N days of synthetic distance records ending at `endDate`.
+   *
+   * `shape` controls per-day record count to mirror real platforms:
+   * - `'samples'` (default) — Health Connect on Android: 80-200 small raw
+   *   samples per day scattered 7am-10pm, each 1-5 min wide and
+   *   0.005-0.05 mi. This is the stress-test shape: thousands of
+   *   `addDistanceEntry` calls per chunked sync, exercises dedup hard.
+   * - `'daily'` — HealthKit on iOS: 1 aggregated record per day spanning
+   *   00:00 → 23:59 with the day's total miles. Trivially handled by the
+   *   ingest path; included for shape-completeness, not the stress case.
+   *
+   * Total daily miles jitters ±20% around `milesPerDay`.
+   *
+   * IDs are deterministic (`mock_<dayIndex>[_<sampleIndex>]`) so re-running
+   * a sync over the same window dedupes correctly.
+   */
+  seedHistory(
+    days: number,
+    milesPerDay = 2.5,
+    endDate = new Date(),
+    shape: 'samples' | 'daily' = 'samples',
+  ): void {
+    this.syntheticHistory = [];
+    // Tiny deterministic PRNG so the same seed produces the same dataset
+    // across reloads (helps dedup-on-resume testing).
+    let seed = 1337;
+    const rand = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+
+    for (let d = days - 1; d >= 0; d--) {
+      const dayStart = new Date(endDate);
+      dayStart.setDate(endDate.getDate() - d);
+      dayStart.setHours(0, 0, 0, 0);
+      const targetMilesToday = milesPerDay * (0.8 + rand() * 0.4);
+
+      if (shape === 'daily') {
+        const dayEnd = new Date(dayStart);
+        dayEnd.setHours(23, 59, 59, 999);
+        this.syntheticHistory.push({
+          id: `mock_d${days - 1 - d}`,
+          startTime: dayStart,
+          endTime: dayEnd,
+          distanceMiles: targetMilesToday,
+        });
+        continue;
+      }
+
+      const samplesToday = 80 + Math.floor(rand() * 120); // 80-200
+      const weights: number[] = [];
+      let weightSum = 0;
+      for (let s = 0; s < samplesToday; s++) {
+        const w = 0.2 + rand() * 0.8;
+        weights.push(w);
+        weightSum += w;
+      }
+
+      for (let s = 0; s < samplesToday; s++) {
+        const minuteOfDay = 7 * 60 + Math.floor(rand() * 15 * 60);
+        const start = new Date(dayStart);
+        start.setMinutes(minuteOfDay);
+        const durationMin = 1 + Math.floor(rand() * 5);
+        const end = new Date(start.getTime() + durationMin * 60 * 1000);
+        const miles = (weights[s] / weightSum) * targetMilesToday;
+        this.syntheticHistory.push({
+          id: `mock_d${days - 1 - d}_s${s}`,
+          startTime: start,
+          endTime: end,
+          distanceMiles: miles,
+        });
+      }
+    }
+    this.syntheticHistory.sort(
+      (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+    );
+  }
+
+  setArtificialDelay(ms: number): void {
+    this.artificialDelayMs = Math.max(0, ms);
+  }
+
+  setSimulateTimeout(enabled: boolean): void {
+    this.simulateTimeout = enabled;
+  }
+
+  private async maybeDelay(): Promise<void> {
+    if (this.simulateTimeout) {
+      // Never resolves; will be raced against the chunk timeout.
+      await new Promise(() => {});
+    }
+    if (this.artificialDelayMs > 0) {
+      await new Promise<void>(resolve =>
+        setTimeout(() => resolve(), this.artificialDelayMs),
+      );
+    }
+  }
 
   async initialize(): Promise<void> {
     // Mock initialized
@@ -781,16 +909,40 @@ export class MockFitnessService implements FitnessServiceInterface {
   }
 
   async getDistanceRecordsSince(
-    _startDate: Date,
+    startDate: Date,
   ): Promise<HealthDistanceRecord[]> {
-    // Return mock records
-    const now = Date.now();
+    return this.getDistanceRecordsBetween(startDate, new Date());
+  }
+
+  async getDistanceRecordsBetween(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<HealthDistanceRecord[]> {
+    await this.maybeDelay();
+
+    if (this.syntheticHistory.length > 0) {
+      const records: HealthDistanceRecord[] = [];
+      for (const sample of this.syntheticHistory) {
+        if (sample.startTime >= startDate && sample.startTime < endDate) {
+          records.push({
+            id: sample.id,
+            startTime: sample.startTime.toISOString(),
+            endTime: sample.endTime.toISOString(),
+            distanceMeters: sample.distanceMiles * 1609.34,
+          });
+        }
+      }
+      return records;
+    }
+
+    // Fallback: single synthetic record from mockDistance accumulator
+    const now = endDate.getTime();
     return [
       {
         id: `mock_${now}`,
-        startTime: new Date(now - 3600000).toISOString(), // 1 hour ago
+        startTime: new Date(now - 3600000).toISOString(),
         endTime: new Date(now).toISOString(),
-        distanceMeters: this.mockDistance * 1609.34, // Convert miles to meters
+        distanceMeters: this.mockDistance * 1609.34,
       },
     ];
   }
@@ -836,3 +988,18 @@ export class MockFitnessService implements FitnessServiceInterface {
 
 // Export mock for development
 export const mockFitnessService = new MockFitnessService();
+
+/**
+ * Runtime-swappable accessor used by app code.
+ * Defaults to the real implementation; dev tooling can swap to the mock.
+ */
+let activeFitnessService: FitnessServiceInterface = fitnessService;
+
+export function getActiveFitnessService(): FitnessServiceInterface {
+  return activeFitnessService;
+}
+
+export function useMockFitnessService(enable: boolean): void {
+  if (!__DEV__) return; // safety: never swap in release
+  activeFitnessService = enable ? mockFitnessService : fitnessService;
+}
