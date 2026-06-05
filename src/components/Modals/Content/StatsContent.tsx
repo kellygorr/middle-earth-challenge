@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useStatsStore, Stats } from '../../../stores/statsStore';
-import { useTheme } from '../../../stores/settingsStore';
+import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { spacing } from '../../../styles/global';
 import { formatDate, formatDistance } from '../../../utils/date';
 import JourneyProgressBar from '../../JourneyProgressBar';
@@ -22,6 +22,7 @@ import StatsContentInactive from './StatsContentInactive';
  */
 export default function StatsContent() {
   const theme = useTheme();
+  const useMiles = useSettingsStore(state => state.useMiles);
   const distanceEntries = useProgressStore(state => state.distanceEntries);
   const miles = useProgressStore(state => state.miles);
   const hasEnoughData = useStatsStore(state => state.hasEnoughDataForStats)(
@@ -51,7 +52,7 @@ export default function StatsContent() {
           <JourneyProgressBar />
         </View>
         <TwoColumnRow
-          labels={['Miles', 'Remaining']}
+          labels={[useMiles ? 'Miles' : 'Kilometers', 'Remaining']}
           values={[
             formatDistance(stats.journey.milesCompleted, true),
             formatDistance(stats.journey.milesRemaining, true),

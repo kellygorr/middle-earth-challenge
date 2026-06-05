@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
+import { useProgressStore } from '../stores/progressStore';
 import { IconButton } from './Buttons';
 import { SyncIcon, PlusIcon, DevModeIcon } from '../assets/icons';
 import SettingsRef from './SettingsRef';
@@ -29,6 +30,11 @@ export function TrackingOptions({
   const devMode = useSettingsStore(state => state.devMode);
   const setDevMode = useSettingsStore(state => state.setDevMode);
   const useMiles = useSettingsStore(state => state.useMiles);
+  // Disable manual miles entry while a sync is in progress — avoids racing
+  // user edits against chunked writes from the sync service.
+  const isSyncing = useProgressStore(
+    state => state.syncStatus.phase === 'syncing',
+  );
 
   return (
     <View style={styles.container}>
@@ -63,7 +69,8 @@ export function TrackingOptions({
       {/* Manual add button - dismisses InfoModal first, then opens MilesModal */}
       {showAddOption && (
         <Pressable
-          style={styles.option}
+          style={[styles.option, isSyncing && { opacity: 0.5 }]}
+          disabled={isSyncing}
           onPress={() => {
             // Set returnTo so MilesModal returns to info when closed
             useUIStore.getState().setReturnTo({ modal: 'info' });
@@ -73,14 +80,19 @@ export function TrackingOptions({
             });
           }}
         >
-          <IconButton icon={<PlusIcon size={iconSizes.medium} />} />
+          <IconButton
+            icon={<PlusIcon size={iconSizes.medium} />}
+            disabled={isSyncing}
+          />
           <Text
             style={[
               typographyThemed(theme).captionSecondary,
               styles.optionText,
             ]}
           >
-            Add or edit {useMiles ? 'miles' : 'kilometers'}
+            {isSyncing
+              ? `Add ${useMiles ? 'miles' : 'kilometers'} after syncing\u2026`
+              : `Add or edit ${useMiles ? 'miles' : 'kilometers'}`}
           </Text>
         </Pressable>
       )}

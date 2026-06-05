@@ -2,8 +2,10 @@ import { useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
+import { useInitializationStore } from '../stores/initializationStore';
 import type { SyncError } from '../stores/progressStore';
 import { getActiveFitnessService } from '../services/fitnessService';
+import { getBackgroundRefreshStatus } from '../services/backgroundRefreshStatus';
 import { DistanceEntry, DistanceSource, HealthDistanceRecord } from '../types';
 import {
   SYNC_INTERVAL_MS,
@@ -73,6 +75,26 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
+ * Map a raw thrown value to a typed `SyncError`. Keeps `unknown` as the
+ * intentional last resort: anything that doesn't match a more specific
+ * pattern stays `unknown`, which the store deliberately doesn't surface
+ * to the UI (log only). Add a new branch here when we observe a real
+ * failure mode in the wild that we can give the user useful guidance for.
+ */
+function classifySyncError(error: unknown): SyncError {
+  const message = error instanceof Error ? error.message : String(error);
+  // Permission / auth: revoked, never granted, or the health app blocked us.
+  if (/SecurityException|permission|unauthor/i.test(message)) {
+    return { kind: 'permission', message };
+  }
+  // Provider not installed or out-of-date (Health Connect SDK statuses).
+  if (/sdk.*unavailable|not installed|update.*required/i.test(message)) {
+    return { kind: 'unavailable', message };
+  }
+  return { kind: 'unknown', message };
+}
+
+/**
  * Hook that manages periodic syncing from health services while the app is foregrounded.
  *
  * Sync runs in CHUNK_DAYS-wide chunks oldest -> newest. Each chunk:
@@ -95,11 +117,20 @@ export function useSyncInterval() {
   );
   const setMiles = useProgressStore(state => state.setMiles);
   const setSyncStatus = useProgressStore(state => state.setSyncStatus);
-  const useMiles = useSettingsStore(state => state.useMiles);
-  const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
+  const addDistanceEntries = useProgressStore(
+    state => state.addDistanceEntries,
+  );
   const updateDistanceEntry = useProgressStore(
     state => state.updateDistanceEntry,
   );
+  // Gate all sync work on the app being past the 'loading' phase. Without
+  // this, useSyncInterval's mount-time effect fires performSync against the
+  // real Health Connect *before* App.tsx's initApp effect has run
+  // database.init / loadSettings / setupDevMockLongSyncIfEnabled. That
+  // produced a spurious SecurityException -> "disconnected" message on every
+  // reload.
+  const initPhase = useInitializationStore(state => state.phase);
+  const initReady = initPhase !== 'loading';
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -124,6 +155,16 @@ export function useSyncInterval() {
       const healthSource: DistanceSource =
         Platform.OS === 'ios' ? 'apple-health' : 'health-connect';
       const idPrefix = Platform.OS === 'ios' ? 'ah' : 'hc';
+
+      // DEBUG: trace which service is actually wired up at sync time, to
+      // diagnose the spurious "disconnected" message on every reload.
+      console.log(
+        `[useSyncInterval] performSync start service=${
+          (fitness as object)?.constructor?.name
+        } provider=${syncProvider} force=${forceSync} initialDone=${
+          hasPerformedInitialSyncRef.current
+        }`,
+      );
 
       const currentLastSync = useSettingsStore.getState().lastSyncTimestamp;
       const fromDate = currentLastSync
@@ -202,7 +243,7 @@ export function useSyncInterval() {
                     chunksDone: i,
                     chunksTotal: chunks.length,
                   }
-                : { kind: 'unknown', message: err.message };
+                : classifySyncError(err);
             setSyncStatus(prev => ({
               ...prev,
               phase: 'error',
@@ -215,7 +256,7 @@ export function useSyncInterval() {
             records,
             healthSource,
             idPrefix,
-            addDistanceEntry,
+            addDistanceEntries,
             updateDistanceEntry,
           );
           totalMilesAdded += milesAddedThisChunk;
@@ -262,25 +303,30 @@ export function useSyncInterval() {
         });
       } catch (error) {
         console.error('[useSyncInterval] Sync error caught:', error);
-        const errorMessage = String(error);
-        if (
-          errorMessage.includes('SecurityException') ||
-          errorMessage.includes('permission')
-        ) {
-          const message = `It looks like your health data connection was disconnected. If this was unintentional, you can reconnect here or in Settings. Otherwise, you can continue adding ${
-            useMiles ? 'miles' : 'kilometers'
-          } using the + button.`;
+        const classified = classifySyncError(error);
+        console.log('[useSyncInterval] classify error', {
+          kind: classified.kind,
+          errorName: (error as Error)?.name,
+          errorMessage:
+            classified.kind === 'unknown'
+              ? classified.message
+              : (classified as { message?: string }).message,
+        });
+        if (classified.kind === 'permission') {
+          // Flip syncEnabled off so we don't keep retrying with no auth.
+          // The banner copy now lives in SyncErrorBanner; the typed error
+          // is enough — no need to template a long message here.
           setSyncStatus(prev => ({
             ...prev,
             phase: 'error',
-            error: { kind: 'permission', message },
+            error: classified,
           }));
           setSyncEnabled(false);
         } else {
           setSyncStatus(prev => ({
             ...prev,
             phase: 'error',
-            error: { kind: 'unknown', message: errorMessage },
+            error: classified,
           }));
         }
       } finally {
@@ -292,8 +338,7 @@ export function useSyncInterval() {
       liveSyncEnabled,
       syncProvider,
       syncStartDate,
-      useMiles,
-      addDistanceEntry,
+      addDistanceEntries,
       updateDistanceEntry,
       setMiles,
       setLastSyncTimestamp,
@@ -343,12 +388,12 @@ export function useSyncInterval() {
       handleAppStateChange,
     );
 
-    if (syncEnabled && !hasPerformedInitialSyncRef.current) {
+    if (syncEnabled && initReady && !hasPerformedInitialSyncRef.current) {
       hasPerformedInitialSyncRef.current = true;
       performSync(true);
     }
 
-    if (syncEnabled && liveSyncEnabled) {
+    if (syncEnabled && liveSyncEnabled && initReady) {
       startInterval();
     } else {
       stopInterval();
@@ -358,7 +403,51 @@ export function useSyncInterval() {
       subscription.remove();
       stopInterval();
     };
-  }, [syncEnabled, liveSyncEnabled, performSync]);
+  }, [syncEnabled, liveSyncEnabled, initReady, performSync]);
+
+  // iOS: detect Background App Refresh being off, so we can warn the user
+  // that "live sync" won't actually happen in the background. Runs on
+  // mount, on every foreground resume, and when sync gets enabled.
+  // No-op on Android and when syncing is off.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !syncEnabled) return;
+
+    let cancelled = false;
+    const check = async () => {
+      const status = await getBackgroundRefreshStatus();
+      if (cancelled) return;
+      const state = useProgressStore.getState();
+      const { lastSyncError } = state;
+
+      if (status === 'denied' || status === 'restricted') {
+        // Only surface if nothing more important is already showing. A real
+        // permission/timeout/unavailable error is higher priority — we
+        // don't want to clobber it with an environmental advisory.
+        if (lastSyncError === null) {
+          state.setSyncStatus({
+            ...state.syncStatus,
+            phase: 'error',
+            error: { kind: 'backgroundDisabled' },
+          });
+        }
+      } else if (
+        status === 'available' &&
+        lastSyncError?.kind === 'backgroundDisabled'
+      ) {
+        // User flipped the iOS Settings switch back on — clear the banner.
+        state.clearLastSyncError();
+      }
+    };
+
+    check();
+    const sub = AppState.addEventListener('change', next => {
+      if (next === 'active') check();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [syncEnabled]);
 
   // Register/unregister this hook instance as the active sync runner.
   useEffect(() => {
@@ -381,51 +470,72 @@ async function ingestRecords(
   records: HealthDistanceRecord[],
   healthSource: DistanceSource,
   idPrefix: string,
-  addDistanceEntry: (e: DistanceEntry) => Promise<void>,
+  addDistanceEntries: (entries: DistanceEntry[]) => Promise<void>,
   updateDistanceEntry: (e: DistanceEntry) => Promise<void>,
 ): Promise<number> {
   if (records.length === 0) return 0;
 
-  const existingEntriesMap = new Map(
-    useProgressStore
-      .getState()
-      .distanceEntries.filter(e => e.source === healthSource)
-      .map(e => [e.id, e]),
-  );
+  const existingEntries = useProgressStore
+    .getState()
+    .distanceEntries.filter(e => e.source === healthSource);
+  const existingEntriesMap = new Map(existingEntries.map(e => [e.id, e]));
 
-  // Most-recent record in chunk is the only one we treat as in-progress
-  // and allow to update; older diffs are user-modified entries and preserved.
-  const mostRecentRecordId = records.reduce((latest, r) =>
-    new Date(r.startTime).getTime() > new Date(latest.startTime).getTime()
-      ? r
-      : latest,
-  ).id;
+  // Only one record in our DB can plausibly be amended by the upstream health
+  // app: the most-recent one. Older records are treated as finalized — both
+  // because real Health Connect doesn't go back and mutate old data, and
+  // because the user may have manually edited those rows via the + button.
+  // Capturing this id once lets us skip the miles diff on every other record.
+  const latestExistingId = existingEntries.length
+    ? existingEntries.reduce((latest, e) =>
+        (e.date as number) > (latest.date as number) ? e : latest,
+      ).id
+    : null;
 
   const saveId = 'default';
   let milesChanged = 0;
 
+  const toAdd: DistanceEntry[] = [];
+  const toUpdate: DistanceEntry[] = [];
+
   for (const record of records) {
     const entryId = `${idPrefix}_${record.id}`;
-    const miles = record.distanceMeters * METERS_TO_MILES;
-    const existing = existingEntriesMap.get(entryId);
 
-    if (!existing) {
-      const entry: DistanceEntry = {
+    // Fast path: never seen this id → straight to insert. Backfills hit this
+    // exclusively, so we never pay the miles-diff cost for thousands of rows.
+    if (!existingEntriesMap.has(entryId)) {
+      const miles = record.distanceMeters * METERS_TO_MILES;
+      toAdd.push({
         id: entryId,
         saveId,
         date: new Date(record.startTime).getTime(),
         miles,
         source: healthSource,
-      };
-      await addDistanceEntry(entry);
+      });
       milesChanged += miles;
-    } else if (
-      Math.abs(existing.miles - miles) > 0.001 &&
-      record.id === mostRecentRecordId
-    ) {
-      await updateDistanceEntry({ ...existing, miles });
+      continue;
+    }
+
+    // Known id, but not the one amendable record → ignore. Preserves user
+    // edits to older days and avoids unnecessary diff computation.
+    if (entryId !== latestExistingId) continue;
+
+    // Known id AND it's our one amendable record → diff and maybe update.
+    const existing = existingEntriesMap.get(entryId)!;
+    const miles = record.distanceMeters * METERS_TO_MILES;
+    if (Math.abs(existing.miles - miles) > 0.001) {
+      toUpdate.push({ ...existing, miles });
       milesChanged += miles - existing.miles;
     }
+  }
+
+  // Single batched store update + single SQLite transaction per chunk.
+  // Replaces hundreds of awaited per-record writes that previously blocked
+  // the JS thread for ~30s on the first chunk under Android sample volume.
+  if (toAdd.length > 0) {
+    await addDistanceEntries(toAdd);
+  }
+  for (const entry of toUpdate) {
+    await updateDistanceEntry(entry);
   }
 
   return milesChanged;

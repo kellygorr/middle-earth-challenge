@@ -14,6 +14,12 @@ const SAVE_ID = 'default';
 /**
  * Discriminated error kinds surfaced by the sync pipeline.
  * `permission` mirrors the existing disconnect message; the rest are new with chunked sync.
+ *
+ * `unknown` is intentionally NOT surfaced to the user (no banner, no badge)
+ * — only logged. It exists so we can carry the raw message through to
+ * diagnostics without claiming we know what to do about it. See
+ * `setSyncStatus` below: the store deliberately ignores `unknown` when
+ * populating `lastSyncError`.
  */
 export type SyncError =
   | { kind: 'permission'; message: string }
@@ -24,12 +30,13 @@ export type SyncError =
       chunksDone: number;
       chunksTotal: number;
     }
-  | {
-      kind: 'stalled';
-      chunksDone: number;
-      chunksTotal: number;
-      lastProgressAt: number;
-    }
+  | { kind: 'unavailable'; message: string }
+  // iOS-only: HealthKit permission is granted but the OS won't let us
+  // refresh in the background (Settings → General → Background App Refresh
+  // is off, either globally or for this app). Detection requires a native
+  // bridge to UIApplication.backgroundRefreshStatus — not wired yet, but
+  // the type + banner + dev toggle are in place so the UX is ready.
+  | { kind: 'backgroundDisabled' }
   | { kind: 'unknown'; message: string };
 
 export interface SyncStatus {
@@ -59,6 +66,11 @@ interface ProgressStore {
   distanceEntries: DistanceEntry[];
   lastSyncDate: string | null;
   syncStatus: SyncStatus;
+  // Persists the most recent sync error (until the user dismisses it) so
+  // we can surface it in the Settings → Sync panel after the transient
+  // pill has faded.
+  lastSyncError: SyncError | null;
+  lastSyncErrorAt: number | null;
   // Dev/test override state
   isTestOverride: boolean;
   testOverrideBaseMiles: number | null;
@@ -73,6 +85,7 @@ interface ProgressStore {
   setTriviaUnlocks: (unlocks: TriviaUnlock[]) => void;
   addTriviaUnlock: (unlock: TriviaUnlock) => void;
   addDistanceEntry: (entry: DistanceEntry) => Promise<void>;
+  addDistanceEntries: (entries: DistanceEntry[]) => Promise<void>;
   updateDistanceEntry: (entry: DistanceEntry) => Promise<void>;
   removeDistanceEntry: (id: string) => Promise<void>;
   setDistanceEntries: (entries: DistanceEntry[]) => void;
@@ -81,6 +94,7 @@ interface ProgressStore {
     status: SyncStatus | ((prev: SyncStatus) => SyncStatus),
   ) => void;
   resetSyncStatus: () => void;
+  clearLastSyncError: () => void;
   resetProgress: () => Promise<void>;
   persistMilesSnapshot: () => Promise<void>;
 
@@ -118,6 +132,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   distanceEntries: [],
   lastSyncDate: null,
   syncStatus: initialSyncStatus,
+  lastSyncError: null,
+  lastSyncErrorAt: null,
   isTestOverride: false,
   testOverrideBaseMiles: null,
 
@@ -195,6 +211,39 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     }
   },
 
+  /**
+   * Bulk-add new distance entries: one store update, one DB transaction.
+   * Filters out duplicates by id against current entries. Caller is
+   * expected to have already deduped against the same chunk if needed.
+   */
+  addDistanceEntries: async entries => {
+    if (entries.length === 0) return;
+    const state = get();
+    const existingIds = new Set(state.distanceEntries.map(e => e.id));
+    const fresh = entries.filter(e => !existingIds.has(e.id));
+    if (fresh.length === 0) return;
+
+    const addedMiles = fresh.reduce((sum, e) => sum + e.miles, 0);
+    set({
+      distanceEntries: [...fresh, ...state.distanceEntries],
+      miles: state.miles + addedMiles,
+    });
+
+    try {
+      await database.addDistanceEntriesBulk(
+        fresh.map(e => ({
+          id: e.id,
+          saveId: e.saveId || SAVE_ID,
+          date: e.date as number,
+          miles: e.miles,
+          source: e.source,
+        })),
+      );
+    } catch (error) {
+      console.error('Failed to persist distance entries (bulk):', error);
+    }
+  },
+
   updateDistanceEntry: async entry => {
     const state = get();
     const oldEntry = state.distanceEntries.find(e => e.id === entry.id);
@@ -246,12 +295,52 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   setLastSyncDate: date => set({ lastSyncDate: date }),
 
   setSyncStatus: status =>
-    set(state => ({
-      syncStatus:
-        typeof status === 'function' ? status(state.syncStatus) : status,
-    })),
+    set(state => {
+      const next =
+        typeof status === 'function' ? status(state.syncStatus) : status;
+      // Capture the latest error so it remains discoverable in Settings
+      // after the transient pill has faded. `unknown` is intentionally
+      // skipped: if we can't tell the user something useful, we don't
+      // pop a banner or a badge — we only log it (the caller already does).
+      if (
+        next.phase === 'error' &&
+        next.error &&
+        next.error.kind !== 'unknown'
+      ) {
+        return {
+          syncStatus: next,
+          lastSyncError: next.error,
+          lastSyncErrorAt: Date.now(),
+        };
+      }
+      // Clear on success: phase=='idle' is only set by the success branch
+      // in useSyncInterval (initial state and resetSyncStatus take other
+      // code paths). Clearing here avoids the badge flicker that would
+      // happen if we cleared on 'syncing' and the retry itself failed.
+      if (next.phase === 'idle' && state.lastSyncError !== null) {
+        return {
+          syncStatus: next,
+          lastSyncError: null,
+          lastSyncErrorAt: null,
+        };
+      }
+      return { syncStatus: next };
+    }),
 
   resetSyncStatus: () => set({ syncStatus: initialSyncStatus }),
+
+  clearLastSyncError: () =>
+    set(state => ({
+      lastSyncError: null,
+      lastSyncErrorAt: null,
+      // Also reset syncStatus if it's still stuck in the error phase, so
+      // anything reading syncStatus.phase (e.g. dev tools, indicators)
+      // doesn't show the error as still active after the user dismissed it.
+      syncStatus:
+        state.syncStatus.phase === 'error'
+          ? initialSyncStatus
+          : state.syncStatus,
+    })),
 
   persistMilesSnapshot: async () => {
     const miles = get().miles;
@@ -269,14 +358,16 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       distanceEntries: [],
       lastSyncDate: null,
       syncStatus: initialSyncStatus,
+      lastSyncError: null,
+      lastSyncErrorAt: null,
       isTestOverride: false,
       testOverrideBaseMiles: null,
     });
 
     // Clear database
     try {
+      await database.clearDistanceEntries(SAVE_ID);
       await database.setMilesSnapshot(SAVE_ID, 0);
-      // Note: Would need to add a clearDistanceEntries method to database
     } catch (error) {
       console.error('Failed to reset database:', error);
     }

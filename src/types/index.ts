@@ -60,11 +60,13 @@ export interface TriviaUnlock {
 
 // User settings types
 export type LabelSize = 'small' | 'medium' | 'large';
+export type TextSize = 'small' | 'medium' | 'large';
 export type SyncProvider = 'none' | 'health-connect' | 'apple-health';
 
 export interface UserSettings {
   id: string;
   labelSize: LabelSize;
+  textSize: TextSize;
   currentTheme: ThemeName;
   showPointLabels: boolean;
   colorizeMap: boolean;

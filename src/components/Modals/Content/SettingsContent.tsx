@@ -18,9 +18,10 @@ import {
 import Button, { IconButton } from '../../Buttons';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
+import SyncErrorBanner from '../../SyncErrorBanner';
+import { SyncNowRow } from '../../SyncNowRow';
 import { SyncIcon, DevModeIcon, DataIcon } from '../../../assets/icons';
 import { useUIStore } from '../../../stores/uiStore';
-import { fitnessService } from '../../../services/fitnessService';
 
 /**
  * SettingsContent - Content component for the Settings modal.
@@ -48,8 +49,6 @@ export default function SettingsContent() {
   const setUseMiles = useSettingsStore(state => state.setUseMiles);
   // Sync settings
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
-  const setSyncEnabled = useSettingsStore(state => state.setSyncEnabled);
-  const syncProvider = useSettingsStore(state => state.syncProvider);
   const lastSyncTimestamp = useSettingsStore(state => state.lastSyncTimestamp);
   const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
   const setLiveSyncEnabled = useSettingsStore(
@@ -57,17 +56,11 @@ export default function SettingsContent() {
   );
   const pushModal = useUIStore(state => state.pushModal);
 
-  const handleDisconnectSync = async () => {
-    // Revoke permissions from Health Connect
-    await fitnessService.disconnect();
-    // Update settings
-    setSyncEnabled(false);
-    // Clear last sync so reconnect starts fresh
-    useSettingsStore.getState().setLastSyncTimestamp(null);
-  };
-
   return (
     <>
+      {/* Sync error advisory (renders nothing when no error) */}
+      <SyncErrorBanner />
+
       {/* Theme Selection */}
       <SectionHeader title="Theme" />
       <View style={styles.themeButtons}>
@@ -238,13 +231,7 @@ export default function SettingsContent() {
             {syncEnabled ? (
               <>
                 <Text style={[typographyThemed(theme).bodyPrimary]}>
-                  {`Syncing from ${
-                    syncProvider === 'health-connect'
-                      ? 'Health Connect'
-                      : syncProvider === 'apple-health'
-                      ? 'Apple Health'
-                      : 'health app'
-                  }`}
+                  Health sync enabled. Tap to manage sync options
                 </Text>
                 {lastSyncTimestamp && (
                   <Text style={[typographyThemed(theme).captionSecondary]}>
@@ -260,21 +247,17 @@ export default function SettingsContent() {
               </Text>
             )}
           </Pressable>
-          <Switch
-            value={syncEnabled}
-            onValueChange={value => {
-              if (value) {
-                pushModal({ type: 'sync' });
-              } else {
-                handleDisconnectSync();
-              }
-            }}
-            trackColor={{
-              false: theme.colors.switchInactive,
-              true: theme.colors.buttonPrimary,
-            }}
-            thumbColor={theme.colors.surface}
-          />
+        </View>
+
+        {/* Manual sync trigger. Hidden by SyncNowRow when not connected. */}
+        <View
+          style={[
+            styles.contentRow,
+            styles.contentRowBorderTop,
+            { borderTopColor: theme.colors.divider },
+          ]}
+        >
+          <SyncNowRow />
         </View>
 
         {/* Live sync toggle - always visible under sync option */}
@@ -291,7 +274,7 @@ export default function SettingsContent() {
               {`Live sync`}
             </Text>
             <Text style={[typographyThemed(theme).captionSecondary]}>
-              See your progress update in real-time
+              See your progress update in real-time in this app
             </Text>
           </View>
           <Switch

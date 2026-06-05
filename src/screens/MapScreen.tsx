@@ -149,6 +149,17 @@ export default function MapScreen() {
     onMapInteraction: clearStickyInfo,
   });
 
+  // Read sync phase early so we can pass it to the initial animation hook
+  // (which decides whether to play the path reveal when welcome dismisses).
+  const isSyncing = useProgressStore(
+    state => state.syncStatus.phase === 'syncing',
+  );
+
+  // Drives the small red badge on the Settings icon when there's an
+  // unresolved sync problem. Cleared by a successful sync or by the user
+  // dismissing the banner inside Settings.
+  const hasSyncError = useProgressStore(state => state.lastSyncError !== null);
+
   // Initial animation
   const {
     initialBasePathProgress,
@@ -157,6 +168,7 @@ export default function MapScreen() {
     infoEnterStyle,
   } = useInitialAnimation({
     showWelcome,
+    isSyncing,
     recenterOpacity,
     originMonitorEnabled,
     resetToOrigin,
@@ -198,9 +210,6 @@ export default function MapScreen() {
   // `pathProgress` and the muted `pathInactive` so the journey path itself
   // signals "not live yet". Map background gets a subtle dim by lowering
   // opacity on the Skia wrapper.
-  const isSyncing = useProgressStore(
-    state => state.syncStatus.phase === 'syncing',
-  );
   // Map background tint pulse — gentle (∼3s cycle).
   const pulse = useSharedValue(0);
   // Shimmer progress — 0→1 loop driving a traveling highlight along the
@@ -541,6 +550,7 @@ export default function MapScreen() {
                     pushModal({ type: 'settings' });
                   }}
                   hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+                  showBadge={hasSyncError}
                 />
               </Animated.View>
             </View>
@@ -584,9 +594,8 @@ export default function MapScreen() {
           ]}
           pointerEvents="box-none"
         >
-          {/* Sync pill: flex:1 so it takes the remaining horizontal space and
-              centers itself. WelcomeModal renders its own pill so we hide this
-              one while welcome is up to avoid duplicates. */}
+          {/* Sync pill: absolutely positioned so it centers relative to the
+              full screen width, independent of the icon column on the right. */}
           <View style={styles.syncPillSlot} pointerEvents="none">
             {!showWelcome && <SyncIndicator />}
           </View>
@@ -612,7 +621,8 @@ export default function MapScreen() {
               />
             </Animated.View>
 
-            {/* Add Miles Button */}
+            {/* Add Miles Button — disabled while syncing to avoid racing
+                manual edits against in-flight chunk writes. */}
             <Animated.View
               style={[{ alignSelf: 'flex-end' }, settingsEnterStyle]}
             >
@@ -623,6 +633,7 @@ export default function MapScreen() {
                   pushModal({ type: 'miles' });
                 }}
                 hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
+                disabled={isSyncing}
               />
             </Animated.View>
           </View>
@@ -686,14 +697,17 @@ export const styles = StyleSheet.create({
   bottomRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    justifyContent: 'flex-end',
     gap: spacing.md,
   },
   syncPillSlot: {
-    flex: 1,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     flexDirection: 'row',
     justifyContent: 'center',
-    // Keep the pill from butting against the recenter / + icons on the right.
-    paddingRight: spacing.sm,
+    alignItems: 'flex-end',
   },
   bottomIconColumn: {
     alignItems: 'flex-end',
@@ -702,7 +716,7 @@ export const styles = StyleSheet.create({
 
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#00FF00',
+    backgroundColor: '#000000',
   },
   notchBar: {
     position: 'absolute',
