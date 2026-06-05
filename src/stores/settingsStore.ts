@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { UserSettings, LabelSize, SyncProvider } from '../types';
+import { UserSettings, LabelSize, TextSize, SyncProvider } from '../types';
 import { ThemeName, themes } from '../styles/themes';
 import { database } from '../services/database';
 import { useProgressStore } from './progressStore';
@@ -9,6 +9,7 @@ interface SettingsStore extends UserSettings {
   isLoaded: boolean;
   // Actions
   setLabelSize: (size: LabelSize) => void;
+  setTextSize: (size: TextSize) => void;
   setTheme: (theme: ThemeName) => void;
   setShowPointLabels: (show: boolean) => void;
   setColorizeMap: (colorize: boolean) => void;
@@ -28,7 +29,8 @@ interface SettingsStore extends UserSettings {
 export const useSettingsStore = create<SettingsStore>(set => ({
   // Initial state
   id: 'default',
-  labelSize: 'regular',
+  labelSize: 'medium',
+  textSize: 'medium',
   currentTheme: 'minimalist',
   showPointLabels: true,
   colorizeMap: true,
@@ -48,6 +50,11 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   setLabelSize: size => {
     set({ labelSize: size });
     database.updateUserSettings({ labelSize: size });
+  },
+
+  setTextSize: size => {
+    set({ textSize: size });
+    database.updateUserSettings({ textSize: size });
   },
 
   setTheme: theme => {
@@ -120,8 +127,8 @@ export const useSettingsStore = create<SettingsStore>(set => ({
       set({
         id: settings.id,
         labelSize: settings.labelSize,
+        textSize: settings.textSize,
         currentTheme: settings.currentTheme,
-        showTriviaMarkers: settings.showTriviaMarkers,
         showPointLabels: settings.showPointLabels,
         colorizeMap: settings.colorizeMap,
         reducedMapTitles: settings.reducedMapTitles,
@@ -144,8 +151,13 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   },
 }));
 
-// Helper hook to get the current theme object
+// Helper hook to get the current theme object. Also subscribes to `textSize`
+// so any component using a themed style automatically re-renders when the
+// user changes the Text size setting.
 export const useTheme = () => {
   const themeName = useSettingsStore(state => state.currentTheme);
+  // Subscribe (return value discarded) so `typographyThemed(theme)` results
+  // are recomputed on Text size changes.
+  useSettingsStore(state => state.textSize);
   return themes[themeName];
 };

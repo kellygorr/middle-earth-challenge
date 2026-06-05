@@ -30,9 +30,22 @@ const InfoButton = forwardRef<any, InfoButtonProps>(
       <Button
         onPress={openModal}
         variant={type === 'trivia' ? 'outline' : 'primary'}
-        size="default"
-        isMediumText={labelSize === 'large'}
+        size={
+          labelSize === 'small'
+            ? 'small'
+            : labelSize === 'large'
+            ? 'large'
+            : 'default'
+        }
+        textSize={
+          labelSize === 'small'
+            ? 'small'
+            : labelSize === 'large'
+            ? 'large'
+            : 'default'
+        }
         isOpen={isInfoModalOpen}
+        isLabelButton
         ref={ref as any}
       >
         {getDisplayText()}

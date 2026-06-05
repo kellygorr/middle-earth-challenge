@@ -1,6 +1,13 @@
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
-import { Canvas, Path, Skia, Group } from '@shopify/react-native-skia';
+import {
+  Canvas,
+  Path,
+  Skia,
+  Group,
+  LinearGradient,
+  vec,
+} from '@shopify/react-native-skia';
 import { SharedValue, useDerivedValue } from 'react-native-reanimated';
 
 import {
@@ -28,6 +35,12 @@ interface MiddleEarthMapSkiaProps {
   reducedTitles?: boolean;
   defaultColor?: string;
   activePathColor?: string;
+  /**
+   * Optional 0..1 progress driving a traveling highlight ("shimmer") that
+   * runs along the path. When provided, a small bright segment slides
+   * down the path; pair with a useSharedValue + withRepeat loop.
+   */
+  shimmerProgress?: SharedValue<number>;
   gamePathData?: string;
   inactivePathColor?: string;
   zoomScale?: SharedValue<number>;
@@ -53,6 +66,7 @@ export default function MiddleEarthMapSkia({
   reducedTitles = true,
   defaultColor = DEFAULT_COLOR,
   activePathColor = 'red',
+  shimmerProgress,
   inactivePathColor = '#C4B5A0',
   gamePathData = GAME_PATH,
   zoomScale,
@@ -145,6 +159,38 @@ export default function MiddleEarthMapSkia({
   const basePathEnd = useDerivedValue(() => {
     return initialBasePathProgress?.value ?? 1;
   }, [initialBasePathProgress]);
+
+  // Shimmer window on the path — a small bright segment travels from start
+  // to end as `shimmerProgress` goes 0→1, clipped to the revealed base.
+  // Sized to ~50 screen pixels regardless of zoom/scale.
+  const SHIMMER_SCREEN_PX = 50;
+  const shimmerSvgUnits = SHIMMER_SCREEN_PX * (SVG_WIDTH / width);
+  const gamePathLength = useMemo(() => {
+    if (!gamePath) return 1;
+    const iter = Skia.ContourMeasureIter(gamePath, false, 1);
+    let total = 0;
+    let measure = iter.next();
+    while (measure) {
+      total += measure.length();
+      measure = iter.next();
+    }
+    return total || 1;
+  }, [gamePath]);
+  const SHIMMER_WINDOW = Math.min(0.5, shimmerSvgUnits / gamePathLength);
+  const shimmerStart = useDerivedValue(() => {
+    const t = shimmerProgress?.value ?? 0;
+    const reveal = basePathEnd.value;
+    return Math.max(0, Math.min(t - SHIMMER_WINDOW, reveal));
+  }, [shimmerProgress, basePathEnd]);
+  const shimmerEnd = useDerivedValue(() => {
+    const t = shimmerProgress?.value ?? 0;
+    const reveal = basePathEnd.value;
+    return Math.max(0, Math.min(t, reveal));
+  }, [shimmerProgress, basePathEnd]);
+  const shimmerStrokeWidth = useDerivedValue(
+    () => strokeWidth.value * 1.6,
+    [strokeWidth],
+  );
 
   // Zoom-aware forward adjustment: push end slightly when zoomed in
   const gameProgressAdjusted = useDerivedValue(() => {
@@ -246,6 +292,37 @@ export default function MiddleEarthMapSkia({
               start={0}
               end={gameProgressAdjusted}
             />
+          )}
+
+          {/* Sync shimmer: a bright highlight that travels along the path.
+              The stroke is painted with a tight LinearGradient so the
+              shimmer itself shows a sweep of colors at any given moment
+              (white→cream→gold→sky→white), not just one solid color. */}
+          {gamePath && shimmerProgress && (
+            <Group opacity={0.5}>
+              <Path
+                path={gamePath}
+                style="stroke"
+                strokeWidth={shimmerStrokeWidth}
+                strokeCap="round"
+                strokeJoin="round"
+                start={shimmerStart}
+                end={shimmerEnd}
+              >
+                <LinearGradient
+                  start={vec(0, 0)}
+                  end={vec(shimmerSvgUnits, shimmerSvgUnits)}
+                  colors={[
+                    '#FFFFFF',
+                    '#FFE9A8',
+                    '#FFD24A',
+                    '#D8D5CE',
+                    '#FFFFFF',
+                  ]}
+                  mode="mirror"
+                />
+              </Path>
+            </Group>
           )}
         </Group>
       </Canvas>

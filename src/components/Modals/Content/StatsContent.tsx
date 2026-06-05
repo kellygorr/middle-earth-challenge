@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useStatsStore, Stats } from '../../../stores/statsStore';
-import { useTheme } from '../../../stores/settingsStore';
+import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { spacing } from '../../../styles/global';
 import { formatDate, formatDistance } from '../../../utils/date';
 import JourneyProgressBar from '../../JourneyProgressBar';
@@ -10,14 +10,19 @@ import SectionHeader from '../SectionHeader';
 import Section from '../Section';
 import StatRow from '../StatRow';
 import TwoColumnRow from '../TwoColumnRow';
-import EmptyState from '../EmptyState';
+import StatsContentInactive from './StatsContentInactive';
 
 /**
  * StatsContent - Inner content for the Stats modal.
  * Rendered inside SharedModal's ScrollView.
+ *
+ * When the user has no distance entries yet, delegates to
+ * `StatsContentInactive` which renders a skeleton background + a centered
+ * unlock card + the live journey progress bar.
  */
 export default function StatsContent() {
   const theme = useTheme();
+  const useMiles = useSettingsStore(state => state.useMiles);
   const distanceEntries = useProgressStore(state => state.distanceEntries);
   const miles = useProgressStore(state => state.miles);
   const hasEnoughData = useStatsStore(state => state.hasEnoughDataForStats)(
@@ -30,13 +35,7 @@ export default function StatsContent() {
     : null;
 
   if (!stats) {
-    return (
-      <EmptyState message="Make more progress to unlock stats">
-        <View style={styles.progressBarSection}>
-          <JourneyProgressBar isLocked={false} />
-        </View>
-      </EmptyState>
-    );
+    return <StatsContentInactive />;
   }
 
   return (
@@ -50,10 +49,10 @@ export default function StatsContent() {
             { borderBottomColor: theme.colors.divider, borderBottomWidth: 1 },
           ]}
         >
-          <JourneyProgressBar isLocked={false} />
+          <JourneyProgressBar />
         </View>
         <TwoColumnRow
-          labels={['Miles', 'Remaining']}
+          labels={[useMiles ? 'Miles' : 'Kilometers', 'Remaining']}
           values={[
             formatDistance(stats.journey.milesCompleted, true),
             formatDistance(stats.journey.milesRemaining, true),
@@ -152,18 +151,8 @@ export default function StatsContent() {
 }
 
 const styles = StyleSheet.create({
-  progressBarSection: {
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-  },
   progressRow: {
     flexDirection: 'row',
     paddingVertical: spacing.sm,
-  },
-  weekColumn: {
-    flex: 1,
-  },
-  weekColumnRight: {
-    alignItems: 'flex-end',
   },
 });

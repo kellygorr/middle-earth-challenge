@@ -114,9 +114,23 @@ function Point({
           <Button
             onPress={onPress as any}
             variant="primary"
-            size="small"
-            isMediumText={labelSize === 'large'}
+            type="label"
+            size={
+              labelSize === 'small'
+                ? 'small'
+                : labelSize === 'large'
+                ? 'large'
+                : 'default'
+            }
+            textSize={
+              labelSize === 'small'
+                ? 'small'
+                : labelSize === 'large'
+                ? 'large'
+                : 'default'
+            }
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            isLabelButton
           >
             {name}
           </Button>

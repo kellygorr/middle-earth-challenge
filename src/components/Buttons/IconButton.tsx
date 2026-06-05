@@ -34,6 +34,12 @@ interface IconButtonProps {
   hitSlop?: Insets | number;
   /** Additional style for the button container */
   style?: StyleProp<ViewStyle>;
+  /** When true, the button is non-interactive and renders at 50% opacity. */
+  disabled?: boolean;
+  /** When true, renders a small red dot in the top-right of the button. */
+  showBadge?: boolean;
+  /** Optional override color for the badge dot. */
+  badgeColor?: string;
 }
 
 /**
@@ -59,6 +65,9 @@ export default function IconButton({
   variant = 'primary',
   hitSlop,
   style,
+  disabled = false,
+  showBadge = false,
+  badgeColor,
 }: IconButtonProps) {
   const theme = useTheme();
 
@@ -98,6 +107,29 @@ export default function IconButton({
     return iconElement;
   };
 
+  // Small dot in the top-right corner, used to signal an unresolved
+  // problem (e.g. last sync errored). Defaults to amber rather than red
+  // because some sync issues are advisory — the user may choose not to
+  // reconnect their health app and continue logging miles manually. Red
+  // would over-state the severity.
+  const badgeSize = 14;
+  const badge = showBadge ? (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: -3,
+        right: -3,
+        width: badgeSize,
+        height: badgeSize,
+        borderRadius: badgeSize / 2,
+        backgroundColor: badgeColor ?? '#F4B400',
+        borderWidth: 2,
+        borderColor: theme.colors.background,
+      }}
+    />
+  ) : null;
+
   // When no onPress, render as a non-interactive View
   if (!onPress) {
     return (
@@ -110,6 +142,7 @@ export default function IconButton({
         ]}
       >
         {renderIcon(icon)}
+        {badge}
       </View>
     );
   }
@@ -126,16 +159,20 @@ export default function IconButton({
             height: buttonSize,
             alignItems: 'center' as const,
             justifyContent: 'center' as const,
-            opacity: pressed ? 0.5 : 1,
+            opacity: disabled ? 0.5 : pressed ? 0.5 : 1,
           },
           style,
         ]}
         onPress={onPress}
         hitSlop={normalizedHitSlop}
+        disabled={disabled}
       >
-        {({ pressed }) =>
-          pressed && pressedIcon ? pressedIcon : renderIcon(icon)
-        }
+        {({ pressed }) => (
+          <>
+            {pressed && pressedIcon ? pressedIcon : renderIcon(icon)}
+            {badge}
+          </>
+        )}
       </Pressable>
     );
   }
@@ -151,13 +188,16 @@ export default function IconButton({
             : backgroundColor,
           borderColor:
             pressed && isOutline ? theme.colors.buttonPressed : borderColor,
+          opacity: disabled ? 0.5 : 1,
         },
         style,
       ]}
       onPress={onPress}
       hitSlop={normalizedHitSlop}
+      disabled={disabled}
     >
       {renderIcon(icon)}
+      {badge}
     </Pressable>
   );
 }

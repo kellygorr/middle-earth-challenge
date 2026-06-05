@@ -1,17 +1,19 @@
 import React, { useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  StatusBar,
-  Keyboard,
-  Pressable,
-} from 'react-native';
+import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
 import {
   GestureHandlerRootView,
   GestureDetector,
 } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  useSharedValue,
+  useDerivedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  withSequence,
+  interpolateColor,
+  Easing,
+} from 'react-native-reanimated';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -32,7 +34,7 @@ import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import DevMiles from '../components/DevMiles';
 import SyncIndicator from '../components/SyncIndicator';
 
-import { spacing, borderRadius } from '../styles/global';
+import { spacing } from '../styles/global';
 import { formatDistance } from '../utils/date';
 
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
@@ -147,6 +149,17 @@ export default function MapScreen() {
     onMapInteraction: clearStickyInfo,
   });
 
+  // Read sync phase early so we can pass it to the initial animation hook
+  // (which decides whether to play the path reveal when welcome dismisses).
+  const isSyncing = useProgressStore(
+    state => state.syncStatus.phase === 'syncing',
+  );
+
+  // Drives the small red badge on the Settings icon when there's an
+  // unresolved sync problem. Cleared by a successful sync or by the user
+  // dismissing the banner inside Settings.
+  const hasSyncError = useProgressStore(state => state.lastSyncError !== null);
+
   // Initial animation
   const {
     initialBasePathProgress,
@@ -155,6 +168,7 @@ export default function MapScreen() {
     infoEnterStyle,
   } = useInitialAnimation({
     showWelcome,
+    isSyncing,
     recenterOpacity,
     originMonitorEnabled,
     resetToOrigin,
@@ -190,6 +204,69 @@ export default function MapScreen() {
   const shouldShowInfoButton = useInfoStore(state =>
     state.getShouldShowInfoButton(animatedProgress),
   );
+
+  // --- Catching-up visual state -------------------------------------------
+  // While syncing, pulse the active path color between the normal
+  // `pathProgress` and the muted `pathInactive` so the journey path itself
+  // signals "not live yet". Map background gets a subtle dim by lowering
+  // opacity on the Skia wrapper.
+  // Map background tint pulse — gentle (∼3s cycle).
+  const pulse = useSharedValue(0);
+  // Shimmer progress — 0→1 loop driving a traveling highlight along the
+  // path (the "beam running down the wire" sync indicator). Color is
+  // handled by a tight gradient shader inside the map component.
+  const shimmer = useSharedValue(0);
+  useEffect(() => {
+    if (isSyncing) {
+      pulse.value = 0;
+      pulse.value = withRepeat(
+        withSequence(
+          withTiming(1, {
+            duration: 1500,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          withTiming(0, {
+            duration: 1500,
+            easing: Easing.inOut(Easing.ease),
+          }),
+        ),
+        -1,
+        false,
+      );
+      shimmer.value = 0;
+      shimmer.value = withRepeat(
+        withTiming(1.06, {
+          duration: 2200,
+          easing: Easing.linear,
+        }),
+        -1,
+        false,
+      );
+    } else {
+      pulse.value = withTiming(0, { duration: 400 });
+      shimmer.value = withTiming(0, { duration: 200 });
+    }
+  }, [isSyncing, pulse, shimmer]);
+
+  // Animated tint color rendered inside the Skia canvas (above map
+  // artwork, below the journey path) so the path and checkpoints stay
+  // crisp on top of the dimmed map.
+  const mapTintColor = useDerivedValue(
+    () =>
+      interpolateColor(
+        pulse.value,
+        [0, 1],
+        ['rgba(40,40,60,0)', 'rgba(40,40,60,0.35)'],
+      ),
+    [],
+  );
+  // Animated style for the full-screen tint overlay sitting behind the
+  // Skia canvas, so the pulse fills the gutter visible when zoomed out.
+  const tintOverlayStyle = useAnimatedStyle(
+    () => ({ backgroundColor: mapTintColor.value }),
+    [],
+  );
+  // ------------------------------------------------------------------------
 
   // Tooltip anchor: prefer InfoButton when visible; otherwise no anchor
   const tooltipAnchorRef = useRef<any>(null);
@@ -280,6 +357,17 @@ export default function MapScreen() {
 
   // Keyboard offset handled by useKeyboardOffset
 
+  console.log('[MapScreen] render', {
+    phase,
+    showWelcome,
+    miles,
+    mapBg: theme.colors.mapBackground,
+    width,
+    height,
+    mapWidth,
+    mapHeight,
+  });
+
   return (
     <GestureHandlerRootView
       style={[
@@ -300,6 +388,10 @@ export default function MapScreen() {
             { backgroundColor: theme.colors.mapBackground },
           ]}
         >
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFillObject, tintOverlayStyle]}
+          />
           <Animated.View style={[styles.svgWrapper, animatedStyle]}>
             <MiddleEarthMapSkia
               width={mapWidth}
@@ -308,6 +400,7 @@ export default function MapScreen() {
               reducedTitles={reducedMapTitles}
               defaultColor={theme.colors.mapDefaultColor}
               activePathColor={theme.colors.checkpointUnlocked}
+              shimmerProgress={shimmer}
               inactivePathColor={theme.colors.pathInactive}
               gamePathData={GAME_PATH}
               zoomScale={scale}
@@ -364,33 +457,42 @@ export default function MapScreen() {
           style={[
             styles.milesContainer,
             {
-              backgroundColor: theme.colors.buttonPrimaryBackground,
               top: insets.top + 60,
               left: insets.left,
             },
             settingsEnterStyle,
           ]}
         >
-          <Pressable
+          <Button
             onPress={() => {
               clearStickyInfo();
               pushModal({ type: 'stats' });
             }}
+            variant="primary"
+            size={
+              labelSize === 'small'
+                ? 'small'
+                : labelSize === 'large'
+                ? 'large'
+                : 'default'
+            }
+            textSize={
+              labelSize === 'small'
+                ? 'small'
+                : labelSize === 'large'
+                ? 'large'
+                : 'default'
+            }
+            flatSide="left"
+            isLabelButton
           >
-            <Text
-              style={[
-                styles.milesText,
-                { color: theme.colors.buttonPrimaryText },
-              ]}
-            >
-              {formatDistance(miles, {
-                includeUnits: true,
-                useLargeUnit: true,
-                noDecimals: true,
-                useMiles,
-              })}
-            </Text>
-          </Pressable>
+            {formatDistance(miles, {
+              includeUnits: true,
+              useLargeUnit: true,
+              noDecimals: true,
+              useMiles,
+            })}
+          </Button>
         </Animated.View>
       )}
 
@@ -448,6 +550,7 @@ export default function MapScreen() {
                     pushModal({ type: 'settings' });
                   }}
                   hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+                  showBadge={hasSyncError}
                 />
               </Animated.View>
             </View>
@@ -460,9 +563,17 @@ export default function MapScreen() {
                   setShowPointLabels(!showPointLabels);
                 }}
                 variant="primary"
+                type="label"
                 size="small"
-                isMediumText={labelSize === 'large'}
+                textSize={
+                  labelSize === 'small'
+                    ? 'small'
+                    : labelSize === 'large'
+                    ? 'large'
+                    : 'default'
+                }
                 hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+                isLabelButton
               >
                 Labels
               </Button>
@@ -470,56 +581,67 @@ export default function MapScreen() {
           </View>
         </View>
 
-        {/* Bottom Row */}
+        {/* Bottom Row: sync pill on the left, icon column (recenter / +) on the
+            right. flexDirection: row + alignItems: flex-end keeps the pill's
+            bottom edge level with the + button's bottom edge, regardless of
+            their differing heights. */}
         <View
           style={[
             styles.bottomRow,
-            devMode ? { marginBottom: keyboardOffset + spacing.xxxl } : null,
+            devMode
+              ? { marginBottom: keyboardOffset + spacing.xxxl + spacing.xxl }
+              : null,
           ]}
           pointerEvents="box-none"
         >
-          {/* Recenter Button */}
-          <Animated.View
-            style={[{ alignSelf: 'flex-end' }, recenterButtonStyle]}
-          >
-            <IconButton
-              icon={
-                <RecenterIcon
-                  size={iconSizes.medium}
-                  color={theme.colors.mapBackground}
-                />
-              }
-              onPress={() => {
-                clearStickyInfo();
-                handleRecenter();
-              }}
-              hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
-            />
-          </Animated.View>
+          {/* Sync pill: absolutely positioned so it centers relative to the
+              full screen width, independent of the icon column on the right. */}
+          <View style={styles.syncPillSlot} pointerEvents="none">
+            {!showWelcome && <SyncIndicator />}
+          </View>
 
-          {/* Add Miles Button */}
-          <Animated.View
-            style={[{ alignSelf: 'flex-end' }, settingsEnterStyle]}
-          >
-            <IconButton
-              icon={<PlusIcon size={iconSizes.medium} />}
-              onPress={() => {
-                clearStickyInfo();
-                pushModal({ type: 'miles' });
-              }}
-              hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
-            />
-          </Animated.View>
+          {/* Icon column: recenter on top, + on bottom. */}
+          <View style={styles.bottomIconColumn} pointerEvents="box-none">
+            {/* Recenter Button */}
+            <Animated.View
+              style={[{ alignSelf: 'flex-end' }, recenterButtonStyle]}
+            >
+              <IconButton
+                icon={
+                  <RecenterIcon
+                    size={iconSizes.medium}
+                    color={theme.colors.mapBackground}
+                  />
+                }
+                onPress={() => {
+                  clearStickyInfo();
+                  handleRecenter();
+                }}
+                hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+              />
+            </Animated.View>
+
+            {/* Add Miles Button — disabled while syncing to avoid racing
+                manual edits against in-flight chunk writes. */}
+            <Animated.View
+              style={[{ alignSelf: 'flex-end' }, settingsEnterStyle]}
+            >
+              <IconButton
+                icon={<PlusIcon size={iconSizes.medium} />}
+                onPress={() => {
+                  clearStickyInfo();
+                  pushModal({ type: 'miles' });
+                }}
+                hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
+                disabled={isSyncing}
+              />
+            </Animated.View>
+          </View>
         </View>
       </SafeAreaView>
 
       {/* Dev Miles (Developer mode) */}
       {devMode && !showWelcome && <DevMiles keyboardOffset={keyboardOffset} />}
-
-      {/* Sync indicator - bottom center, matches WelcomeModal position */}
-      <View style={styles.syncIndicatorContainer} pointerEvents="none">
-        <SyncIndicator />
-      </View>
 
       {/* Loading overlay - hides map until ready */}
       {phase === 'loading' && <View style={styles.loadingOverlay} />}
@@ -571,16 +693,23 @@ export const styles = StyleSheet.create({
   },
   milesContainer: {
     position: 'absolute',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderTopRightRadius: borderRadius.md,
-    borderBottomRightRadius: borderRadius.md,
-  },
-  milesText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
   bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    gap: spacing.md,
+  },
+  syncPillSlot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  bottomIconColumn: {
     alignItems: 'flex-end',
     gap: spacing.md,
   },
@@ -595,12 +724,5 @@ export const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: '#000000',
     zIndex: 50,
-  },
-  syncIndicatorContainer: {
-    position: 'absolute',
-    bottom: 100,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
   },
 });
