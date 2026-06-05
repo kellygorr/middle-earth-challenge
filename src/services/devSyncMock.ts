@@ -22,9 +22,9 @@ import { useProgressStore } from '../stores/progressStore';
  *
  * Set back to false (and reload) to return to real Health Connect.
  */
-export const DEV_MOCK_LONG_SYNC = true;
+export const DEV_MOCK_LONG_SYNC = false;
 
-const DAYS = 90;
+const DAYS = 10;
 const MILES_PER_DAY = 2.5;
 const CHUNK_DELAY_MS = 600;
 

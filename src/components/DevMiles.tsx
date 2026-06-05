@@ -11,6 +11,7 @@ import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { spacing, borderRadius, iconSizes } from '../styles/global';
 import { typographyThemed } from '../styles/typography';
 import { useProgressStore } from '../stores/progressStore';
+import type { SyncError } from '../stores/progressStore';
 
 import Button, { IconButton } from './Buttons';
 import { DevModeIcon } from '../assets/icons';
@@ -41,16 +42,25 @@ export default function DevMiles({
   // Fake-sync toggle: lets us preview the catching-up visual without
   // running a real health-data sync. Sets a synthetic mid-progress
   // syncStatus and clears it on second tap.
+  //
+  // We track whether *we* initiated the fake sync (vs. a real sync that
+  // happens to be running) so the button only shows "Stop sync" when it
+  // can actually do something. Without this, the button would falsely
+  // claim to stop a real in-flight sync and clobber its status.
   const syncStatus = useProgressStore(state => state.syncStatus);
   const setSyncStatus = useProgressStore(state => state.setSyncStatus);
   const resetSyncStatus = useProgressStore(state => state.resetSyncStatus);
-  const isFakeSyncing = syncStatus.phase === 'syncing';
+  const [fakeSyncActive, setFakeSyncActive] = useState(false);
+  const isRealSyncing = syncStatus.phase === 'syncing' && !fakeSyncActive;
   const toggleFakeSync = () => {
-    if (isFakeSyncing) {
+    if (fakeSyncActive) {
+      setFakeSyncActive(false);
       resetSyncStatus();
       return;
     }
+    if (isRealSyncing) return; // don't interfere with real sync
     const now = Date.now();
+    setFakeSyncActive(true);
     setSyncStatus({
       phase: 'syncing',
       chunksDone: 2,
@@ -62,6 +72,47 @@ export default function DevMiles({
       lastProgressAt: now,
       error: null,
     });
+  };
+
+  // If a real sync starts while we have a fake-sync active, drop the fake
+  // flag so the real sync's status owns the UI.
+  useEffect(() => {
+    if (syncStatus.phase !== 'syncing' && fakeSyncActive) {
+      setFakeSyncActive(false);
+    }
+  }, [syncStatus.phase, fakeSyncActive]);
+
+  // Fake-error buttons: push a synthetic `phase: 'error'` straight into
+  // the store so we can iterate on the badge + (forthcoming) banner UI
+  // without running a real sync. The store treats this exactly like a
+  // real error: it captures `lastSyncError` / `lastSyncErrorAt`, which
+  // lights up the Settings badge.
+  const lastSyncError = useProgressStore(state => state.lastSyncError);
+  const clearLastSyncError = useProgressStore(
+    state => state.clearLastSyncError,
+  );
+  const pushFakeError = (error: SyncError) => {
+    if (fakeSyncActive) {
+      setFakeSyncActive(false);
+    }
+    const now = Date.now();
+    setSyncStatus({
+      phase: 'error',
+      chunksDone: 0,
+      chunksTotal: 0,
+      milesAdded: 0,
+      startedAt: now,
+      lastProgressAt: now,
+      error,
+    });
+  };
+  // Dev-panel "Clear err": wipe the persisted error AND reset syncStatus
+  // back to idle. Without the resetSyncStatus, a fake error leaves the
+  // status stuck on phase==='error' even though the badge is gone, which
+  // confuses any selector reading syncStatus.phase.
+  const clearFakeError = () => {
+    clearLastSyncError();
+    resetSyncStatus();
   };
 
   // Initialize with current miles when opening, clear when test override ends
@@ -89,7 +140,7 @@ export default function DevMiles({
           icon={<DevModeIcon size={iconSizes.medium} />}
           variant="primary"
           onPress={() => {
-            if (isFakeSyncing) resetSyncStatus();
+            if (fakeSyncActive) resetSyncStatus();
             setDevMode(false);
           }}
         />
@@ -97,10 +148,86 @@ export default function DevMiles({
       <View style={[styles.row, { justifyContent: 'flex-end' }]}>
         <Button
           onPress={toggleFakeSync}
-          variant={isFakeSyncing ? 'primary' : 'outline'}
+          variant={fakeSyncActive ? 'primary' : 'outline'}
           size="default"
+          disabled={isRealSyncing}
         >
-          {isFakeSyncing ? 'Stop sync' : 'Fake sync'}
+          {fakeSyncActive ? 'Stop fake sync' : 'Fake sync'}
+        </Button>
+      </View>
+      <View style={[styles.row, styles.errRow]}>
+        <Button
+          onPress={() =>
+            pushFakeError({ kind: 'unknown', message: 'forced for testing' })
+          }
+          variant={lastSyncError?.kind === 'unknown' ? 'brand' : 'primary'}
+          size="small"
+          disabled={isRealSyncing}
+        >
+          Err: unknown (silent)
+        </Button>
+        <Button
+          onPress={() =>
+            pushFakeError({
+              kind: 'unavailable',
+              message: 'forced unavailable for testing',
+            })
+          }
+          variant={lastSyncError?.kind === 'unavailable' ? 'brand' : 'primary'}
+          size="small"
+          disabled={isRealSyncing}
+        >
+          Err: unavailable
+        </Button>
+        <Button
+          onPress={() =>
+            pushFakeError({
+              kind: 'permission',
+              message: 'forced permission error for testing',
+            })
+          }
+          variant={lastSyncError?.kind === 'permission' ? 'brand' : 'primary'}
+          size="small"
+          disabled={isRealSyncing}
+        >
+          Err: permission
+        </Button>
+        <Button
+          onPress={() =>
+            pushFakeError({
+              kind: 'timeout',
+              chunkStart: Date.now() - 7 * 24 * 60 * 60 * 1000,
+              chunkEnd: Date.now() - 6 * 24 * 60 * 60 * 1000,
+              chunksDone: 3,
+              chunksTotal: 8,
+            })
+          }
+          variant={lastSyncError?.kind === 'timeout' ? 'brand' : 'primary'}
+          size="small"
+          disabled={isRealSyncing}
+        >
+          Err: timeout
+        </Button>
+        <Button
+          onPress={() => pushFakeError({ kind: 'backgroundDisabled' })}
+          variant={
+            lastSyncError?.kind === 'backgroundDisabled' ? 'brand' : 'primary'
+          }
+          size="small"
+          disabled={isRealSyncing}
+        >
+          Err: bg off (iOS)
+        </Button>
+        <Button
+          onPress={clearFakeError}
+          variant="outline"
+          size="default"
+          disabled={
+            isRealSyncing ||
+            (lastSyncError === null && syncStatus.phase !== 'error')
+          }
+        >
+          Clear err
         </Button>
       </View>
       <View
@@ -149,7 +276,7 @@ export default function DevMiles({
             const parsed = parseFloat(testMiles);
             setTestOverrideMiles(isNaN(parsed) ? 0 : parsed);
           }}
-          variant="brand"
+          variant="primary"
           size="default"
         >
           Walk
@@ -172,6 +299,11 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  errRow: {
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   closeButton: {
     position: 'absolute',

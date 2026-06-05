@@ -63,6 +63,7 @@ const DaySeparator = () => <View style={styles.daySeparator} />;
 export default function DistanceContent() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
+  const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const editInputRef = useRef<TextInput>(null);
   const flatListRef = useRef<FlatList<DayGroup>>(null);
 
@@ -330,6 +331,44 @@ export default function DistanceContent() {
 
   if (dayGroups.length === 0) {
     const unit = useMiles ? 'miles' : 'kilometers';
+    const addCopy = `Add ${unit} to get started tracking your journey`;
+    const syncedCopy = `Your health app is connected. ${
+      useMiles ? 'Miles' : 'Kilometers'
+    } will appear here as they sync.`;
+
+    const orSeparator = (
+      <Text
+        style={[
+          typographyThemed(theme).captionSecondary,
+          styles.emptyStateText,
+        ]}
+      >
+        — or —
+      </Text>
+    );
+    const syncRow = (
+      <TrackingOptions
+        showAddOption={false}
+        showDevToggle={false}
+        onOpenSyncModal={() =>
+          useUIStore.getState().pushModal({ type: 'sync' })
+        }
+      />
+    );
+    const addText = (
+      <Text
+        style={[typographyThemed(theme).bodySecondary, styles.emptyStateText]}
+      >
+        {addCopy}
+      </Text>
+    );
+
+    // Two empty states with different ordering:
+    //   - Sync OFF: lead with manual entry ("add miles"), offer sync below
+    //     as the alternative.
+    //   - Sync ON:  lead with "you're synced, go walk", repeat the sync row
+    //     so the user can manage it from here, then offer manual entry as
+    //     the alternative.
     return (
       <EmptyState
         message={
@@ -339,25 +378,22 @@ export default function DistanceContent() {
               styles.emptyStateText,
             ]}
           >
-            Add {unit} to get started tracking your journey
+            {syncEnabled ? syncedCopy : addCopy}
           </Text>
         }
       >
-        <Text
-          style={[
-            typographyThemed(theme).captionSecondary,
-            styles.emptyStateText,
-          ]}
-        >
-          — or —
-        </Text>
-        <TrackingOptions
-          showAddOption={false}
-          showDevToggle={false}
-          onOpenSyncModal={() =>
-            useUIStore.getState().pushModal({ type: 'sync' })
-          }
-        />
+        {syncEnabled ? (
+          <>
+            {syncRow}
+            {orSeparator}
+            {addText}
+          </>
+        ) : (
+          <>
+            {orSeparator}
+            {syncRow}
+          </>
+        )}
       </EmptyState>
     );
   }

@@ -1,9 +1,16 @@
 import { open, type DB } from '@op-engineering/op-sqlite';
-import { UserSettings, LabelSize, SyncProvider } from '../types';
+import { UserSettings, LabelSize, TextSize, SyncProvider } from '../types';
 import { ThemeName } from '../styles/themes';
 
 // Coerce legacy 'regular' (pre-three-tier label size) to 'medium'.
 function normalizeLabelSize(value: unknown): LabelSize {
+  if (value === 'small' || value === 'medium' || value === 'large') {
+    return value;
+  }
+  return 'medium';
+}
+
+function normalizeTextSize(value: unknown): TextSize {
   if (value === 'small' || value === 'medium' || value === 'large') {
     return value;
   }
@@ -35,6 +42,7 @@ class Database {
       CREATE TABLE IF NOT EXISTS user_settings (
         id TEXT PRIMARY KEY,
         label_size TEXT NOT NULL DEFAULT 'medium',
+        text_size TEXT NOT NULL DEFAULT 'medium',
         current_theme TEXT NOT NULL DEFAULT 'minimalist',
         show_checkpoint_labels INTEGER NOT NULL DEFAULT 1,
         colorize_map INTEGER NOT NULL DEFAULT 1,
@@ -48,6 +56,15 @@ class Database {
         live_sync_enabled INTEGER NOT NULL DEFAULT 0
       )
     `);
+
+    // Migration: add text_size column for installs that pre-date it.
+    try {
+      this.db.executeSync(
+        `ALTER TABLE user_settings ADD COLUMN text_size TEXT NOT NULL DEFAULT 'medium'`,
+      );
+    } catch {
+      // Column already exists; ignore.
+    }
 
     // Distance entries table
     this.db.executeSync(`
@@ -75,8 +92,8 @@ class Database {
 
     // Use INSERT OR IGNORE to avoid UNIQUE constraint errors on race conditions
     this.db.executeSync(
-      `INSERT OR IGNORE INTO user_settings (id, label_size, current_theme, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, use_miles, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp, live_sync_enabled)
-       VALUES ('default', 'medium', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
+      `INSERT OR IGNORE INTO user_settings (id, label_size, text_size, current_theme, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, use_miles, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp, live_sync_enabled)
+       VALUES ('default', 'medium', 'medium', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
     );
   }
 
@@ -94,8 +111,8 @@ class Database {
     // If no settings found, create defaults
     if (!row) {
       this.db.executeSync(
-        `INSERT OR REPLACE INTO user_settings (id, label_size, current_theme, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, use_miles, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp, live_sync_enabled)
-         VALUES ('default', 'medium', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
+        `INSERT OR REPLACE INTO user_settings (id, label_size, text_size, current_theme, show_checkpoint_labels, colorize_map, reduced_map_titles, dev_mode, use_miles, sync_enabled, sync_provider, sync_start_date, last_sync_timestamp, live_sync_enabled)
+         VALUES ('default', 'medium', 'medium', 'minimalist', 1, 1, 1, 0, 1, 0, 'none', NULL, NULL, 0)`,
       );
 
       const newResult = this.db.executeSync(
@@ -112,6 +129,7 @@ class Database {
     return {
       id: row.id as string,
       labelSize: normalizeLabelSize(row.label_size),
+      textSize: normalizeTextSize((row as any).text_size),
       currentTheme: row.current_theme as ThemeName,
       showPointLabels: row.show_checkpoint_labels === 1,
       colorizeMap: row.colorize_map === 1,
@@ -140,6 +158,10 @@ class Database {
     if (updates.labelSize !== undefined) {
       fields.push('label_size = ?');
       values.push(updates.labelSize);
+    }
+    if (updates.textSize !== undefined) {
+      fields.push('text_size = ?');
+      values.push(updates.textSize);
     }
     if (updates.currentTheme !== undefined) {
       fields.push('current_theme = ?');
@@ -222,6 +244,43 @@ class Database {
     );
   }
 
+  /**
+   * Bulk insert distance entries inside a single transaction.
+   * Massively faster than N individual addDistanceEntry calls when ingesting
+   * a chunk of health records (hundreds of samples per day on Android).
+   */
+  async addDistanceEntriesBulk(
+    entries: Array<{
+      id: string;
+      saveId: string;
+      date: number;
+      miles: number;
+      source?: 'manual' | 'health-connect' | 'apple-health' | 'synced';
+    }>,
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    if (entries.length === 0) return;
+    this.db.executeSync('BEGIN TRANSACTION');
+    try {
+      for (const entry of entries) {
+        this.db.executeSync(
+          `INSERT OR REPLACE INTO distance_entries (id, save_id, date, miles, source) VALUES (?, ?, ?, ?, ?)`,
+          [
+            entry.id,
+            entry.saveId,
+            entry.date,
+            entry.miles,
+            entry.source || 'manual',
+          ],
+        );
+      }
+      this.db.executeSync('COMMIT');
+    } catch (e) {
+      this.db.executeSync('ROLLBACK');
+      throw e;
+    }
+  }
+
   async getDistanceEntries(saveId: string): Promise<
     {
       id: string;
@@ -249,6 +308,17 @@ class Database {
   async removeDistanceEntry(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     this.db.executeSync(`DELETE FROM distance_entries WHERE id = ?`, [id]);
+  }
+
+  async clearDistanceEntries(saveId?: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    if (saveId) {
+      this.db.executeSync(`DELETE FROM distance_entries WHERE save_id = ?`, [
+        saveId,
+      ]);
+    } else {
+      this.db.executeSync(`DELETE FROM distance_entries`);
+    }
   }
 
   async setMilesSnapshot(id: string, miles: number): Promise<void> {

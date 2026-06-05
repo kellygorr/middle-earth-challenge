@@ -756,30 +756,100 @@ export const fitnessService = new FitnessService();
 export class MockFitnessService implements FitnessServiceInterface {
   private mockDistance = 0;
   private mockInterval: ReturnType<typeof setInterval> | null = null;
-  /** Synthetic daily-distance records (miles). Index 0 = oldest day. */
-  private syntheticHistory: Array<{ startTime: Date; distanceMiles: number }> =
-    [];
+  /**
+   * Synthetic distance records. Each entry is one HealthKit/Health-Connect
+   * sample (typically 1-5 minutes wide, fractions of a mile). Real devices
+   * produce dozens-to-hundreds of these per active day from background
+   * motion tracking, so the mock matches that shape.
+   */
+  private syntheticHistory: Array<{
+    id: string;
+    startTime: Date;
+    endTime: Date;
+    distanceMiles: number;
+  }> = [];
   /** Artificial per-call delay (ms). Useful for stall/timeout testing. */
   private artificialDelayMs = 0;
   /** When true, every call rejects with a fake timeout. */
   private simulateTimeout = false;
 
   /**
-   * Seed N days of synthetic daily distance records ending at `endDate`.
-   * Each day gets ~milesPerDay miles, jittered ±20%.
+   * Seed N days of synthetic distance records ending at `endDate`.
+   *
+   * `shape` controls per-day record count to mirror real platforms:
+   * - `'samples'` (default) — Health Connect on Android: 80-200 small raw
+   *   samples per day scattered 7am-10pm, each 1-5 min wide and
+   *   0.005-0.05 mi. This is the stress-test shape: thousands of
+   *   `addDistanceEntry` calls per chunked sync, exercises dedup hard.
+   * - `'daily'` — HealthKit on iOS: 1 aggregated record per day spanning
+   *   00:00 → 23:59 with the day's total miles. Trivially handled by the
+   *   ingest path; included for shape-completeness, not the stress case.
+   *
+   * Total daily miles jitters ±20% around `milesPerDay`.
+   *
+   * IDs are deterministic (`mock_<dayIndex>[_<sampleIndex>]`) so re-running
+   * a sync over the same window dedupes correctly.
    */
-  seedHistory(days: number, milesPerDay = 2.5, endDate = new Date()): void {
+  seedHistory(
+    days: number,
+    milesPerDay = 2.5,
+    endDate = new Date(),
+    shape: 'samples' | 'daily' = 'samples',
+  ): void {
     this.syntheticHistory = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const start = new Date(endDate);
-      start.setDate(endDate.getDate() - i);
-      start.setHours(8, 0, 0, 0);
-      const jitter = 0.8 + Math.random() * 0.4;
-      this.syntheticHistory.push({
-        startTime: start,
-        distanceMiles: milesPerDay * jitter,
-      });
+    // Tiny deterministic PRNG so the same seed produces the same dataset
+    // across reloads (helps dedup-on-resume testing).
+    let seed = 1337;
+    const rand = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+
+    for (let d = days - 1; d >= 0; d--) {
+      const dayStart = new Date(endDate);
+      dayStart.setDate(endDate.getDate() - d);
+      dayStart.setHours(0, 0, 0, 0);
+      const targetMilesToday = milesPerDay * (0.8 + rand() * 0.4);
+
+      if (shape === 'daily') {
+        const dayEnd = new Date(dayStart);
+        dayEnd.setHours(23, 59, 59, 999);
+        this.syntheticHistory.push({
+          id: `mock_d${days - 1 - d}`,
+          startTime: dayStart,
+          endTime: dayEnd,
+          distanceMiles: targetMilesToday,
+        });
+        continue;
+      }
+
+      const samplesToday = 80 + Math.floor(rand() * 120); // 80-200
+      const weights: number[] = [];
+      let weightSum = 0;
+      for (let s = 0; s < samplesToday; s++) {
+        const w = 0.2 + rand() * 0.8;
+        weights.push(w);
+        weightSum += w;
+      }
+
+      for (let s = 0; s < samplesToday; s++) {
+        const minuteOfDay = 7 * 60 + Math.floor(rand() * 15 * 60);
+        const start = new Date(dayStart);
+        start.setMinutes(minuteOfDay);
+        const durationMin = 1 + Math.floor(rand() * 5);
+        const end = new Date(start.getTime() + durationMin * 60 * 1000);
+        const miles = (weights[s] / weightSum) * targetMilesToday;
+        this.syntheticHistory.push({
+          id: `mock_d${days - 1 - d}_s${s}`,
+          startTime: start,
+          endTime: end,
+          distanceMiles: miles,
+        });
+      }
     }
+    this.syntheticHistory.sort(
+      (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+    );
   }
 
   setArtificialDelay(ms: number): void {
@@ -852,15 +922,13 @@ export class MockFitnessService implements FitnessServiceInterface {
 
     if (this.syntheticHistory.length > 0) {
       const records: HealthDistanceRecord[] = [];
-      for (const day of this.syntheticHistory) {
-        if (day.startTime >= startDate && day.startTime < endDate) {
-          const end = new Date(day.startTime);
-          end.setHours(end.getHours() + 1);
+      for (const sample of this.syntheticHistory) {
+        if (sample.startTime >= startDate && sample.startTime < endDate) {
           records.push({
-            id: `mock_${day.startTime.toISOString()}`,
-            startTime: day.startTime.toISOString(),
-            endTime: end.toISOString(),
-            distanceMeters: day.distanceMiles * 1609.34,
+            id: sample.id,
+            startTime: sample.startTime.toISOString(),
+            endTime: sample.endTime.toISOString(),
+            distanceMeters: sample.distanceMiles * 1609.34,
           });
         }
       }

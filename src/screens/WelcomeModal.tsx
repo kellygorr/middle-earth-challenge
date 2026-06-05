@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Modal,
   TouchableWithoutFeedback,
-  Pressable,
   useWindowDimensions,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -15,17 +14,15 @@ import {
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
 import { useTheme } from '../stores/settingsStore';
-import { useUIStore } from '../stores/uiStore';
 import { typographyThemed } from '../styles/typography';
-import { spacing, borderRadius, iconSizes } from '../styles/global';
+import { spacing } from '../styles/global';
 import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
-import Button, { IconButton } from '../components/Buttons';
-import { SyncIcon } from '../assets/icons';
+import Button from '../components/Buttons';
 import { useProgressStore } from '../stores/progressStore';
 import JourneyProgressBar from '../components/JourneyProgressBar';
 import SyncIndicator from '../components/SyncIndicator';
-import SettingsRef from '../components/SettingsRef';
+import SyncErrorBanner from '../components/SyncErrorBanner';
 
 interface WelcomeModalProps {
   visible: boolean;
@@ -40,42 +37,22 @@ export default function WelcomeModal({
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const miles = useProgressStore(state => state.miles) || 0;
-  const syncStatus = useProgressStore(state => state.syncStatus);
-  const setSyncStatus = useProgressStore(state => state.setSyncStatus);
-  // Only show a user-actionable reconnect prompt for permission errors.
-  const syncErrorMessage =
-    syncStatus.error?.kind === 'permission' ? syncStatus.error.message : null;
-  const clearSyncError = () =>
-    setSyncStatus(prev => ({ ...prev, phase: 'idle', error: null }));
-  const pushModal = useUIStore(state => state.pushModal);
+  const lastSyncError = useProgressStore(state => state.lastSyncError);
 
-  const {
-    internalVisible,
-    animatedBackgroundStyle,
-    animatedContentStyle,
-    dismiss,
-  } = useAnimatedModal(visible, {
-    translateDistance: 0, // fade-only for welcome
-    entranceDelay: motion.modal.entranceDelay,
-    entranceDuration: motion.modal.entranceDuration,
-    exitDuration: motion.modal.exitDuration,
-    easing: motion.easing.standard,
-  });
+  // Measure the journey progress bar so the absolutely-positioned sync
+  // pill can sit exactly above it without overlapping.
+  const [progressBarHeight, setProgressBarHeight] = React.useState(0);
 
-  const handleReconnect = () => {
-    // Clear the error and dismiss welcome modal, then open sync modal after exit animation
-    clearSyncError();
-    dismiss(() => {
-      pushModal({ type: 'sync' });
+  const { internalVisible, animatedBackgroundStyle, animatedContentStyle } =
+    useAnimatedModal(visible, {
+      translateDistance: 0, // fade-only for welcome
+      entranceDelay: motion.modal.entranceDelay,
+      entranceDuration: motion.modal.entranceDuration,
+      exitDuration: motion.modal.exitDuration,
+      easing: motion.easing.standard,
     });
-    onDismiss();
-  };
 
   const handleDismiss = () => {
-    // Clear sync error when user dismisses welcome modal
-    if (syncErrorMessage) {
-      clearSyncError();
-    }
     onDismiss();
   };
 
@@ -129,49 +106,31 @@ export default function WelcomeModal({
                   {miles > 0 ? 'Continue journey' : 'Begin journey'}
                 </Button>
 
-                {/* Sync error message */}
-                {syncErrorMessage && (
-                  <Pressable
-                    style={styles.syncErrorContainer}
-                    onPress={handleReconnect}
-                  >
-                    <IconButton
-                      icon={<SyncIcon size={iconSizes.medium} />}
-                      variant="outline"
-                    />
-                    <Text
-                      style={[
-                        typographyThemed(theme).body,
-                        styles.syncErrorText,
-                        { color: theme.colors.textInverted },
-                      ]}
-                    >
-                      {(() => {
-                        const parts = syncErrorMessage.split(/\bSettings\b/);
-                        const elements: React.ReactNode[] = [];
-                        parts.forEach((part, i) => {
-                          if (part.length > 0) {
-                            elements.push(<Text key={`t-${i}`}>{part}</Text>);
-                          }
-                          if (i < parts.length - 1) {
-                            elements.push(
-                              <SettingsRef
-                                key={`s-${i}`}
-                                color={theme.colors.textInverted}
-                              />,
-                            );
-                          }
-                        });
-                        return elements;
-                      })()}
-                    </Text>
-                  </Pressable>
+                {/* Persistent sync-error card (any kind). Has its own
+                    × dismiss; we deliberately do NOT clear it when the
+                    welcome modal closes — the badge dot on Settings
+                    should keep reflecting the unresolved problem. */}
+                {lastSyncError && (
+                  <View style={styles.bannerWrap}>
+                    <SyncErrorBanner />
+                  </View>
                 )}
               </View>
             </Animated.View>
-            {/* Sync indicator + progress bar, stacked in flow so the pill
-                never overlaps the journey progress bar. */}
-            <View style={styles.syncIndicatorContainer} pointerEvents="none">
+            {/* Sync indicator: absolutely positioned so it does not affect
+                the centering of the welcome content above. Sits just above
+                the journey progress bar when present, otherwise at the
+                bottom of the safe area. */}
+            <View
+              style={[
+                styles.syncIndicatorContainer,
+                {
+                  bottom:
+                    miles > 0 ? progressBarHeight + spacing.lg : spacing.md,
+                },
+              ]}
+              pointerEvents="none"
+            >
               <SyncIndicator />
             </View>
             {miles > 0 && (
@@ -180,6 +139,9 @@ export default function WelcomeModal({
                   styles.bottomProgressContainer,
                   { paddingHorizontal: spacing.xl },
                 ]}
+                onLayout={e =>
+                  setProgressBarHeight(e.nativeEvent.layout.height)
+                }
               >
                 <JourneyProgressBar darkMode />
               </View>
@@ -229,22 +191,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   syncIndicatorContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  bannerWrap: {
     width: '100%',
-    alignItems: 'center',
-    paddingBottom: spacing.md,
-  },
-  syncErrorContainer: {
-    flexDirection: 'row',
     marginTop: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: borderRadius.md,
-  },
-  syncErrorText: {
-    flex: 1,
-    opacity: 0.9,
   },
 });

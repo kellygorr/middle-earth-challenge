@@ -9,6 +9,7 @@ import Button from '../../Buttons/Button';
 import SectionHeader from '../SectionHeader';
 import ToggleRow from '../ToggleRow';
 import SettingsRef from '../../SettingsRef';
+import { SyncNowRow } from '../../SyncNowRow';
 
 interface SyncOption {
   id: SyncProvider;
@@ -247,11 +248,26 @@ export default function SyncContent() {
       </Text>
 
       <View style={styles.section}>
-        <ToggleRow
-          label="Live sync"
-          caption="See your progress update in real-time"
-          value={liveSyncEnabled}
-          onValueChange={setLiveSyncEnabled}
+        <View
+          style={[styles.dividerRow, { borderTopColor: theme.colors.divider }]}
+        >
+          <SyncNowRow />
+        </View>
+        <View
+          style={[styles.dividerRow, { borderTopColor: theme.colors.divider }]}
+        >
+          <ToggleRow
+            label="Live sync"
+            caption="See your progress update in real-time in this app"
+            value={liveSyncEnabled}
+            onValueChange={setLiveSyncEnabled}
+          />
+        </View>
+        <View
+          style={[
+            styles.dividerBottom,
+            { borderBottomColor: theme.colors.divider },
+          ]}
         />
       </View>
 
@@ -264,7 +280,8 @@ export default function SyncContent() {
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.sectionText]}
         >
-          You can disable syncing or delete synced data at any time from{' '}
+          You can disable syncing above. Disabling sync does not automatically
+          delete your synced data. You can delete synced data at any time from{' '}
           <SettingsRef />.
         </Text>
       </View>
@@ -344,6 +361,13 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: spacing.xl,
+  },
+  dividerRow: {
+    borderTopWidth: 1,
+    paddingVertical: spacing.md,
+  },
+  dividerBottom: {
+    borderBottomWidth: 1,
   },
   sectionLabel: {
     textAlign: 'left',
