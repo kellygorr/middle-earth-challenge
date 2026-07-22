@@ -4,7 +4,6 @@ import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing, borderRadius } from '../../../styles/global';
-import { database } from '../../../services/database';
 import Button from '../../Buttons/Button';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
@@ -27,40 +26,22 @@ export default function DataContent() {
   const handleDeleteSyncedData = async () => {
     Alert.alert(
       'Delete Synced Data',
-      'Are you sure you want to delete all synced data? This cannot be undone. If you are still connected to the health app, future syncs will only import new data from this point forward. Your manually entered data will be preserved.',
+      'Do you want to delete all synced data? This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            const syncedEntries = distanceEntries.filter(
-              e => e.source !== 'manual',
-            );
-            const totalToRemove = syncedEntries.reduce(
-              (sum, e) => sum + (e?.miles ?? 0),
-              0,
-            );
-
-            // Remove from store and database
-            for (const entry of syncedEntries) {
-              useProgressStore.getState().removeDistanceEntry(entry.id);
-              try {
-                await database.removeDistanceEntry(entry.id);
-              } catch (err) {
-                console.warn('Failed to remove synced entry:', err);
-              }
-            }
-
-            // Update miles total
-            const currentMiles = useProgressStore.getState().miles ?? 0;
-            const newMiles = Math.max(0, currentMiles - totalToRemove);
-            useProgressStore.getState().setMiles(newMiles);
-            try {
-              await database.setMilesSnapshot('default', newMiles);
-            } catch (err) {
-              console.warn('Failed to update miles snapshot:', err);
-            }
+            // Bulk-remove in a single store/DB write so the UI doesn't
+            // freeze when there are hundreds of chunked-sync entries.
+            await useProgressStore
+              .getState()
+              .removeDistanceEntriesBySource([
+                'health-connect',
+                'apple-health',
+                'synced',
+              ]);
 
             // Reset sync start date to now so deleted data isn't re-imported
             useSettingsStore.getState().setSyncStartDate(Date.now());
@@ -74,40 +55,16 @@ export default function DataContent() {
   const handleDeleteManualData = async () => {
     Alert.alert(
       'Delete Manual Data',
-      'Are you sure you want to delete all manually entered data? This cannot be undone. Your synced data will be preserved.',
+      'Do you want to delete all manual entries? This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            const manualEntries = distanceEntries.filter(
-              e => e.source === 'manual',
-            );
-            const totalToRemove = manualEntries.reduce(
-              (sum, e) => sum + (e?.miles ?? 0),
-              0,
-            );
-
-            // Remove from store and database
-            for (const entry of manualEntries) {
-              useProgressStore.getState().removeDistanceEntry(entry.id);
-              try {
-                await database.removeDistanceEntry(entry.id);
-              } catch (err) {
-                console.warn('Failed to remove manual entry:', err);
-              }
-            }
-
-            // Update miles total
-            const currentMiles = useProgressStore.getState().miles ?? 0;
-            const newMiles = Math.max(0, currentMiles - totalToRemove);
-            useProgressStore.getState().setMiles(newMiles);
-            try {
-              await database.setMilesSnapshot('default', newMiles);
-            } catch (err) {
-              console.warn('Failed to update miles snapshot:', err);
-            }
+            await useProgressStore
+              .getState()
+              .removeDistanceEntriesBySource(['manual']);
           },
         },
       ],
@@ -117,31 +74,21 @@ export default function DataContent() {
   // Delete all distance data (synced + manual)
   const handleDeleteAllProgress = async () => {
     Alert.alert(
-      'Delete All Progress',
-      'Are you sure you want to delete ALL your journey progress? This includes both synced and manually entered data. This cannot be undone.',
+      'Delete All Data',
+      'Do you want to delete all synced and manual data? This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete All',
           style: 'destructive',
           onPress: async () => {
-            // Remove all entries from store and database
-            for (const entry of distanceEntries) {
-              useProgressStore.getState().removeDistanceEntry(entry.id);
-              try {
-                await database.removeDistanceEntry(entry.id);
-              } catch (err) {
-                console.warn('Failed to remove entry:', err);
-              }
-            }
+            // resetProgress() does a single setState + one SQL DELETE +
+            // one miles snapshot write — no per-entry looping.
+            await useProgressStore.getState().resetProgress();
 
-            // Reset miles to 0
-            useProgressStore.getState().setMiles(0);
-            try {
-              await database.setMilesSnapshot('default', 0);
-            } catch (err) {
-              console.warn('Failed to reset miles snapshot:', err);
-            }
+            // Reset sync start date to now so deleted synced data isn't
+            // re-imported on the next sync (syncing itself stays enabled).
+            useSettingsStore.getState().setSyncStartDate(Date.now());
           },
         },
       ],
@@ -162,7 +109,7 @@ export default function DataContent() {
             // Reset settings store to defaults
             const store = useSettingsStore.getState();
             store.setTheme('minimalist');
-            store.setLabelSize('regular');
+            store.setLabelSize('medium');
             store.setColorizeMap(false);
             store.setReducedMapTitles(true);
             store.setDevMode(false);
@@ -195,7 +142,7 @@ export default function DataContent() {
             </Text>
             <Text style={[typographyThemed(theme).captionSecondary]}>
               Remove all data synced from health app. This does not disconnect
-              syncing.
+              syncing — future syncs will import data from this point forward.
             </Text>
           </View>
           {hasSyncedData ? (
@@ -238,7 +185,7 @@ export default function DataContent() {
               Delete manual data
             </Text>
             <Text style={[typographyThemed(theme).captionSecondary]}>
-              Remove all manually entered entries
+              Remove all manually created entries
             </Text>
           </View>
           {hasManualData ? (
@@ -275,7 +222,8 @@ export default function DataContent() {
               Delete all data
             </Text>
             <Text style={[typographyThemed(theme).captionSecondary]}>
-              Remove all manual and synced data
+              Remove all manual and synced data. This does not disconnect
+              syncing — future syncs will import data from this point forward.
             </Text>
           </View>
           {hasAnyData ? (

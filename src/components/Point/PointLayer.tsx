@@ -1,7 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { View, StyleSheet } from 'react-native';
 import PositionedPoint from './PositionedPoint';
+import Button, { labelSizeToButtonSize } from '../Buttons';
 import { mapBookMilesToPathProgress } from '../../utils/pathProgress';
 import { PointType } from '../../types';
+import { useSettingsStore } from '../../stores/settingsStore';
+
+// Default label height used until the hidden measurement Button reports its
+// actual height on first layout. Matches the medium size to minimize the
+// visible offset jump when a fresh map appears.
+const DEFAULT_LABEL_HEIGHT = 26;
+
+const noop = () => {};
 
 type Props = {
   checkpoints: PointType[];
@@ -36,8 +46,18 @@ export default function PointLayer({
   currentMiles,
   onItemPress,
 }: Props) {
-  // Only enrich checkpoints with index; trivia passes through unchanged.
+  const labelSize = useSettingsStore(state => state.labelSize);
 
+  // A single hidden Button, rendered with the exact same size / textSize as
+  // real point labels, reports its measured height once. Every PositionedPoint
+  // uses that height to offset the node so growing/shrinking labels don't
+  // shift the circle off its map coordinate. `key={labelSize}` remounts the
+  // measurement Button whenever the user changes the label-size setting so
+  // we always have an up-to-date measurement.
+  const [labelHeight, setLabelHeight] = useState<number>(DEFAULT_LABEL_HEIGHT);
+  const buttonSize = labelSizeToButtonSize(labelSize);
+
+  // Only enrich checkpoints with index; trivia passes through unchanged.
   const renderPoint = (
     item: PointType,
     kind: 'checkpoint' | 'trivia',
@@ -78,6 +98,7 @@ export default function PointLayer({
         scale={scale}
         showLabel={kind === 'checkpoint' && showPointLabels}
         onPress={() => onItemPress(enriched, kind)}
+        labelHeight={labelHeight}
       />
     );
   };
@@ -86,6 +107,39 @@ export default function PointLayer({
     <>
       {trivia.map(tr => renderPoint(tr, 'trivia'))}
       {checkpoints.map((cp, i) => renderPoint(cp, 'checkpoint', i))}
+      {/* Hidden measurement label. Off-screen and non-interactive; its only
+          job is to report the pill's rendered height for the current
+          labelSize so PositionedPoint can compensate for it. */}
+      <View
+        style={styles.measure}
+        pointerEvents="none"
+        aria-hidden
+        onLayout={e => {
+          const h = e.nativeEvent.layout.height;
+          if (h > 0 && h !== labelHeight) setLabelHeight(h);
+        }}
+      >
+        <Button
+          key={labelSize}
+          variant="primary"
+          type="label"
+          size={buttonSize}
+          textSize={buttonSize}
+          isLabelButton
+          onPress={noop}
+        >
+          {'A'}
+        </Button>
+      </View>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  measure: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    opacity: 0,
+  },
+});

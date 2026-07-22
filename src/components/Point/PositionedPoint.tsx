@@ -6,7 +6,6 @@ import Animated, {
 import { StyleSheet } from 'react-native';
 import Point from './Point';
 import { PointType } from '../../types';
-import { useSettingsStore } from '../../stores/settingsStore';
 
 interface PositionedPointProps {
   item: PointType;
@@ -23,6 +22,10 @@ interface PositionedPointProps {
   showLabel: boolean;
   onPress: () => void;
   anchorRef?: React.Ref<any>;
+  // Measured height of a label pill at the current labelSize setting.
+  // Provided by PointLayer via a single hidden measurement Button so every
+  // point uses the same accurate value without measuring per-instance.
+  labelHeight: number;
 }
 
 export default function PositionedPoint({
@@ -39,20 +42,13 @@ export default function PositionedPoint({
   showLabel,
   onPress,
   anchorRef,
+  labelHeight,
 }: PositionedPointProps) {
-  const labelSize = useSettingsStore(state => state.labelSize);
-
-  const LABEL_HEIGHT_SMALL = 20;
-  const LABEL_HEIGHT_MEDIUM = 26;
-  const LABEL_HEIGHT_LARGE = 30;
-  const labelHeight =
-    labelSize === 'large'
-      ? LABEL_HEIGHT_LARGE
-      : labelSize === 'small'
-      ? LABEL_HEIGHT_SMALL
-      : LABEL_HEIGHT_MEDIUM;
-
   const animatedStyle = useAnimatedStyle(() => {
+    // For 'top' labels the label sits above the circle in a column-reverse
+    // flex layout, pushing the circle down by its own height. We shift the
+    // wrapper up by that measured height so the circle lands exactly on
+    // (baseX, baseY) regardless of label-size setting.
     const labelOffset = item.labelPosition === 'top' ? labelHeight : 0;
 
     // Correctly scale the point relative to the map center

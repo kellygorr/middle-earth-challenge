@@ -31,7 +31,7 @@ import { iconSizes } from '../styles/global';
 import PointLayer from '../components/Point/PointLayer';
 import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 import Button, { InfoButton, TooltipButton } from '../components/Buttons';
-import DevMiles from '../components/DevMiles';
+import DevView from '../components/DevView';
 import SyncIndicator from '../components/SyncIndicator';
 
 import { spacing } from '../styles/global';
@@ -641,7 +641,7 @@ export default function MapScreen() {
       </SafeAreaView>
 
       {/* Dev Miles (Developer mode) */}
-      {devMode && !showWelcome && <DevMiles keyboardOffset={keyboardOffset} />}
+      {devMode && !showWelcome && <DevView keyboardOffset={keyboardOffset} />}
 
       {/* Loading overlay - hides map until ready */}
       {phase === 'loading' && <View style={styles.loadingOverlay} />}

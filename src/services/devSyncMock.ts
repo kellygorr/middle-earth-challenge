@@ -22,6 +22,12 @@ import { useProgressStore } from '../stores/progressStore';
  *
  * Set back to false (and reload) to return to real Health Connect.
  */
+// ⚠️ Keep this `false` for normal development and all release builds — the
+// app will use real Health Connect / Apple Health data.
+// Set to `true` only when you want to test the chunked-sync UX with seeded
+// mock data, then cold-restart the app (Fast Refresh is not enough).
+// The `useMockFitnessService()` helper is `__DEV__`-guarded, so even if this
+// were left `true` a release build cannot swap in the mock.
 export const DEV_MOCK_LONG_SYNC = false;
 
 const DAYS = 10;

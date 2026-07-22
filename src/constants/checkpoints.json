@@ -8,8 +8,8 @@
     },
     "isStart": true,
     "isActive": true,
-    "x": 760,
-    "y": 630,
+    "x": 757,
+    "y": 634,
     "labelPosition": "top",
     "CUMULATIVE_MILES": 0,
     "checkpointActivationMiles": 0,
@@ -23,7 +23,7 @@
       "image": "bree.jpg"
     },
     "x": 975,
-    "y": 648,
+    "y": 646,
     "CUMULATIVE_MILES": 120,
     "checkpointActivationMiles": 105,
     "postCheckpointOffsetMiles": 11
@@ -49,7 +49,7 @@
       "image": "lothlorien.jpg"
     },
     "x": 1634,
-    "y": 1015,
+    "y": 1013,
     "CUMULATIVE_MILES": 595,
     "checkpointActivationMiles": 624,
     "postCheckpointOffsetMiles": 5
@@ -89,7 +89,7 @@
       "image": "minas-morgul.jpg"
     },
     "x": 2060,
-    "y": 1648,
+    "y": 1645,
     "CUMULATIVE_MILES": 1165,
     "checkpointActivationMiles": 1097,
     "postCheckpointOffsetMiles": 4

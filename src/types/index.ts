@@ -91,13 +91,6 @@ export interface JourneySegment {
   endMiles: number; // Cumulative end
 }
 
-// Health data types
-export interface HealthData {
-  distance: number; // in miles
-  steps: number;
-  date: string;
-}
-
 // Individual health record from Health Connect
 export interface HealthDistanceRecord {
   id: string; // metadata.id from Health Connect
