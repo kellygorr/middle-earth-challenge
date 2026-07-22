@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform, Alert, Linking } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
+import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
 import { SyncProvider } from '../../../types';
@@ -10,6 +11,7 @@ import SectionHeader from '../SectionHeader';
 import ToggleRow from '../ToggleRow';
 import SettingsRef from '../../SettingsRef';
 import { SyncNowRow } from '../../SyncNowRow';
+import { PlusIcon } from '../../../assets/icons';
 
 interface SyncOption {
   id: SyncProvider;
@@ -36,6 +38,11 @@ export default function SyncContent() {
   const setLiveSyncEnabled = useSettingsStore(
     state => state.setLiveSyncEnabled,
   );
+  const miles = useProgressStore(state => state.miles) || 0;
+  // SyncNowRow hides itself until the user has miles (see its own guard).
+  // Mirror that here so the wrapper's top border doesn't stack against the
+  // Live sync row's top border and create a double line.
+  const showSyncNow = syncEnabled && miles > 0;
 
   const handleDisconnect = async () => {
     await fitnessService.disconnect();
@@ -200,6 +207,35 @@ export default function SyncContent() {
     <>
       <SectionHeader title="Sync options" />
 
+      <View style={styles.approveSection}>
+        <Text
+          style={[typographyThemed(theme).captionPrimary, styles.sectionLabel]}
+        >
+          Approve data access
+        </Text>
+        <Text
+          style={[typographyThemed(theme).captionSecondary, styles.sectionText]}
+        >
+          We request access to distance and step count to calculate your
+          journey progress. No other health data is accessed.
+        </Text>
+        <Text
+          style={[
+            typographyThemed(theme).captionSecondary,
+            styles.sectionText,
+          ]}
+        >
+          Connecting your distance and steps is not required to use the app.
+          If you prefer to manually add miles, use{' '}
+          <View style={styles.inlinePlus}>
+            <View style={styles.inlinePlusCircle}>
+              <PlusIcon size={8} color="#fff" />
+            </View>
+          </View>{' '}
+          from the map.
+        </Text>
+      </View>
+
       {syncEnabled && (
         <Text
           style={[
@@ -247,29 +283,39 @@ export default function SyncContent() {
           : 'Health Connect is built into Android 14+ or can be installed from the Play Store.'}
       </Text>
 
-      <View style={styles.section}>
-        <View
-          style={[styles.dividerRow, { borderTopColor: theme.colors.divider }]}
-        >
-          <SyncNowRow />
-        </View>
-        <View
-          style={[styles.dividerRow, { borderTopColor: theme.colors.divider }]}
-        >
-          <ToggleRow
-            label="Live sync"
-            caption="See your progress update in real-time in this app"
-            value={liveSyncEnabled}
-            onValueChange={setLiveSyncEnabled}
+      {syncEnabled && (
+        <View style={styles.section}>
+          {showSyncNow && (
+            <View
+              style={[
+                styles.dividerRow,
+                { borderTopColor: theme.colors.divider },
+              ]}
+            >
+              <SyncNowRow />
+            </View>
+          )}
+          <View
+            style={[
+              styles.dividerRow,
+              { borderTopColor: theme.colors.divider },
+            ]}
+          >
+            <ToggleRow
+              label="Live sync"
+              caption="See your progress update in real-time in this app"
+              value={liveSyncEnabled}
+              onValueChange={setLiveSyncEnabled}
+            />
+          </View>
+          <View
+            style={[
+              styles.dividerBottom,
+              { borderBottomColor: theme.colors.divider },
+            ]}
           />
         </View>
-        <View
-          style={[
-            styles.dividerBottom,
-            { borderBottomColor: theme.colors.divider },
-          ]}
-        />
-      </View>
+      )}
 
       <View style={styles.section}>
         <Text
@@ -363,9 +409,29 @@ const styles = StyleSheet.create({
   section: {
     marginTop: spacing.xl,
   },
+  approveSection: {
+    marginTop: spacing.sm,
+  },
+  // Outer wrapper is the same 14px size as the SettingsIcon in SettingsRef
+  // so both inline refs sit at the same spot on the text line. The inner
+  // circle is smaller (12px) to visually match the gear's lighter weight.
+  inlinePlus: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ translateY: 2 }],
+  },
+  inlinePlusCircle: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dividerRow: {
     borderTopWidth: 1,
-    paddingVertical: spacing.md,
   },
   dividerBottom: {
     borderBottomWidth: 1,

@@ -172,8 +172,10 @@ export default function MapScreen() {
     recenterOpacity,
     originMonitorEnabled,
     resetToOrigin,
-    onInfoAnimationComplete: () => {
-      // Run once after welcome dismissal; do NOT auto-open the modal
+    onStartupReady: () => {
+      // Fires ~1s after welcome dismisses — surfaces the startup tooltip
+      // and begins observing miles changes. Runs before the path reveal
+      // finishes so the guidance shows quickly.
       const hasShownStartupGuidance = autoOpenRef.current;
       if (!hasShownStartupGuidance && currentItem) {
         // Display startup tooltip only at game start (0 miles)
@@ -183,7 +185,11 @@ export default function MapScreen() {
         autoOpenRef.current = true;
         setObserveMilesChanges(true);
       }
-      // Enable game progress animation after path reveal completes
+    },
+    onPathRevealComplete: () => {
+      // Enable game progress animation only after the base path has
+      // finished drawing — avoids the progress marker walking along a
+      // half-drawn line for returning users.
       setPhase('active');
     },
   });
@@ -689,6 +695,7 @@ export const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   infoContainer: {
+    alignItems: 'flex-start',
     zIndex: 100,
   },
   milesContainer: {
