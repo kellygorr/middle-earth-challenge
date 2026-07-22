@@ -8,6 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
+import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
 import {
   spacing,
@@ -55,6 +56,10 @@ export default function SettingsContent() {
     state => state.setLiveSyncEnabled,
   );
   const pushModal = useUIStore(state => state.pushModal);
+  const miles = useProgressStore(state => state.miles) || 0;
+  // Mirror SyncNowRow's internal miles>0 guard so the wrapper's top border
+  // doesn't stack against the Live sync row's top border (double line).
+  const showSyncNow = syncEnabled && miles > 0;
 
   return (
     <>
@@ -249,45 +254,52 @@ export default function SettingsContent() {
           </Pressable>
         </View>
 
-        {/* Manual sync trigger. Hidden by SyncNowRow when not connected. */}
-        <View
-          style={[
-            styles.contentRow,
-            styles.contentRowBorderTop,
-            { borderTopColor: theme.colors.divider },
-          ]}
-        >
-          <SyncNowRow />
-        </View>
-
-        {/* Live sync toggle - always visible under sync option */}
-        <View
-          style={[
-            styles.contentRow,
-            styles.contentRowSpaceBetween,
-            styles.contentRowBorderTop,
-            { borderTopColor: theme.colors.divider },
-          ]}
-        >
-          <View style={styles.flex1}>
-            <Text style={[typographyThemed(theme).bodyPrimary]}>
-              {`Live sync`}
-            </Text>
-            <Text style={[typographyThemed(theme).captionSecondary]}>
-              See your progress update in real-time in this app
-            </Text>
+        {/* Manual sync trigger. Hidden entirely when not connected or before
+            the first sync lands miles — otherwise it looks like the user
+            needs to tap it to sync, but tapping wouldn't do anything yet. */}
+        {showSyncNow && (
+          <View
+            style={[
+              styles.contentRow,
+              styles.contentRowBorderTop,
+              { borderTopColor: theme.colors.divider },
+            ]}
+          >
+            <SyncNowRow />
           </View>
-          <Switch
-            value={liveSyncEnabled}
-            onValueChange={setLiveSyncEnabled}
-            disabled={!syncEnabled}
-            trackColor={{
-              false: theme.colors.switchInactive,
-              true: theme.colors.buttonPrimary,
-            }}
-            thumbColor={theme.colors.surface}
-          />
-        </View>
+        )}
+
+        {/* Live sync toggle - only visible when connected to a health app.
+            Without a source there's nothing to "live sync" from, so hiding
+            keeps the UI honest and avoids a disabled-toggle dead-end. */}
+        {syncEnabled && (
+          <View
+            style={[
+              styles.contentRow,
+              styles.contentRowSpaceBetween,
+              styles.contentRowBorderTop,
+              { borderTopColor: theme.colors.divider },
+            ]}
+          >
+            <View style={styles.flex1}>
+              <Text style={[typographyThemed(theme).bodyPrimary]}>
+                {`Live sync`}
+              </Text>
+              <Text style={[typographyThemed(theme).captionSecondary]}>
+                See your progress update in real-time in this app
+              </Text>
+            </View>
+            <Switch
+              value={liveSyncEnabled}
+              onValueChange={setLiveSyncEnabled}
+              trackColor={{
+                false: theme.colors.switchInactive,
+                true: theme.colors.buttonPrimary,
+              }}
+              thumbColor={theme.colors.surface}
+            />
+          </View>
+        )}
       </Section>
 
       {/* Developer Settings */}
