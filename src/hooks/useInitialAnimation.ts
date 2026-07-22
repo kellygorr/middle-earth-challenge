@@ -20,7 +20,14 @@ interface UseInitialAnimationOptions {
   recenterOpacity: SharedValue<number>;
   originMonitorEnabled: SharedValue<boolean>;
   resetToOrigin: () => void;
-  onInfoAnimationComplete?: () => void;
+  // Fires ~1s after welcome dismisses. Used to surface the "Get started"
+  // tooltip and begin observing miles changes — decoupled from path
+  // reveal so first-run guidance shows quickly.
+  onStartupReady?: () => void;
+  // Fires when the base path reveal completes (or immediately if the
+  // reveal was skipped due to in-flight sync). Used to switch the game
+  // progress marker on so it doesn't animate along a still-drawing path.
+  onPathRevealComplete?: () => void;
 }
 
 interface UseInitialAnimationReturn {
@@ -39,7 +46,8 @@ export function useInitialAnimation({
   recenterOpacity,
   originMonitorEnabled,
   resetToOrigin,
-  onInfoAnimationComplete,
+  onStartupReady,
+  onPathRevealComplete,
 }: UseInitialAnimationOptions): UseInitialAnimationReturn {
   // Mirror `isSyncing` into a ref so changes don't retrigger the dismissal
   // effect; we only need its value at the moment welcome dismisses.
@@ -53,11 +61,17 @@ export function useInitialAnimation({
   const labelsOpacity = useSharedValue(showWelcome ? 0 : 1);
   const infoOpacity = useSharedValue(showWelcome ? 0 : 1);
 
+  // Sentinel shared value used purely to sequence the startup-ready
+  // callback via `withDelay` — separate from any visible opacity so its
+  // timing can be tuned without disturbing button entrance animation.
+  const startupSignal = useSharedValue(showWelcome ? 0 : 1);
+
   // Track if animations have completed to prevent restarts
   const hasSettingsAnimated = useSharedValue(!showWelcome);
   const hasLabelsAnimated = useSharedValue(!showWelcome);
   const hasInfoAnimated = useSharedValue(!showWelcome);
   const hasPathRevealed = useSharedValue(!showWelcome);
+  const hasStartupSignaled = useSharedValue(!showWelcome);
 
   // Animated styles for buttons
   const settingsEnterStyle = useAnimatedStyle(() => ({
@@ -111,33 +125,48 @@ export function useInitialAnimation({
         hasPathRevealed.value = true;
         if (isSyncingRef.current) {
           initialBasePathProgress.value = 1;
+          if (onPathRevealComplete) {
+            runOnJS(onPathRevealComplete)();
+          }
         } else {
           initialBasePathProgress.value = withDelay(
             motion.pathReveal.delay,
-            withTiming(1, { duration: motion.pathReveal.duration }),
+            withTiming(
+              1,
+              { duration: motion.pathReveal.duration },
+              finished => {
+                'worklet';
+                if (finished && onPathRevealComplete) {
+                  runOnJS(onPathRevealComplete)();
+                }
+              },
+            ),
           );
         }
       }
 
-      // Info button appears after path animation completes (only once)
+      // Info button appears immediately alongside settings so the user
+      // can start interacting without waiting for the path reveal.
       if (!hasInfoAnimated.value) {
         hasInfoAnimated.value = true;
-        infoOpacity.value = withDelay(
-          motion.pathReveal.delay +
-            motion.pathReveal.duration +
-            motion.modal.entranceDelay,
-          withTiming(
-            1,
-            {
-              duration: motion.button.enterDuration,
-            },
-            finished => {
-              'worklet';
-              if (finished && onInfoAnimationComplete) {
-                runOnJS(onInfoAnimationComplete)();
-              }
-            },
-          ),
+        infoOpacity.value = withTiming(1, {
+          duration: motion.button.enterDuration,
+        });
+      }
+
+      // Startup-ready signal: fires ~1s after welcome dismisses so the
+      // "Get started" tooltip has a beat of breathing room after the
+      // button fades in, rather than appearing simultaneously.
+      if (!hasStartupSignaled.value) {
+        hasStartupSignaled.value = true;
+        startupSignal.value = withDelay(
+          1000,
+          withTiming(1, { duration: 1 }, finished => {
+            'worklet';
+            if (finished && onStartupReady) {
+              runOnJS(onStartupReady)();
+            }
+          }),
         );
       }
     } else {
@@ -145,10 +174,12 @@ export function useInitialAnimation({
       cancelAnimation(settingsOpacity);
       cancelAnimation(labelsOpacity);
       cancelAnimation(infoOpacity);
+      cancelAnimation(startupSignal);
       hasSettingsAnimated.value = false;
       hasLabelsAnimated.value = false;
       hasInfoAnimated.value = false;
       hasPathRevealed.value = false;
+      hasStartupSignaled.value = false;
       settingsOpacity.value = withTiming(0, {
         duration: motion.button.exitDuration,
       });
@@ -158,6 +189,7 @@ export function useInitialAnimation({
       infoOpacity.value = withTiming(0, {
         duration: motion.button.exitDuration,
       });
+      startupSignal.value = 0;
 
       // Hide recenter button and reset origin monitoring
       cancelAnimation(recenterOpacity);
@@ -178,6 +210,7 @@ export function useInitialAnimation({
     settingsOpacity,
     labelsOpacity,
     infoOpacity,
+    startupSignal,
     recenterOpacity,
     originMonitorEnabled,
     resetToOrigin,
@@ -185,7 +218,9 @@ export function useInitialAnimation({
     hasLabelsAnimated,
     hasInfoAnimated,
     hasPathRevealed,
-    onInfoAnimationComplete,
+    hasStartupSignaled,
+    onStartupReady,
+    onPathRevealComplete,
   ]);
 
   return {

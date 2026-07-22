@@ -133,7 +133,7 @@ export default function WelcomeModal({
             >
               <SyncIndicator />
             </View>
-            {miles > 0 && (
+            {miles > 0 ? (
               <View
                 style={[
                   styles.bottomProgressContainer,
@@ -144,6 +144,23 @@ export default function WelcomeModal({
                 }
               >
                 <JourneyProgressBar darkMode />
+              </View>
+            ) : (
+              /* First-run: reassure the user that they don't need to
+                 connect a health app to use the app. Occupies the same
+                 bottom slot as the progress bar (mutually exclusive with
+                 miles > 0). Doesn't affect sync — auto-sync still runs
+                 on dismiss if a provider was previously connected. */
+              <View style={styles.bottomHintContainer} pointerEvents="none">
+                <Text
+                  style={[
+                    styles.hint,
+                    typographyThemed(theme).captionInverted,
+                  ]}
+                >
+                  Health data integration is optional and can be connected
+                  at any time for automatic tracking.
+                </Text>
               </View>
             )}
           </SafeAreaView>
@@ -190,6 +207,12 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     alignItems: 'center',
   },
+  bottomHintContainer: {
+    width: '100%',
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+  },
   syncIndicatorContainer: {
     position: 'absolute',
     left: 0,
@@ -199,5 +222,10 @@ const styles = StyleSheet.create({
   bannerWrap: {
     width: '100%',
     marginTop: spacing.xl,
+  },
+  hint: {
+    textAlign: 'center',
+    fontWeight: '600',
+    opacity: 0.8,
   },
 });
