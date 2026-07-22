@@ -205,7 +205,7 @@ export default function SettingsContent() {
 
       {/* Health Data Sync */}
       <Section>
-        <SectionHeader title="Health data" />
+        <SectionHeader title="Sync health data" />
 
         {/* Sync option - show toggle with icon */}
         <View
@@ -348,7 +348,8 @@ export default function SettingsContent() {
             ]}
           >
             Your distance data is stored locally on your device and is only used
-            to track your journey progress. No data is sent to external servers.
+            to calculate your journey progress. No data is sent to external
+            servers.
           </Text>
         </View>
 
