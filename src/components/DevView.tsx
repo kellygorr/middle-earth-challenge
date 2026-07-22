@@ -18,15 +18,15 @@ import { DevModeIcon } from '../assets/icons';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import { formatDistance } from '../utils/date';
 
-interface DevMilesProps {
+interface DevViewProps {
   keyboardOffset: number;
   onLayoutHeight?: (height: number) => void;
 }
 
-export default function DevMiles({
+export default function DevView({
   keyboardOffset,
   onLayoutHeight,
-}: DevMilesProps) {
+}: DevViewProps) {
   const theme = useTheme();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -155,81 +155,89 @@ export default function DevMiles({
           {fakeSyncActive ? 'Stop fake sync' : 'Fake sync'}
         </Button>
       </View>
-      <View style={[styles.row, styles.errRow]}>
-        <Button
-          onPress={() =>
-            pushFakeError({ kind: 'unknown', message: 'forced for testing' })
-          }
-          variant={lastSyncError?.kind === 'unknown' ? 'brand' : 'primary'}
-          size="small"
-          disabled={isRealSyncing}
-        >
-          Err: unknown (silent)
-        </Button>
-        <Button
-          onPress={() =>
-            pushFakeError({
-              kind: 'unavailable',
-              message: 'forced unavailable for testing',
-            })
-          }
-          variant={lastSyncError?.kind === 'unavailable' ? 'brand' : 'primary'}
-          size="small"
-          disabled={isRealSyncing}
-        >
-          Err: unavailable
-        </Button>
-        <Button
-          onPress={() =>
-            pushFakeError({
-              kind: 'permission',
-              message: 'forced permission error for testing',
-            })
-          }
-          variant={lastSyncError?.kind === 'permission' ? 'brand' : 'primary'}
-          size="small"
-          disabled={isRealSyncing}
-        >
-          Err: permission
-        </Button>
-        <Button
-          onPress={() =>
-            pushFakeError({
-              kind: 'timeout',
-              chunkStart: Date.now() - 7 * 24 * 60 * 60 * 1000,
-              chunkEnd: Date.now() - 6 * 24 * 60 * 60 * 1000,
-              chunksDone: 3,
-              chunksTotal: 8,
-            })
-          }
-          variant={lastSyncError?.kind === 'timeout' ? 'brand' : 'primary'}
-          size="small"
-          disabled={isRealSyncing}
-        >
-          Err: timeout
-        </Button>
-        <Button
-          onPress={() => pushFakeError({ kind: 'backgroundDisabled' })}
-          variant={
-            lastSyncError?.kind === 'backgroundDisabled' ? 'brand' : 'primary'
-          }
-          size="small"
-          disabled={isRealSyncing}
-        >
-          Err: bg off (iOS)
-        </Button>
-        <Button
-          onPress={clearFakeError}
-          variant="outline"
-          size="default"
-          disabled={
-            isRealSyncing ||
-            (lastSyncError === null && syncStatus.phase !== 'error')
-          }
-        >
-          Clear err
-        </Button>
-      </View>
+      {/* Fake-error buttons are strictly a developer-facing UI harness
+          (they let us preview error banners without triggering real sync
+          failures). __DEV__ hides them from release builds — users of the
+          shipped app have no reason to inject synthetic errors. */}
+      {__DEV__ && (
+        <View style={[styles.row, styles.errRow]}>
+          <Button
+            onPress={() =>
+              pushFakeError({ kind: 'unknown', message: 'forced for testing' })
+            }
+            variant={lastSyncError?.kind === 'unknown' ? 'brand' : 'primary'}
+            size="small"
+            disabled={isRealSyncing}
+          >
+            Err: unknown (silent)
+          </Button>
+          <Button
+            onPress={() =>
+              pushFakeError({
+                kind: 'unavailable',
+                message: 'forced unavailable for testing',
+              })
+            }
+            variant={
+              lastSyncError?.kind === 'unavailable' ? 'brand' : 'primary'
+            }
+            size="small"
+            disabled={isRealSyncing}
+          >
+            Err: unavailable
+          </Button>
+          <Button
+            onPress={() =>
+              pushFakeError({
+                kind: 'permission',
+                message: 'forced permission error for testing',
+              })
+            }
+            variant={lastSyncError?.kind === 'permission' ? 'brand' : 'primary'}
+            size="small"
+            disabled={isRealSyncing}
+          >
+            Err: permission
+          </Button>
+          <Button
+            onPress={() =>
+              pushFakeError({
+                kind: 'timeout',
+                chunkStart: Date.now() - 7 * 24 * 60 * 60 * 1000,
+                chunkEnd: Date.now() - 6 * 24 * 60 * 60 * 1000,
+                chunksDone: 3,
+                chunksTotal: 8,
+              })
+            }
+            variant={lastSyncError?.kind === 'timeout' ? 'brand' : 'primary'}
+            size="small"
+            disabled={isRealSyncing}
+          >
+            Err: timeout
+          </Button>
+          <Button
+            onPress={() => pushFakeError({ kind: 'backgroundDisabled' })}
+            variant={
+              lastSyncError?.kind === 'backgroundDisabled' ? 'brand' : 'primary'
+            }
+            size="small"
+            disabled={isRealSyncing}
+          >
+            Err: bg off (iOS)
+          </Button>
+          <Button
+            onPress={clearFakeError}
+            variant="outline"
+            size="default"
+            disabled={
+              isRealSyncing ||
+              (lastSyncError === null && syncStatus.phase !== 'error')
+            }
+          >
+            Clear err
+          </Button>
+        </View>
+      )}
       <View
         style={[
           styles.row,

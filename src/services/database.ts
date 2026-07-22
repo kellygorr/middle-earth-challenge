@@ -1,5 +1,11 @@
 import { open, type DB } from '@op-engineering/op-sqlite';
-import { UserSettings, LabelSize, TextSize, SyncProvider } from '../types';
+import {
+  UserSettings,
+  LabelSize,
+  TextSize,
+  SyncProvider,
+  DistanceSource,
+} from '../types';
 import { ThemeName } from '../styles/themes';
 
 // Coerce legacy 'regular' (pre-three-tier label size) to 'medium'.
@@ -319,6 +325,25 @@ class Database {
     } else {
       this.db.executeSync(`DELETE FROM distance_entries`);
     }
+  }
+
+  /**
+   * Bulk-delete distance entries whose `source` matches any value in
+   * `sources`. Executed as a single parameterised SQL statement so a
+   * "delete synced data" or "delete manual data" tap doesn't block the
+   * JS thread with N round-trips per entry.
+   */
+  async clearDistanceEntriesBySource(
+    saveId: string,
+    sources: DistanceSource[],
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    if (sources.length === 0) return;
+    const placeholders = sources.map(() => '?').join(', ');
+    this.db.executeSync(
+      `DELETE FROM distance_entries WHERE save_id = ? AND source IN (${placeholders})`,
+      [saveId, ...sources],
+    );
   }
 
   async setMilesSnapshot(id: string, miles: number): Promise<void> {

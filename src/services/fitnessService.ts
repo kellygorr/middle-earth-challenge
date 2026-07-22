@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { HealthData, HealthDistanceRecord, SyncProvider } from '../types';
+import { HealthDistanceRecord, SyncProvider } from '../types';
 
 // Average stride length in meters (approximately 0.762m or 2.5 feet)
 const AVERAGE_STRIDE_METERS = 0.762;
@@ -20,10 +20,6 @@ export interface FitnessServiceInterface {
     startDate: Date,
     endDate: Date,
   ): Promise<HealthDistanceRecord[]>;
-  getHealthDataForDateRange(
-    startDate: Date,
-    endDate: Date,
-  ): Promise<HealthData[]>;
   startRealTimeUpdates(callback: (distance: number) => void): void;
   stopRealTimeUpdates(): void;
   isAvailable(): Promise<boolean>;
@@ -674,32 +670,6 @@ class FitnessService implements FitnessServiceInterface {
   }
 
   /**
-   * Get health data for a specific date range
-   * @param startDate Start date
-   * @param endDate End date
-   * @returns Array of daily health data
-   */
-  async getHealthDataForDateRange(
-    _startDate: Date,
-    _endDate: Date,
-  ): Promise<HealthData[]> {
-    try {
-      if (!this.isInitialized) {
-        console.warn('[FitnessService] Fitness service not initialized');
-        return [];
-      }
-
-      // TODO: Implement platform-specific queries
-      // This should aggregate data by day and return an array
-      // For now, return empty array
-      return [];
-    } catch (error) {
-      console.error('[FitnessService] Get health data range error:', error);
-      return [];
-    }
-  }
-
-  /**
    * Start real-time distance updates
    * Useful for tracking progress during active workouts
    * @param callback Function to call with updated distance
@@ -945,25 +915,6 @@ export class MockFitnessService implements FitnessServiceInterface {
         distanceMeters: this.mockDistance * 1609.34,
       },
     ];
-  }
-
-  async getHealthDataForDateRange(
-    _startDate: Date,
-    _endDate: Date,
-  ): Promise<HealthData[]> {
-    const data: HealthData[] = [];
-    const current = new Date(_startDate);
-
-    while (current <= _endDate) {
-      data.push({
-        distance: Math.random() * 5, // Random 0-5 miles per day
-        steps: Math.floor(Math.random() * 10000),
-        date: current.toISOString().split('T')[0],
-      });
-      current.setDate(current.getDate() + 1);
-    }
-
-    return data;
   }
 
   startRealTimeUpdates(callback: (distance: number) => void): void {

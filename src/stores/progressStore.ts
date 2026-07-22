@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { TriviaUnlock, PointType, DistanceEntry } from '../types';
+import {
+  TriviaUnlock,
+  PointType,
+  DistanceEntry,
+  DistanceSource,
+} from '../types';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 import trivia from '../constants/trivia.json';
@@ -88,6 +93,7 @@ interface ProgressStore {
   addDistanceEntries: (entries: DistanceEntry[]) => Promise<void>;
   updateDistanceEntry: (entry: DistanceEntry) => Promise<void>;
   removeDistanceEntry: (id: string) => Promise<void>;
+  removeDistanceEntriesBySource: (sources: DistanceSource[]) => Promise<void>;
   setDistanceEntries: (entries: DistanceEntry[]) => void;
   setLastSyncDate: (date: string) => void;
   setSyncStatus: (
@@ -287,6 +293,35 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       await database.removeDistanceEntry(id);
     } catch (error) {
       console.error('Failed to remove distance entry:', error);
+    }
+  },
+
+  /**
+   * Bulk-remove every distance entry whose source is in `sources`.
+   * Uses a single setState + a single SQL DELETE + a single miles snapshot
+   * write, so "delete synced data" / "delete manual data" from Settings
+   * doesn't freeze the UI for users with hundreds/thousands of entries.
+   */
+  removeDistanceEntriesBySource: async sources => {
+    if (sources.length === 0) return;
+    const sourceSet = new Set<DistanceSource>(sources);
+    const state = get();
+    const toRemove = state.distanceEntries.filter(e => sourceSet.has(e.source));
+    if (toRemove.length === 0) return;
+
+    const remaining = state.distanceEntries.filter(
+      e => !sourceSet.has(e.source),
+    );
+    const milesToRemove = toRemove.reduce((sum, e) => sum + (e?.miles ?? 0), 0);
+    const newMiles = Math.max(0, state.miles - milesToRemove);
+
+    set({ distanceEntries: remaining, miles: newMiles });
+
+    try {
+      await database.clearDistanceEntriesBySource(SAVE_ID, sources);
+      await database.setMilesSnapshot(SAVE_ID, newMiles);
+    } catch (error) {
+      console.error('Failed to bulk-remove distance entries:', error);
     }
   },
 
