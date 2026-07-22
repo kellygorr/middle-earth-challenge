@@ -82,8 +82,8 @@ android {
         applicationId "com.middleearthchallenge"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "1.0.7"
+        versionCode 9
+        versionName "1.0.8"
     }
     signingConfigs {
         debug {
@@ -107,6 +107,17 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+
+    // Rename release APK output from the default app-release.apk to
+    // middle-earth-challenge.apk so uploaded/downloaded builds are
+    // self-describing (helpful in Firebase App Distribution).
+    applicationVariants.all { variant ->
+        if (variant.buildType.name == "release") {
+            variant.outputs.all { output ->
+                output.outputFileName = "middle-earth-challenge.apk"
+            }
         }
     }
 }
