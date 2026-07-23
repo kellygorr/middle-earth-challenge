@@ -43,8 +43,12 @@ export default function DataContent() {
                 'synced',
               ]);
 
-            // Reset sync start date to now so deleted data isn't re-imported
-            useSettingsStore.getState().setSyncStartDate(Date.now());
+            // Reset sync bookmarks so the next sync's fromDate falls back
+            // to syncStartDate (now) instead of the pre-reset lastSync-
+            // Timestamp, which would silently re-import the deleted data.
+            const settings = useSettingsStore.getState();
+            settings.setSyncStartDate(Date.now());
+            settings.setLastSyncTimestamp(null);
           },
         },
       ],
@@ -86,9 +90,12 @@ export default function DataContent() {
             // one miles snapshot write — no per-entry looping.
             await useProgressStore.getState().resetProgress();
 
-            // Reset sync start date to now so deleted synced data isn't
-            // re-imported on the next sync (syncing itself stays enabled).
-            useSettingsStore.getState().setSyncStartDate(Date.now());
+            // Reset sync bookmarks so the next sync's fromDate falls back
+            // to syncStartDate (now) instead of the pre-reset lastSync-
+            // Timestamp, which would silently re-import the deleted data.
+            const settings = useSettingsStore.getState();
+            settings.setSyncStartDate(Date.now());
+            settings.setLastSyncTimestamp(null);
           },
         },
       ],
