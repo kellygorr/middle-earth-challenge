@@ -637,27 +637,58 @@ class FitnessService implements FitnessServiceInterface {
     const hc = await getHealthConnectModule();
     if (!hc) return [];
 
+    const timeRangeFilter = {
+      operator: 'between' as const,
+      startTime: startDate.toISOString(),
+      endTime: endDate.toISOString(),
+    };
+
     try {
       const distanceResult = await hc.readRecords('Distance', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDate.toISOString(),
-          endTime: endDate.toISOString(),
-        },
+        timeRangeFilter,
       });
 
-      const records: HealthDistanceRecord[] = distanceResult.records.map(
-        record => ({
+      if (distanceResult.records.length > 0) {
+        return distanceResult.records.map(record => ({
           id: record.metadata?.id || `hc_${record.startTime}`,
           startTime: record.startTime,
           endTime: record.endTime,
           distanceMeters: record.distance?.inMeters || 0,
-        }),
-      );
-
-      return records;
+        }));
+      }
     } catch (error) {
       // Re-throw permission errors so they can be handled by the caller
+      const errorMessage = String(error);
+      if (
+        errorMessage.includes('SecurityException') ||
+        errorMessage.includes('permission')
+      ) {
+        throw error;
+      }
+      // Non-permission failure: fall through to steps fallback.
+    }
+
+    // Fallback: no Distance records in this window (or Distance read failed).
+    // Read Steps and convert via stride length. Mirrors the iOS path which
+    // falls back from getDailyDistanceWalkingRunningSamples → getDailyStep-
+    // CountSamples. Casual indoor walking on Android typically produces
+    // Steps records but no Distance records (Health Connect only has Distance
+    // when a source like Google Fit / a workout / GPS writes it), so without
+    // this fallback the sync silently ingests zero miles.
+    try {
+      const stepsResult = await hc.readRecords('Steps', {
+        timeRangeFilter,
+      });
+
+      return stepsResult.records
+        .filter(record => (record.count || 0) > 0)
+        .map(record => ({
+          id: record.metadata?.id || `hc_steps_${record.startTime}`,
+          startTime: record.startTime,
+          endTime: record.endTime,
+          distanceMeters: (record.count || 0) * AVERAGE_STRIDE_METERS,
+        }));
+    } catch (error) {
       const errorMessage = String(error);
       if (
         errorMessage.includes('SecurityException') ||
