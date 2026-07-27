@@ -145,7 +145,7 @@ export default function DevView({
           }}
         />
       </View>
-      <View style={[styles.row, { justifyContent: 'flex-end' }]}>
+      <View style={[styles.row, styles.rowRight]}>
         <Button
           onPress={toggleFakeSync}
           variant={fakeSyncActive ? 'primary' : 'outline'}
@@ -190,14 +190,39 @@ export default function DevView({
             onPress={() =>
               pushFakeError({
                 kind: 'permission',
+                source: 'health-app',
                 message: 'forced permission error for testing',
               })
             }
-            variant={lastSyncError?.kind === 'permission' ? 'brand' : 'primary'}
+            variant={
+              lastSyncError?.kind === 'permission' &&
+              lastSyncError.source === 'health-app'
+                ? 'brand'
+                : 'primary'
+            }
             size="small"
             disabled={isRealSyncing}
           >
-            Err: permission
+            Err: permission (health)
+          </Button>
+          <Button
+            onPress={() =>
+              pushFakeError({
+                kind: 'permission',
+                source: 'pedometer',
+                message: 'forced pedometer permission error for testing',
+              })
+            }
+            variant={
+              lastSyncError?.kind === 'permission' &&
+              lastSyncError.source === 'pedometer'
+                ? 'brand'
+                : 'primary'
+            }
+            size="small"
+            disabled={isRealSyncing}
+          >
+            Err: permission (pedometer)
           </Button>
           <Button
             onPress={() =>
@@ -241,7 +266,7 @@ export default function DevView({
       <View
         style={[
           styles.row,
-          { justifyContent: isLandscape ? 'center' : 'space-between' },
+          isLandscape ? styles.rowCenter : styles.rowSpaceBetween,
         ]}
       >
         <View style={[styles.leftGroup, isLandscape && styles.centeredGroup]}>
@@ -307,6 +332,15 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  rowRight: {
+    justifyContent: 'flex-end',
+  },
+  rowCenter: {
+    justifyContent: 'center',
+  },
+  rowSpaceBetween: {
+    justifyContent: 'space-between',
   },
   errRow: {
     justifyContent: 'flex-end',

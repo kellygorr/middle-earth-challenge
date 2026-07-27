@@ -153,13 +153,10 @@ export default function WelcomeModal({
                  on dismiss if a provider was previously connected. */
               <View style={styles.bottomHintContainer} pointerEvents="none">
                 <Text
-                  style={[
-                    styles.hint,
-                    typographyThemed(theme).captionInverted,
-                  ]}
+                  style={[styles.hint, typographyThemed(theme).captionInverted]}
                 >
-                  Health data integration is optional and can be connected
-                  at any time for automatic tracking.
+                  Health data integration is optional and can be connected at
+                  any time for automatic tracking.
                 </Text>
               </View>
             )}
@@ -193,6 +190,10 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   welcomeContainer: {
+    // Take the full modal width; otherwise the parent's alignItems:center
+    // shrinks this box to its narrowest child (the button), and the sync
+    // error banner below then collapses to that same skinny width.
+    width: '100%',
     alignItems: 'center',
     padding: spacing.xl,
   },

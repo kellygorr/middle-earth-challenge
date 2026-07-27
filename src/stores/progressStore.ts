@@ -5,16 +5,25 @@ import {
   DistanceEntry,
   DistanceSource,
 } from '../types';
-import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
-import checkpoints from '../constants/checkpoints.json';
-import trivia from '../constants/trivia.json';
+import {
+  TOTAL_JOURNEY_MILES,
+  DEFAULT_SAVE_ID,
+} from '../constants/gameConstants';
+import checkpointsRaw from '../constants/checkpoints.json';
+import triviaRaw from '../constants/trivia.json';
 import { database } from '../services/database';
 import {
   LONG_SYNC_CHUNK_THRESHOLD,
   LONG_SYNC_TIME_THRESHOLD_MS,
 } from '../constants/sync';
 
-const SAVE_ID = 'default';
+// The JSON files are hand-authored PointType-shaped rows. Cast once at
+// import time so the rest of this module can drop the per-call
+// `as any[]` sprinkled across selectors.
+const checkpoints = checkpointsRaw as PointType[];
+const trivia = triviaRaw as PointType[];
+
+const SAVE_ID = DEFAULT_SAVE_ID;
 
 /**
  * Discriminated error kinds surfaced by the sync pipeline.
@@ -27,7 +36,18 @@ const SAVE_ID = 'default';
  * populating `lastSyncError`.
  */
 export type SyncError =
-  | { kind: 'permission'; message: string }
+  | {
+      kind: 'permission';
+      /**
+       * Which sync source the missing permission belongs to. Drives
+       * copy + action in `SyncErrorBanner` (e.g. Physical Activity for
+       * pedometer vs. Health Connect access for health-app). Only ever
+       * set for the currently-selected source, so we never nag users
+       * about permissions on a source they aren't using.
+       */
+      source: 'health-app' | 'pedometer';
+      message: string;
+    }
   | {
       kind: 'timeout';
       chunkStart: number;
@@ -67,6 +87,17 @@ export const initialSyncStatus: SyncStatus = {
 interface ProgressStore {
   // State
   miles: number;
+  /**
+   * Running total of committed steps (SUM of `distance_entries.steps`),
+   * mirrored from `progress_snapshot.steps` so hot-path reads don't
+   * have to reduce the entries array on every render. Kept in sync by
+   * the same writers that update `miles`.
+   *
+   * NOTE: This is the *closed-range* total only. Live pedometer
+   * activity since `lastSyncTimestamp` is a separate concern owned by
+   * MapScreen (queried directly from `pedometerService`).
+   */
+  steps: number;
   triviaUnlocks: TriviaUnlock[];
   distanceEntries: DistanceEntry[];
   lastSyncDate: string | null;
@@ -85,6 +116,7 @@ interface ProgressStore {
 
   // Actions (persist to database automatically)
   setMiles: (miles: number) => void;
+  setSteps: (steps: number) => void;
   setTestMiles: (miles: number) => void;
   clearTestOverride: () => void;
   setTriviaUnlocks: (unlocks: TriviaUnlock[]) => void;
@@ -107,6 +139,8 @@ interface ProgressStore {
   // Selectors / derived values
   getProgressMiles: () => number;
   getProgressPercentage: () => number;
+  getTotalMiles: () => number;
+  getTotalSteps: () => number;
   getCheckpointIndexForMiles: () => number;
   getLatestCompletedCheckpointNumber: () => number; // 1-based
   getRemainingMilesTo: (targetMiles: number) => number;
@@ -134,6 +168,7 @@ interface ProgressStore {
 export const useProgressStore = create<ProgressStore>((set, get) => ({
   // Initial state
   miles: 0,
+  steps: 0,
   triviaUnlocks: [],
   distanceEntries: [],
   lastSyncDate: null,
@@ -146,19 +181,31 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   // Initialize from database on app start
   initFromDatabase: async () => {
     try {
-      const snapshot = await database.getMilesSnapshot(SAVE_ID);
+      const snapshot = await database.getProgressSnapshot(SAVE_ID);
       const entries = await database.getDistanceEntries(SAVE_ID);
 
       if (snapshot !== null) {
-        set({ miles: snapshot, distanceEntries: entries });
+        set({
+          miles: snapshot.miles,
+          steps: snapshot.steps,
+          distanceEntries: entries,
+        });
       } else {
         // No snapshot, calculate from entries
         const totalMiles = (entries || []).reduce(
           (sum, e) => sum + (e?.miles ?? 0),
           0,
         );
-        set({ miles: totalMiles, distanceEntries: entries });
-        await database.setMilesSnapshot(SAVE_ID, totalMiles);
+        const totalSteps = (entries || []).reduce(
+          (sum, e) => sum + (e?.steps ?? 0),
+          0,
+        );
+        set({
+          miles: totalMiles,
+          steps: totalSteps,
+          distanceEntries: entries,
+        });
+        await database.setProgressSnapshot(SAVE_ID, totalMiles, totalSteps);
       }
     } catch (error) {
       console.error('Failed to init progress from database:', error);
@@ -167,6 +214,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
 
   // Actions
   setMiles: miles => set({ miles }),
+  setSteps: steps => set({ steps: Math.max(0, Math.round(steps)) }),
   setTestMiles: miles =>
     set(state => ({
       miles,
@@ -197,10 +245,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       return; // Already exists
     }
 
-    // Update store with new entry AND increment miles snapshot
+    // Update store with new entry AND increment miles/steps snapshot
     set({
       distanceEntries: [entry, ...state.distanceEntries],
       miles: state.miles + entry.miles,
+      steps: state.steps + (entry.steps ?? 0),
     });
 
     // Persist to database
@@ -210,6 +259,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
         saveId: entry.saveId || SAVE_ID,
         date: entry.date as number,
         miles: entry.miles,
+        steps: entry.steps,
         source: entry.source,
       });
     } catch (error) {
@@ -230,9 +280,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     if (fresh.length === 0) return;
 
     const addedMiles = fresh.reduce((sum, e) => sum + e.miles, 0);
+    const addedSteps = fresh.reduce((sum, e) => sum + (e.steps ?? 0), 0);
     set({
       distanceEntries: [...fresh, ...state.distanceEntries],
       miles: state.miles + addedMiles,
+      steps: state.steps + addedSteps,
     });
 
     try {
@@ -242,6 +294,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
           saveId: e.saveId || SAVE_ID,
           date: e.date as number,
           miles: e.miles,
+          steps: e.steps,
           source: e.source,
         })),
       );
@@ -254,13 +307,17 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     const state = get();
     const oldEntry = state.distanceEntries.find(e => e.id === entry.id);
     const milesDelta = oldEntry ? entry.miles - oldEntry.miles : 0;
+    const stepsDelta = oldEntry
+      ? (entry.steps ?? 0) - (oldEntry.steps ?? 0)
+      : 0;
 
-    // Update store with entry change AND adjust miles snapshot
+    // Update store with entry change AND adjust miles/steps snapshot
     set({
       distanceEntries: state.distanceEntries.map(e =>
         e.id === entry.id ? entry : e,
       ),
       miles: state.miles + milesDelta,
+      steps: Math.max(0, state.steps + stepsDelta),
     });
 
     // Persist to database
@@ -270,6 +327,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
         saveId: entry.saveId || SAVE_ID,
         date: entry.date as number,
         miles: entry.miles,
+        steps: entry.steps,
         source: entry.source,
       });
     } catch (error) {
@@ -281,11 +339,13 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     const state = get();
     const entryToRemove = state.distanceEntries.find(e => e.id === id);
     const milesToRemove = entryToRemove?.miles ?? 0;
+    const stepsToRemove = entryToRemove?.steps ?? 0;
 
-    // Update store with entry removed AND decrement miles snapshot
+    // Update store with entry removed AND decrement miles/steps snapshot
     set({
       distanceEntries: state.distanceEntries.filter(d => d.id !== id),
       miles: Math.max(0, state.miles - milesToRemove),
+      steps: Math.max(0, state.steps - stepsToRemove),
     });
 
     // Persist to database
@@ -313,13 +373,15 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       e => !sourceSet.has(e.source),
     );
     const milesToRemove = toRemove.reduce((sum, e) => sum + (e?.miles ?? 0), 0);
+    const stepsToRemove = toRemove.reduce((sum, e) => sum + (e?.steps ?? 0), 0);
     const newMiles = Math.max(0, state.miles - milesToRemove);
+    const newSteps = Math.max(0, state.steps - stepsToRemove);
 
-    set({ distanceEntries: remaining, miles: newMiles });
+    set({ distanceEntries: remaining, miles: newMiles, steps: newSteps });
 
     try {
       await database.clearDistanceEntriesBySource(SAVE_ID, sources);
-      await database.setMilesSnapshot(SAVE_ID, newMiles);
+      await database.setProgressSnapshot(SAVE_ID, newMiles, newSteps);
     } catch (error) {
       console.error('Failed to bulk-remove distance entries:', error);
     }
@@ -378,17 +440,18 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     })),
 
   persistMilesSnapshot: async () => {
-    const miles = get().miles;
+    const { miles, steps } = get();
     try {
-      await database.setMilesSnapshot(SAVE_ID, miles);
+      await database.setProgressSnapshot(SAVE_ID, miles, steps);
     } catch (error) {
-      console.error('Failed to persist miles snapshot:', error);
+      console.error('Failed to persist progress snapshot:', error);
     }
   },
 
   resetProgress: async () => {
     set({
       miles: 0,
+      steps: 0,
       triviaUnlocks: [],
       distanceEntries: [],
       lastSyncDate: null,
@@ -402,7 +465,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     // Clear database
     try {
       await database.clearDistanceEntries(SAVE_ID);
-      await database.setMilesSnapshot(SAVE_ID, 0);
+      await database.setProgressSnapshot(SAVE_ID, 0, 0);
     } catch (error) {
       console.error('Failed to reset database:', error);
     }
@@ -418,13 +481,29 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     return Math.round((progressMiles / TOTAL_JOURNEY_MILES) * 100);
   },
 
+  // Sum helpers. Callers used to reduce `distanceEntries` inline in two
+  // hot paths (health-app chunk commit, pedometer commit) — centralised
+  // here so the summation formula only lives in one place.
+  getTotalMiles: () => {
+    const entries = get().distanceEntries;
+    let sum = 0;
+    for (const e of entries) sum += e?.miles ?? 0;
+    return sum;
+  },
+  getTotalSteps: () => {
+    const entries = get().distanceEntries;
+    let sum = 0;
+    for (const e of entries) sum += e?.steps ?? 0;
+    return sum;
+  },
+
   // Removed unused selectors: getCheckpointIndexForCumulativeMiles, getIndexForPoint
 
   getCheckpointIndexForMiles: () => {
     const totalMiles = get().miles ?? 0;
     let byIdx = -1;
-    for (let i = 0; i < (checkpoints as any[]).length; i++) {
-      const m = (checkpoints as any[])[i]?.CUMULATIVE_MILES ?? 0;
+    for (let i = 0; i < checkpoints.length; i++) {
+      const m = checkpoints[i]?.CUMULATIVE_MILES ?? 0;
       if (m > 0 && m <= totalMiles) byIdx = i;
     }
     return byIdx; // -1 if none reached yet
@@ -445,7 +524,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   isExactlyOnCheckpoint: () => {
     const miles = get().miles ?? 0;
     const eps = 1e-6;
-    const idx = (checkpoints as any[]).findIndex(
+    const idx = checkpoints.findIndex(
       cp => Math.abs((cp?.CUMULATIVE_MILES ?? -Infinity) - miles) < eps,
     );
     return idx >= 0 ? idx : -1;
@@ -472,26 +551,26 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
 
   getPointFromIndex: (index, type = 'checkpoint') => {
     if (typeof index !== 'number' || index < 0) return null;
-    const src = type === 'trivia' ? (trivia as any[]) : (checkpoints as any[]);
+    const src = type === 'trivia' ? trivia : checkpoints;
     if (index >= src.length) return null;
-    const item = src[index] as PointType;
-    return item ? ({ ...(item as PointType), index } as PointType) : null;
+    const item = src[index];
+    return item ? ({ ...item, index } as PointType) : null;
   },
 
   getNextCheckpointAfterMiles: miles => {
-    const cps = checkpoints as any[];
+    const cps = checkpoints;
     for (let i = 0; i < cps.length; i++) {
       const cpMiles = Number(cps[i]?.CUMULATIVE_MILES ?? NaN);
       if (Number.isFinite(cpMiles) && cpMiles > miles) {
-        return { ...(cps[i] as PointType), index: i } as PointType;
+        return { ...cps[i], index: i } as PointType;
       }
     }
     return null; // No checkpoint after this miles value
   },
 
   getPreviousTrivia: currentIndex => {
-    const cps = checkpoints as any[];
-    const trs = trivia as any[];
+    const cps = checkpoints;
+    const trs = trivia;
     const idx = Number(currentIndex);
     if (!Number.isFinite(idx) || idx <= 0 || idx >= cps.length) return [];
     const prevMiles = Number(cps[idx - 1]?.CUMULATIVE_MILES ?? NaN);
@@ -499,28 +578,28 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     if (!Number.isFinite(prevMiles) || !Number.isFinite(currMiles)) return [];
     const results: PointType[] = [];
     for (const t of trs) {
-      const m = Number((t as any)?.CUMULATIVE_MILES ?? NaN);
+      const m = Number(t?.CUMULATIVE_MILES ?? NaN);
       if (!Number.isFinite(m)) continue;
       if (m <= prevMiles) continue;
       if (m >= currMiles) break; // trivia assumed sorted ascending by miles
-      results.push(t as PointType);
+      results.push(t);
     }
     return results;
   },
 
   getCurrentCheckpoint: () => {
-    const cps = checkpoints as any[];
+    const cps = checkpoints;
     const miles = get().miles ?? 0;
     const eps = 1e-6;
     // Only return a checkpoint if we're exactly on it
     const idx = cps.findIndex(
       cp => Math.abs((cp?.CUMULATIVE_MILES ?? -Infinity) - miles) < eps,
     );
-    if (idx >= 0) return (cps[idx] as PointType) ?? null;
+    if (idx >= 0) return cps[idx] ?? null;
     // Also show starting checkpoint if at 0 miles
     if (miles === 0) {
       const startIdx = cps.findIndex(cp => !!cp?.isStart);
-      return startIdx >= 0 ? (cps[startIdx] as PointType) ?? null : null;
+      return startIdx >= 0 ? cps[startIdx] ?? null : null;
     }
     return null;
   },
@@ -528,11 +607,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   getCurrentTrivia: () => {
     const miles = get().miles ?? 0;
     const eps = 1e-6;
-    const items = trivia as any[];
+    const items = trivia;
     for (const t of items) {
       const activationMiles = Number(t?.CUMULATIVE_MILES ?? -Infinity);
       if (Math.abs(miles - activationMiles) < eps) {
-        return (t as PointType) ?? null;
+        return t ?? null;
       }
     }
     return null;
@@ -542,26 +621,26 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     const currentTrivia = get().getCurrentTrivia();
     const exactlyOnCheckpoint = get().isExactlyOnCheckpoint() !== -1;
     if (currentTrivia && !exactlyOnCheckpoint) {
-      const items = trivia as any[];
+      const items = trivia;
       const tMiles = currentTrivia?.CUMULATIVE_MILES ?? -Infinity;
       const tIdx = items.findIndex(
         it => (it?.CUMULATIVE_MILES ?? -Infinity) === tMiles,
       );
       const enriched = {
-        ...(currentTrivia as PointType),
+        ...currentTrivia,
         index: tIdx >= 0 ? tIdx : undefined,
       } as PointType;
       return { item: enriched, type: 'trivia' };
     }
     const currentCheckpoint = get().getCurrentCheckpoint();
     if (currentCheckpoint) {
-      const cps = checkpoints as any[];
+      const cps = checkpoints;
       const cMiles = currentCheckpoint?.CUMULATIVE_MILES ?? -Infinity;
       const cIdx = cps.findIndex(
         it => (it?.CUMULATIVE_MILES ?? -Infinity) === cMiles,
       );
       const enriched = {
-        ...(currentCheckpoint as PointType),
+        ...currentCheckpoint,
         index: cIdx >= 0 ? cIdx : undefined,
       } as PointType;
       return { item: enriched, type: 'checkpoint' };

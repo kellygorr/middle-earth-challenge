@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Switch,
   Pressable,
+  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
@@ -50,6 +51,8 @@ export default function SettingsContent() {
   const setUseMiles = useSettingsStore(state => state.setUseMiles);
   // Sync settings
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
+  const syncProvider = useSettingsStore(state => state.syncProvider);
+  const trackingMode = useSettingsStore(state => state.trackingMode);
   const lastSyncTimestamp = useSettingsStore(state => state.lastSyncTimestamp);
   const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
   const setLiveSyncEnabled = useSettingsStore(
@@ -57,9 +60,16 @@ export default function SettingsContent() {
   );
   const pushModal = useUIStore(state => state.pushModal);
   const miles = useProgressStore(state => state.miles) || 0;
-  // Mirror SyncNowRow's internal miles>0 guard so the wrapper's top border
-  // doesn't stack against the Live sync row's top border (double line).
-  const showSyncNow = syncEnabled && miles > 0;
+  // Mirror SyncNowRow's full internal guard (syncEnabled + syncProvider !==
+  // 'none' + miles > 0) so the wrapper's top border doesn't render as an
+  // empty bordered row above the Live sync section — which used to show
+  // as a double line in pedometer mode (syncProvider === 'none' there).
+  const showSyncNow = syncEnabled && syncProvider !== 'none' && miles > 0;
+  // Live sync is only meaningful when we have a health-app provider whose
+  // fetch cadence we can throttle. Pedometer is inherently live (steps
+  // stream from the sensor as they happen), so the toggle would be a
+  // dead-end there — hide it entirely.
+  const showLiveSync = syncEnabled && trackingMode !== 'pedometer';
 
   return (
     <>
@@ -248,7 +258,9 @@ export default function SettingsContent() {
               </>
             ) : (
               <Text style={[typographyThemed(theme).bodyPrimary]}>
-                Sync with health app
+                {Platform.OS === 'android'
+                  ? 'Sync with health app or pedometer'
+                  : 'Sync with health app'}
               </Text>
             )}
           </Pressable>
@@ -269,10 +281,11 @@ export default function SettingsContent() {
           </View>
         )}
 
-        {/* Live sync toggle - only visible when connected to a health app.
-            Without a source there's nothing to "live sync" from, so hiding
-            keeps the UI honest and avoids a disabled-toggle dead-end. */}
-        {syncEnabled && (
+        {/* Live sync toggle - only visible when connected to a health app
+            (not pedometer — that's inherently live). Without a source
+            there's nothing to "live sync" from, so hiding keeps the UI
+            honest and avoids a disabled-toggle dead-end. */}
+        {showLiveSync && (
           <View
             style={[
               styles.contentRow,
@@ -344,11 +357,11 @@ export default function SettingsContent() {
         <SectionHeader title="Data" />
 
         {/* Data use info */}
-        <View style={{ paddingBottom: spacing.md }}>
+        <View style={styles.dataUseIntro}>
           <Text
             style={[
               typographyThemed(theme).captionPrimary,
-              { fontWeight: '600' },
+              styles.dataUseHeading,
             ]}
           >
             Data use
@@ -437,5 +450,11 @@ const styles = StyleSheet.create({
     width: iconButtonSizes.medium,
     height: iconButtonSizes.medium,
     borderRadius: borderRadius.full,
+  },
+  dataUseIntro: {
+    paddingBottom: spacing.md,
+  },
+  dataUseHeading: {
+    fontWeight: '600',
   },
 });

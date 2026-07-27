@@ -5,20 +5,31 @@ import {
   StyleSheet,
   TextInput,
   Keyboard,
+  Pressable,
   useWindowDimensions,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
-import { spacing } from '../../../styles/global';
+import { spacing, borderRadius } from '../../../styles/global';
 import Button from '../../Buttons';
-import { useProgressStore } from '../../../stores/progressStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { DistanceEntry } from '../../../types';
-import { formatDistance } from '../../../utils/date';
+import { milesToSteps, stepsToMiles } from '../../../utils/stride';
+import { kmToMiles } from '../../../utils/date';
+import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
+
+type AddMode = 'distance' | 'steps';
 
 /**
  * MilesFooter - Footer content for the Miles modal.
  * Displays total and add input. Uses uiStore for pending state.
+ *
+ * The add input can be toggled between distance (miles or km, per the
+ * user's unit setting) and steps. Defaults to distance. When steps mode
+ * is selected the input takes a whole-step count and we compute the
+ * corresponding miles via `stepsToMiles`; when distance mode is selected
+ * we derive steps via `milesToSteps` so both fields on the persisted
+ * entry stay populated regardless of what the user typed.
  */
 export default function MilesFooter() {
   const theme = useTheme();
@@ -28,17 +39,9 @@ export default function MilesFooter() {
   const inputRef = useRef<TextInput>(null);
   const [addInput, setAddInput] = useState('');
   const [isInputFocused, setIsInputFocused] = useState(false);
-
-  // Store state
-  const distanceEntries = useProgressStore(state => state.distanceEntries);
-  const totalManualMiles = (distanceEntries || []).reduce(
-    (sum, d) => sum + (d?.miles ?? 0),
-    0,
-  );
+  const [addMode, setAddMode] = useState<AddMode>('distance');
 
   // Pending state from uiStore
-  const pendingEntries = useUIStore(state => state.pendingEntries);
-  const pendingDeletions = useUIStore(state => state.pendingDeletions);
   const editingEntry = useUIStore(state => state.editingEntry);
   const addPendingEntry = useUIStore(state => state.addPendingEntry);
 
@@ -47,54 +50,99 @@ export default function MilesFooter() {
     if (isNaN(delta) || delta <= 0) {
       return;
     }
-    const saveId = 'default';
+    const saveId = DEFAULT_SAVE_ID;
     const timestamp = Date.now();
-    const entry: DistanceEntry = {
-      id: `pending_${Date.now()}`,
-      saveId,
-      date: timestamp,
-      miles: delta,
-      source: 'manual',
-    };
+
+    let entry: DistanceEntry;
+    if (addMode === 'steps') {
+      // Steps are discrete; drop any decimal portion the user typed.
+      const inputSteps = Math.floor(delta);
+      if (inputSteps <= 0) return;
+      entry = {
+        id: `pending_${Date.now()}`,
+        saveId,
+        date: timestamp,
+        miles: stepsToMiles(inputSteps),
+        steps: inputSteps,
+        source: 'manual-steps',
+      };
+    } else {
+      // User input is in their preferred distance unit; internal model
+      // is always miles.
+      const inputMiles = useMiles ? delta : kmToMiles(delta);
+      entry = {
+        id: `pending_${Date.now()}`,
+        saveId,
+        date: timestamp,
+        miles: inputMiles,
+        steps: milesToSteps(inputMiles),
+        source: 'manual-distance',
+      };
+    }
     addPendingEntry(entry);
     setAddInput('');
     inputRef.current?.blur();
     Keyboard.dismiss();
   };
 
-  // Calculate total including pending changes
-  const pendingTotal = pendingEntries.reduce((s, e) => s + (e?.miles ?? 0), 0);
-  const deletionTotal = pendingDeletions.reduce(
-    (s, e) => s + (e?.miles ?? 0),
-    0,
-  );
-  const displayTotal = totalManualMiles - deletionTotal + pendingTotal;
+  const switchMode = (mode: AddMode) => {
+    if (mode === addMode) return;
+    // Values don't translate meaningfully across modes (10 steps ≠ 10
+    // miles); clear whatever the user typed so they don't accidentally
+    // submit the wrong unit.
+    setAddInput('');
+    setAddMode(mode);
+  };
 
   // Hide in landscape when editing
   if (isLandscape && editingEntry) {
     return null;
   }
 
-  const hasEntries =
-    pendingEntries.length > 0 ||
-    (distanceEntries && distanceEntries.length > 0);
+  const distanceLabel = useMiles ? 'Miles' : 'Km';
+  const isSteps = addMode === 'steps';
+  const unitLabel = isSteps ? 'steps' : useMiles ? 'miles' : 'km';
+
+  const renderSegment = (label: string, mode: AddMode) => {
+    const active = addMode === mode;
+    return (
+      <Pressable
+        key={mode}
+        onPress={() => switchMode(mode)}
+        style={[
+          styles.segment,
+          active && {
+            backgroundColor: theme.colors.buttonBrandBackground,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            typographyThemed(theme).captionPrimary,
+            styles.segmentText,
+            active ? styles.segmentTextActive : styles.segmentTextInactive,
+            {
+              color: active
+                ? theme.colors.buttonBrandText
+                : theme.colors.textSecondary,
+            },
+          ]}
+        >
+          {label}
+        </Text>
+      </Pressable>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      {/* Divider with total miles */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        {hasEntries && (
-          <Text
-            style={[typographyThemed(theme).bodySecondary, styles.totalText]}
-          >
-            Total: {formatDistance(displayTotal)} miles
-          </Text>
-        )}
-      </View>
+      {/* Divider separating the entry list from the add controls. The
+          running total lives on the map screen; per-row and per-day
+          totals cover local context so it isn't repeated here. */}
+      <View style={styles.dividerLine} />
 
-      {/* Add input row */}
-      <View style={styles.inlineAddRow}>
+      {/* Top row: input + unit label */}
+      <View style={styles.inputRow}>
         <TextInput
           ref={inputRef}
           style={[
@@ -103,21 +151,37 @@ export default function MilesFooter() {
             {
               backgroundColor: theme.colors.surface,
               color: theme.colors.textPrimary,
-              borderWidth: 1,
               borderColor: theme.colors.divider,
             },
           ]}
           value={addInput}
           onChangeText={setAddInput}
-          keyboardType="decimal-pad"
+          keyboardType={isSteps ? 'number-pad' : 'decimal-pad'}
           disableFullscreenUI={true}
           placeholder={isInputFocused ? '' : '0'}
           onFocus={() => setIsInputFocused(true)}
           onBlur={() => setIsInputFocused(false)}
           placeholderTextColor={theme.colors.textSecondary}
         />
+        <Text style={typographyThemed(theme).bodyPrimary}>{unitLabel}</Text>
+      </View>
+
+      {/* Bottom row: mode toggle (left) · add button (right) */}
+      <View style={styles.controlsRow}>
+        <View
+          style={[
+            styles.toggleRow,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.divider,
+            },
+          ]}
+        >
+          {renderSegment(distanceLabel, 'distance')}
+          {renderSegment('Steps', 'steps')}
+        </View>
         <Button onPress={handleAdd} variant="brand" size="default">
-          {useMiles ? 'Add miles' : 'Add km'}
+          Add
         </Button>
       </View>
     </View>
@@ -129,32 +193,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
-  dividerRow: {
+  dividerLine: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    marginBottom: spacing.md,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    padding: 2,
+  },
+  segment: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    minWidth: 72,
+  },
+  segmentText: {
+    textAlign: 'center',
+  },
+  segmentTextActive: {
+    fontWeight: '600',
+  },
+  segmentTextInactive: {
+    fontWeight: '400',
+  },
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.xs,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(0,0,0,0.08)',
-  },
-  totalText: {
-    textAlign: 'right',
-  },
-  inlineAddRow: {
+  controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     gap: spacing.sm,
   },
   input: {
-    marginTop: spacing.xs,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: 8,
+    borderWidth: 1,
   },
   inlineInput: {
     minWidth: 120,

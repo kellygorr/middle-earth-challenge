@@ -12,7 +12,6 @@ export default function LockIcon({
 }: LockIconProps) {
   // Lock icon: padlock shape with shackle on top
   // Viewbox is 24x24
-  const scale = size / 24;
 
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">

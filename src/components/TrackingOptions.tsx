@@ -61,7 +61,7 @@ export function TrackingOptions({
             ]}
           >
             Sync health data from device (optional). Manage this at any time
-            from <SettingsRef variant="captionSecondary" />.
+            from <SettingsRef />.
           </Text>
         )}
       </Pressable>
@@ -69,7 +69,7 @@ export function TrackingOptions({
       {/* Manual add button - dismisses InfoModal first, then opens MilesModal */}
       {showAddOption && (
         <Pressable
-          style={[styles.option, isSyncing && { opacity: 0.5 }]}
+          style={[styles.option, isSyncing && styles.optionDisabled]}
           disabled={isSyncing}
           onPress={() => {
             // Set returnTo so MilesModal returns to info when closed
@@ -130,6 +130,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+  },
+  optionDisabled: {
+    opacity: 0.5,
   },
   optionText: {
     flex: 1,

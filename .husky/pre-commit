@@ -1,0 +1,13 @@
+# Runs before every `git commit`. Fast enough to not annoy — the unit
+# suite completes in ~1s and lint in ~5s. Skips the App smoke test
+# (which pulls in the entire RN module graph) via `test:unit`.
+#
+# Lint currently allows warnings through (pre-existing inline-style
+# / no-shadow noise). Only ESLint *errors* block the commit. Bump this
+# to `npm run lint -- --max-warnings 0` once the warning backlog is
+# cleaned up.
+#
+# To bypass in an emergency (do not make a habit of it):
+#   git commit --no-verify
+
+npm run test:unit && npm run lint
