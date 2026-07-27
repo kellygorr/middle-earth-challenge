@@ -129,6 +129,12 @@ export const typographyThemed = (theme: Theme) => {
       color: theme.colors.textSecondary,
       textAlign: 'left',
     }) as TextStyle,
+    captionSecondaryBold: s({
+      ...typography.caption,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+      textAlign: 'left',
+    }) as TextStyle,
     captionInverted: s({
       ...typography.caption,
       color: theme.colors.textInverted,

@@ -40,7 +40,6 @@ export default function DataContent() {
               .removeDistanceEntriesBySource([
                 'health-connect',
                 'apple-health',
-                'synced',
               ]);
 
             // Reset sync bookmarks so the next sync's fromDate falls back

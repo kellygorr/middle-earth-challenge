@@ -7,6 +7,8 @@ export { default as HomeIcon } from './HomeIcon';
 export { default as LockIcon } from './LockIcon';
 export { default as PlusIcon } from './PlusIcon';
 export { default as RecenterIcon } from './RecenterIcon';
+export { default as ResetIcon } from './ResetIcon';
 export { default as SettingsIcon } from './SettingsIcon';
 export { default as StatsIcon } from './StatsIcon';
 export { default as SyncIcon } from './SyncIcon';
+export { default as TrashIcon } from './TrashIcon';

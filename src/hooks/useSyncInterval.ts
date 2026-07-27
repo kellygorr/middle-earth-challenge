@@ -6,18 +6,21 @@ import { useInitializationStore } from '../stores/initializationStore';
 import type { SyncError } from '../stores/progressStore';
 import { getActiveFitnessService } from '../services/fitnessService';
 import { getBackgroundRefreshStatus } from '../services/backgroundRefreshStatus';
+import { pedometerService } from '../services/pedometerService';
+import { commitPedometerRange } from '../services/pedometerCommit';
 import { DistanceEntry, DistanceSource, HealthDistanceRecord } from '../types';
 import {
   SYNC_INTERVAL_MS,
+  PEDOMETER_LIVE_COMMIT_INTERVAL_MS,
   CHUNK_DAYS,
   CHUNK_TIMEOUT_MS,
   CHUNK_RETRY_DELAY_MS,
   CHUNK_YIELD_MS,
   STALL_ERROR_MS,
 } from '../constants/sync';
-
-const METERS_TO_MILES = 0.000621371;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
+import { METERS_TO_MILES } from '../utils/stride';
+import { buildChunks } from '../utils/chunkRange';
 
 /**
  * Module-level handle so UI outside the hook (overlay retry button, Settings
@@ -32,27 +35,6 @@ export function requestSyncNow(): Promise<void> {
 
 export function isSyncRunnerMounted(): boolean {
   return activePerformSync !== null;
-}
-
-interface Chunk {
-  start: Date;
-  end: Date;
-}
-
-/**
- * Split [from, to] into ~CHUNK_DAYS-wide chunks, oldest first.
- */
-function buildChunks(from: Date, to: Date): Chunk[] {
-  if (to.getTime() <= from.getTime()) return [];
-  const chunks: Chunk[] = [];
-  let cursor = from.getTime();
-  const end = to.getTime();
-  while (cursor < end) {
-    const next = Math.min(cursor + CHUNK_DAYS * MS_PER_DAY, end);
-    chunks.push({ start: new Date(cursor), end: new Date(next) });
-    cursor = next;
-  }
-  return chunks;
 }
 
 /**
@@ -84,8 +66,13 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 function classifySyncError(error: unknown): SyncError {
   const message = error instanceof Error ? error.message : String(error);
   // Permission / auth: revoked, never granted, or the health app blocked us.
+  // This classifier only runs inside the health-app sync path
+  // (`performHealthAppSync`), so the source is hard-coded to `'health-app'`.
+  // The pedometer permission-error is produced separately by
+  // `ensureTrackingModeRunning` because it's detected by env polling, not
+  // by a thrown exception.
   if (/SecurityException|permission|unauthor/i.test(message)) {
-    return { kind: 'permission', message };
+    return { kind: 'permission', source: 'health-app', message };
   }
   // Provider not installed or out-of-date (Health Connect SDK statuses).
   if (/sdk.*unavailable|not installed|update.*required/i.test(message)) {
@@ -112,6 +99,7 @@ export function useSyncInterval() {
   const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
   const syncStartDate = useSettingsStore(state => state.syncStartDate);
+  const trackingMode = useSettingsStore(state => state.trackingMode);
   const setLastSyncTimestamp = useSettingsStore(
     state => state.setLastSyncTimestamp,
   );
@@ -140,6 +128,28 @@ export function useSyncInterval() {
 
   const performSync = useCallback(
     async (forceSync = false) => {
+      // Pedometer mode has its own, much simpler flow: read a single
+      // step-count window from the native service and ingest it as one
+      // entry. It does *not* require syncEnabled / syncProvider /
+      // liveSyncEnabled because the tracking service itself is the
+      // "provider", and it polls unconditionally while the user has
+      // chosen pedometer mode.
+      if (trackingMode === 'pedometer') {
+        if (inFlightRef.current) return;
+        if (!pedometerService.isSupported()) return;
+        inFlightRef.current = true;
+        try {
+          await performPedometerSync({
+            forceSync,
+            setLastSyncTimestamp,
+            setSyncStatus,
+          });
+        } finally {
+          inFlightRef.current = false;
+        }
+        return;
+      }
+
       if (
         !syncEnabled ||
         (!liveSyncEnabled && !forceSync) ||
@@ -158,20 +168,22 @@ export function useSyncInterval() {
 
       // DEBUG: trace which service is actually wired up at sync time, to
       // diagnose the spurious "disconnected" message on every reload.
-      console.log(
-        `[useSyncInterval] performSync start service=${
-          (fitness as object)?.constructor?.name
-        } provider=${syncProvider} force=${forceSync} initialDone=${
-          hasPerformedInitialSyncRef.current
-        }`,
-      );
+      if (__DEV__) {
+        console.log(
+          `[useSyncInterval] performSync start service=${
+            (fitness as object)?.constructor?.name
+          } provider=${syncProvider} force=${forceSync} initialDone=${
+            hasPerformedInitialSyncRef.current
+          }`,
+        );
+      }
 
       const currentLastSync = useSettingsStore.getState().lastSyncTimestamp;
       const fromDate = currentLastSync
         ? new Date(currentLastSync)
         : new Date(syncStartDate);
       const toDate = new Date();
-      const chunks = buildChunks(fromDate, toDate);
+      const chunks = buildChunks(fromDate, toDate, CHUNK_DAYS);
 
       // Nothing to fetch - bump timestamp and exit.
       if (chunks.length === 0) {
@@ -262,12 +274,11 @@ export function useSyncInterval() {
           totalMilesAdded += milesAddedThisChunk;
 
           // Roll total from entries; cheap, entries already updated.
-          const currentEntries = useProgressStore.getState().distanceEntries;
-          const totalMiles = currentEntries.reduce(
-            (sum, e) => sum + (e?.miles ?? 0),
-            0,
-          );
+          const store = useProgressStore.getState();
+          const totalMiles = store.getTotalMiles();
+          const totalSteps = store.getTotalSteps();
           setMiles(totalMiles);
+          store.setSteps(totalSteps);
 
           // Per-chunk timestamp: if we crash/quit, we resume from here.
           setLastSyncTimestamp(Math.min(chunk.end.getTime(), toDate.getTime()));
@@ -338,6 +349,7 @@ export function useSyncInterval() {
       liveSyncEnabled,
       syncProvider,
       syncStartDate,
+      trackingMode,
       addDistanceEntries,
       updateDistanceEntry,
       setMiles,
@@ -348,13 +360,35 @@ export function useSyncInterval() {
   );
 
   useEffect(() => {
+    // Whether periodic polling should be on right now. Pedometer mode
+    // always polls (the foreground service is the data source; there's
+    // no reason to skip a cheap DB read). Health-app mode still gates on
+    // syncEnabled + liveSyncEnabled to preserve battery and API budget.
+    const shouldPoll =
+      trackingMode === 'pedometer' || (syncEnabled && liveSyncEnabled);
+
+    // Whether an initial "catch me up right now" sync should fire once
+    // the app is ready. Pedometer mode wants an immediate read on mount
+    // so the UI reflects steps taken between the last app close and now.
+    const shouldRunInitialSync = trackingMode === 'pedometer' || syncEnabled;
+
     const startInterval = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
-      if (syncEnabled && liveSyncEnabled && appStateRef.current === 'active') {
+      if (shouldPoll && appStateRef.current === 'active') {
         performSync();
-        intervalRef.current = setInterval(performSync, SYNC_INTERVAL_MS);
+        // Pedometer mode commits every 2 minutes (see
+        // PEDOMETER_LIVE_COMMIT_INTERVAL_MS) — the foreground service
+        // is already accumulating raw step samples in native SQLite, so
+        // the JS-side "commit" is only about *materializing* a row and
+        // advancing the watermark. A separate 2s display-refresh timer
+        // lives on the map screen for the always-current miles counter.
+        const intervalMs =
+          trackingMode === 'pedometer'
+            ? PEDOMETER_LIVE_COMMIT_INTERVAL_MS
+            : SYNC_INTERVAL_MS;
+        intervalRef.current = setInterval(performSync, intervalMs);
       }
     };
 
@@ -371,14 +405,28 @@ export function useSyncInterval() {
       const isActive = nextAppState === 'active';
 
       if (wasBackground && isActive) {
-        if (syncEnabled) {
+        if (shouldRunInitialSync) {
           performSync(true);
         }
-        if (liveSyncEnabled) {
+        if (shouldPoll) {
           startInterval();
         }
       } else if (!isActive && appStateRef.current === 'active') {
         stopInterval();
+        // Pedometer mode: flush the tail window before JS pauses. Otherwise
+        // the (up to 2-min) steps since the last commit would only be
+        // materialized on next foreground/WorkManager tick, and would be
+        // silently dropped entirely if the user switched modes while
+        // backgrounded. Fire-and-forget: RN gives us ~5s before it kills
+        // timers, which is plenty for a single native call + SQLite write.
+        if (trackingMode === 'pedometer') {
+          performSync(true).catch(err =>
+            console.warn(
+              '[useSyncInterval] pedometer background-flush failed:',
+              err,
+            ),
+          );
+        }
       }
       appStateRef.current = nextAppState;
     };
@@ -388,12 +436,16 @@ export function useSyncInterval() {
       handleAppStateChange,
     );
 
-    if (syncEnabled && initReady && !hasPerformedInitialSyncRef.current) {
+    if (
+      shouldRunInitialSync &&
+      initReady &&
+      !hasPerformedInitialSyncRef.current
+    ) {
       hasPerformedInitialSyncRef.current = true;
       performSync(true);
     }
 
-    if (syncEnabled && liveSyncEnabled && initReady) {
+    if (shouldPoll && initReady) {
       startInterval();
     } else {
       stopInterval();
@@ -403,7 +455,7 @@ export function useSyncInterval() {
       subscription.remove();
       stopInterval();
     };
-  }, [syncEnabled, liveSyncEnabled, initReady, performSync]);
+  }, [syncEnabled, liveSyncEnabled, trackingMode, initReady, performSync]);
 
   // iOS: detect Background App Refresh being off, so we can warn the user
   // that "live sync" won't actually happen in the background. Runs on
@@ -491,7 +543,7 @@ async function ingestRecords(
       ).id
     : null;
 
-  const saveId = 'default';
+  const saveId = DEFAULT_SAVE_ID;
   let milesChanged = 0;
 
   const toAdd: DistanceEntry[] = [];
@@ -509,6 +561,7 @@ async function ingestRecords(
         saveId,
         date: new Date(record.startTime).getTime(),
         miles,
+        steps: record.steps,
         source: healthSource,
       });
       milesChanged += miles;
@@ -523,7 +576,7 @@ async function ingestRecords(
     const existing = existingEntriesMap.get(entryId)!;
     const miles = record.distanceMeters * METERS_TO_MILES;
     if (Math.abs(existing.miles - miles) > 0.001) {
-      toUpdate.push({ ...existing, miles });
+      toUpdate.push({ ...existing, miles, steps: record.steps });
       milesChanged += miles - existing.miles;
     }
   }
@@ -539,4 +592,96 @@ async function ingestRecords(
   }
 
   return milesChanged;
+}
+
+/**
+ * Pedometer mode's commit: read `getStepsBetween(watermark, now)`, write
+ * at most one `DistanceEntry` for that window (via
+ * `commitPedometerRange`), then advance the watermark
+ * (`lastSyncTimestamp`) to `now`.
+ *
+ * See docs/pedometer-mode.md § "Row model & commit strategy" for the
+ * full model. Called from every commit trigger — 2-min live tick,
+ * AppState → 'active' (catch-up), AppState → 'background' (flush),
+ * WorkManager sweep, mode-switch flush, Sync-Now button — with the
+ * same semantics each time.
+ *
+ * Empty windows produce no row (idle overnight periods don't clutter
+ * the day view). Row length is whatever the window covers — 2 min
+ * during live, ~4.8h during WorkManager, or arbitrary at edges.
+ *
+ * If the foreground service has been killed (OEM battery manager,
+ * force-stop), forced ticks surface `kind: 'pedometerStopped'` so the
+ * banner can point the user at `openOemBatterySettings`.
+ */
+async function performPedometerSync(args: {
+  forceSync: boolean;
+  setLastSyncTimestamp: (t: number | null) => void;
+  setSyncStatus: ReturnType<typeof useProgressStore.getState>['setSyncStatus'];
+}): Promise<void> {
+  const { forceSync, setLastSyncTimestamp, setSyncStatus } = args;
+
+  const now = Date.now();
+  const watermark = useSettingsStore.getState().lastSyncTimestamp;
+
+  // No watermark yet (first-ever pedometer tick after switch) means the
+  // switch handler already set lastSyncTimestamp = switch-instant, so
+  // this branch is unreachable in practice. Guard anyway: skip the
+  // commit and stamp `now` so subsequent ticks have a starting point.
+  if (!watermark) {
+    setLastSyncTimestamp(now);
+    return;
+  }
+
+  // Nothing to do if no time has passed. Common on double-fires (e.g.
+  // AppState → active immediately after a scheduled 2-min tick).
+  if (now <= watermark) {
+    return;
+  }
+
+  // Service-alive check only on forced ticks (Sync-Now button, AppState
+  // → active, WorkManager). Skips the roundtrip on the routine 2-min
+  // live tick. If the service is dead we bail *before* the read so we
+  // don't materialize a bogus zero-step row. We deliberately don't
+  // surface an error here — we can't reliably tell if the cause is an
+  // OEM battery manager, a revoked permission, or a race during boot,
+  // so a confident "Android stopped the service" banner would misinform.
+  if (forceSync) {
+    try {
+      const running = await pedometerService.isServiceRunning();
+      if (!running) {
+        return;
+      }
+    } catch (error) {
+      console.warn('[pedometer] isServiceRunning check failed:', error);
+    }
+  }
+
+  let result;
+  try {
+    result = await commitPedometerRange(watermark, now);
+  } catch (error) {
+    setSyncStatus(prev => ({
+      ...prev,
+      phase: 'error',
+      error: { kind: 'unknown', message: String(error) },
+    }));
+    // Do NOT advance the watermark on a read failure — next tick will
+    // retry the same window.
+    return;
+  }
+
+  // Advance the watermark unconditionally on success (even for empty
+  // windows) so we don't re-scan the same range next tick.
+  setLastSyncTimestamp(now);
+
+  setSyncStatus({
+    phase: 'idle',
+    chunksDone: 1,
+    chunksTotal: 1,
+    milesAdded: result.miles,
+    startedAt: now,
+    lastProgressAt: Date.now(),
+    error: null,
+  });
 }

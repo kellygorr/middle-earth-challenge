@@ -5,6 +5,7 @@ import { useStatsStore, Stats } from '../../../stores/statsStore';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { spacing } from '../../../styles/global';
 import { formatDate, formatDistance } from '../../../utils/date';
+import { formatSteps, milesToSteps } from '../../../utils/stride';
 import JourneyProgressBar from '../../JourneyProgressBar';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
@@ -46,7 +47,7 @@ export default function StatsContent() {
         <View
           style={[
             styles.progressRow,
-            { borderBottomColor: theme.colors.divider, borderBottomWidth: 1 },
+            { borderBottomColor: theme.colors.divider },
           ]}
         >
           <JourneyProgressBar />
@@ -54,8 +55,21 @@ export default function StatsContent() {
         <TwoColumnRow
           labels={[useMiles ? 'Miles' : 'Kilometers', 'Remaining']}
           values={[
-            formatDistance(stats.journey.milesCompleted, true),
-            formatDistance(stats.journey.milesRemaining, true),
+            formatDistance(stats.journey.milesCompleted, {
+              includeUnits: true,
+              useMiles,
+            }),
+            formatDistance(stats.journey.milesRemaining, {
+              includeUnits: true,
+              useMiles,
+            }),
+          ]}
+        />
+        <TwoColumnRow
+          labels={['Steps', 'Remaining']}
+          values={[
+            formatSteps(milesToSteps(stats.journey.milesCompleted)),
+            formatSteps(milesToSteps(stats.journey.milesRemaining)),
           ]}
         />
         <StatRow
@@ -64,11 +78,14 @@ export default function StatsContent() {
         />
         {stats.journey.nextCheckpointName && (
           <StatRow
-            label="Next checkpoint"
-            value={`${stats.journey.nextCheckpointName} (${formatDistance(
-              stats.journey.milesUntilNextCheckpoint,
-              true,
-            )})`}
+            label={`Next: ${stats.journey.nextCheckpointName}`}
+            value={formatDistance(stats.journey.milesUntilNextCheckpoint, {
+              includeUnits: true,
+              useMiles,
+            })}
+            subValue={`${formatSteps(
+              milesToSteps(stats.journey.milesUntilNextCheckpoint),
+            )} steps`}
             isLast
           />
         )}
@@ -85,11 +102,18 @@ export default function StatsContent() {
           label="Best day"
           value={
             stats.activity.bestDayMiles > 0
-              ? `${formatDistance(
-                  stats.activity.bestDayMiles,
-                  true,
-                )} (${formatDate(stats.activity.bestDayDate)})`
+              ? `${formatDistance(stats.activity.bestDayMiles, {
+                  includeUnits: true,
+                  useMiles,
+                })} (${formatDate(stats.activity.bestDayDate)})`
               : '—'
+          }
+          subValue={
+            stats.activity.bestDayMiles > 0
+              ? `${formatSteps(
+                  milesToSteps(stats.activity.bestDayMiles),
+                )} steps`
+              : undefined
           }
         />
         <TwoColumnRow
@@ -102,16 +126,34 @@ export default function StatsContent() {
                     : ''
                 }${formatDistance(
                   stats.activity.milesThisWeek - stats.activity.milesLastWeek,
-                  true,
+                  { includeUnits: true, useMiles },
                 )})`
               : 'This week',
             'Last week',
           ]}
           values={[
-            formatDistance(stats.activity.milesThisWeek, true),
+            formatDistance(stats.activity.milesThisWeek, {
+              includeUnits: true,
+              useMiles,
+            }),
             stats.activity.milesLastWeek > 0
-              ? formatDistance(stats.activity.milesLastWeek, true)
+              ? formatDistance(stats.activity.milesLastWeek, {
+                  includeUnits: true,
+                  useMiles,
+                })
               : '—',
+          ]}
+          subValues={[
+            stats.activity.milesThisWeek > 0
+              ? `${formatSteps(
+                  milesToSteps(stats.activity.milesThisWeek),
+                )} steps`
+              : undefined,
+            stats.activity.milesLastWeek > 0
+              ? `${formatSteps(
+                  milesToSteps(stats.activity.milesLastWeek),
+                )} steps`
+              : undefined,
           ]}
           isLast
         />
@@ -121,11 +163,23 @@ export default function StatsContent() {
         <SectionHeader title="Pace & projections" />
         <StatRow
           label="Daily average"
-          value={formatDistance(stats.pace.averageMilesPerDay, true)}
+          value={formatDistance(stats.pace.averageMilesPerDay, {
+            includeUnits: true,
+            useMiles,
+          })}
+          subValue={`${formatSteps(
+            milesToSteps(stats.pace.averageMilesPerDay),
+          )} steps`}
         />
         <StatRow
           label={`Daily average\n(excluding missed days)`}
-          value={formatDistance(stats.pace.averageMilesPerActiveDay, true)}
+          value={formatDistance(stats.pace.averageMilesPerActiveDay, {
+            includeUnits: true,
+            useMiles,
+          })}
+          subValue={`${formatSteps(
+            milesToSteps(stats.pace.averageMilesPerActiveDay),
+          )} steps`}
           isLast={
             !stats.pace.estimatedDaysRemaining &&
             !stats.pace.estimatedCompletionDate
@@ -154,5 +208,6 @@ const styles = StyleSheet.create({
   progressRow: {
     flexDirection: 'row',
     paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
   },
 });

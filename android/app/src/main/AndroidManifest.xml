@@ -5,6 +5,23 @@
     <uses-permission android:name="android.permission.health.READ_DISTANCE" />
     <uses-permission android:name="android.permission.health.READ_STEPS" />
 
+    <!-- Pedometer mode: raw step-counter sensor + foreground service -->
+    <!-- Runtime permission on Android 10+ (API 29). Required to subscribe to
+         the TYPE_STEP_COUNTER sensor. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <!-- Runtime permission on Android 13+ (API 33). Required to show the
+         foreground service's persistent notification. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Manifest permission for running a foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 14+ (API 34): typed foreground services. "health" matches our
+         use case (step counting) and requires ACTIVITY_RECOGNITION at runtime. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <!-- Pedometer mode: needed so BootReceiver can restart the foreground
+         service after device reboot when the user was previously tracking.
+         See docs/pedometer-mode.md § Phase 5 (BOOT_COMPLETED). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -38,5 +55,35 @@
           <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
         </intent-filter>
       </activity-alias>
+
+      <!-- Pedometer mode: foreground service that keeps the step-counter
+           sensor subscription alive while the app is backgrounded / screen
+           off. Started/stopped by PedometerModule via startForegroundService. -->
+      <service
+        android:name=".pedometer.StepCounterService"
+        android:exported="false"
+        android:foregroundServiceType="health" />
+
+      <!-- Pedometer mode: HeadlessJsTaskService that WorkManager launches on
+           the ~5x/day background sweep. Runs the "PedometerSweep" JS task
+           registered in index.js, which commits a pedometer row for the
+           watermark window. See docs/pedometer-mode.md § Phase 3b. -->
+      <service
+        android:name=".pedometer.PedometerHeadlessJsService"
+        android:exported="false" />
+
+      <!-- Pedometer mode: restarts the step-counter foreground service after
+           device reboot if the user had pedometer tracking active before the
+           reboot. Reads a persisted flag from SharedPreferences (direct-boot
+           safe, unlike our main SQLite DB). See docs/pedometer-mode.md
+           § Phase 5 (BOOT_COMPLETED). -->
+      <receiver
+        android:name=".pedometer.BootReceiver"
+        android:enabled="true"
+        android:exported="true">
+        <intent-filter>
+          <action android:name="android.intent.action.BOOT_COMPLETED" />
+        </intent-filter>
+      </receiver>
     </application>
 </manifest>

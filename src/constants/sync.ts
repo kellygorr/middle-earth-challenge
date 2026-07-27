@@ -4,7 +4,33 @@
  * See docs/sync-improvements.md for rationale.
  */
 
-export const SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes between live syncs
+export const SYNC_INTERVAL_MS = 30 * 1000; // 30 seconds between live syncs while foregrounded
+
+// Pedometer mode uses a **watermark-based** commit strategy: each
+// commit reads `getStepsBetween(lastSyncTimestamp, now)`, writes a
+// single DistanceEntry (if steps > 0), then advances the watermark to
+// `now`. Rows never overlap; their length is whatever window each
+// commit covers. See docs/pedometer-mode.md § "Row model & commit
+// strategy".
+
+// Live: while the app is foregrounded, commit every 2 minutes. Each
+// commit produces one row with ~2 minutes of walking captured. Keeps
+// the Distance list feeling responsive without spamming SQLite.
+export const PEDOMETER_LIVE_COMMIT_INTERVAL_MS = 2 * 60 * 1000;
+
+// Background: WorkManager schedules 5 commits per day (~every 4.8h).
+// Google's PeriodicWorkRequest minimum is 15 min, so this is well
+// within limits; OEM battery managers may space it out further but
+// each fired tick still commits a correct (variable-length) row.
+export const PEDOMETER_BG_COMMIT_INTERVAL_MS = Math.floor(
+  (24 * 60 * 60 * 1000) / 5,
+);
+
+// Display-only: the map screen refreshes its miles counter every 2s by
+// reading the uncommitted-window step count and folding it into the
+// displayed total. Nothing is written to SQLite on this cadence.
+// Used by the map screen — NOT by the commit path.
+export const PEDOMETER_DISPLAY_REFRESH_MS = 2 * 1000;
 
 // Chunking
 export const CHUNK_DAYS = 3;

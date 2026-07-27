@@ -85,6 +85,24 @@ const FEET_PER_MILE = 5280;
 const KM_PER_MILE = 1.60934;
 const METERS_PER_KM = 1000;
 
+/**
+ * Kilometers → miles. The internal data model always stores distance in
+ * miles; use this at input boundaries to convert user-entered km values
+ * before they hit the store / DB.
+ */
+export function kmToMiles(km: number): number {
+  return km / KM_PER_MILE;
+}
+
+/**
+ * Miles → kilometers. Use at output boundaries when populating an edit
+ * input for a user whose display preference is km, so they see and edit
+ * the number in the unit they picked.
+ */
+export function milesToKm(miles: number): number {
+  return miles * KM_PER_MILE;
+}
+
 interface FormatDistanceOptions {
   /** Append unit label (mi/ft or km/m) */
   includeUnits?: boolean;

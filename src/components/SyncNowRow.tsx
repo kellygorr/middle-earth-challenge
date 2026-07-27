@@ -48,7 +48,7 @@ export function SyncNowRow() {
         Pull the latest activity from your health app
       </Text>
       <Button
-        variant="primary"
+        variant="brand"
         size="small"
         disabled={isSyncing}
         onPress={() => {

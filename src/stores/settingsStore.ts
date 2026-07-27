@@ -1,8 +1,15 @@
 import { create } from 'zustand';
-import { UserSettings, LabelSize, TextSize, SyncProvider } from '../types';
+import {
+  UserSettings,
+  LabelSize,
+  TextSize,
+  SyncProvider,
+  TrackingMode,
+} from '../types';
 import { ThemeName, themes } from '../styles/themes';
 import { database } from '../services/database';
 import { useProgressStore } from './progressStore';
+import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
 
 interface SettingsStore extends UserSettings {
   showWelcome: boolean;
@@ -23,12 +30,16 @@ interface SettingsStore extends UserSettings {
   setSyncStartDate: (date: number | null) => void;
   setLastSyncTimestamp: (timestamp: number | null) => void;
   setLiveSyncEnabled: (enabled: boolean) => void;
+  setTrackingMode: (mode: TrackingMode) => void;
+  setHasSeenOemBatteryPrompt: (seen: boolean) => void;
+  setHcRevokePendingRestart: (pending: boolean) => void;
+  setLastNotifiedCheckpointIndex: (index: number) => void;
   loadSettings: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsStore>(set => ({
   // Initial state
-  id: 'default',
+  id: DEFAULT_SAVE_ID,
   labelSize: 'medium',
   textSize: 'medium',
   currentTheme: 'minimalist',
@@ -45,6 +56,10 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   syncStartDate: null,
   lastSyncTimestamp: null,
   liveSyncEnabled: false,
+  trackingMode: 'health-app',
+  hasSeenOemBatteryPrompt: false,
+  hcRevokePendingRestart: false,
+  lastNotifiedCheckpointIndex: -1,
 
   // Actions - each setter also persists to database
   setLabelSize: size => {
@@ -121,6 +136,26 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     database.updateUserSettings({ liveSyncEnabled: enabled });
   },
 
+  setTrackingMode: mode => {
+    set({ trackingMode: mode });
+    database.updateUserSettings({ trackingMode: mode });
+  },
+
+  setHasSeenOemBatteryPrompt: seen => {
+    set({ hasSeenOemBatteryPrompt: seen });
+    database.updateUserSettings({ hasSeenOemBatteryPrompt: seen });
+  },
+
+  setHcRevokePendingRestart: pending => {
+    set({ hcRevokePendingRestart: pending });
+    database.updateUserSettings({ hcRevokePendingRestart: pending });
+  },
+
+  setLastNotifiedCheckpointIndex: index => {
+    set({ lastNotifiedCheckpointIndex: index });
+    database.updateUserSettings({ lastNotifiedCheckpointIndex: index });
+  },
+
   loadSettings: async () => {
     try {
       const settings = await database.getUserSettings();
@@ -142,6 +177,10 @@ export const useSettingsStore = create<SettingsStore>(set => ({
         syncStartDate: settings.syncStartDate ?? null,
         lastSyncTimestamp: settings.lastSyncTimestamp ?? null,
         liveSyncEnabled: settings.liveSyncEnabled ?? false,
+        trackingMode: settings.trackingMode ?? 'health-app',
+        hasSeenOemBatteryPrompt: settings.hasSeenOemBatteryPrompt ?? false,
+        hcRevokePendingRestart: settings.hcRevokePendingRestart ?? false,
+        lastNotifiedCheckpointIndex: settings.lastNotifiedCheckpointIndex ?? -1,
         isLoaded: true,
       });
     } catch (error) {

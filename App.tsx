@@ -5,7 +5,7 @@ import {
   SafeAreaProvider,
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
-import { StyleSheet, View, Animated, StatusBar } from 'react-native';
+import { StyleSheet, View, Animated, StatusBar, AppState } from 'react-native';
 
 import MapScreen from './src/screens/MapScreen';
 import WelcomeModal from './src/screens/WelcomeModal';
@@ -17,6 +17,7 @@ import { useInitializationStore } from './src/stores/initializationStore';
 import { database } from './src/services/database';
 import { useProgressStore } from './src/stores/progressStore';
 import { setupDevMockLongSyncIfEnabled } from './src/services/devSyncMock';
+import { ensureTrackingModeRunning } from './src/services/trackingModeService';
 
 const Stack = createStackNavigator();
 
@@ -41,10 +42,7 @@ function SplashOverlay({ loading }: { loading: boolean }) {
   return (
     <Animated.View
       pointerEvents="none"
-      style={[
-        StyleSheet.absoluteFillObject,
-        { backgroundColor: '#000000', opacity },
-      ]}
+      style={[StyleSheet.absoluteFillObject, styles.splashFill, { opacity }]}
     />
   );
 }
@@ -77,6 +75,10 @@ function App(): React.JSX.Element {
         // before useSyncInterval's initial sync runs.
         await setupDevMockLongSyncIfEnabled();
         console.log('[App] initApp: dev mock setup done');
+        // If the user previously chose pedometer mode, make sure the
+        // Android foreground service is (re)started after cold boot.
+        await ensureTrackingModeRunning();
+        console.log('[App] initApp: tracking mode ready');
       } catch (error) {
         console.error('Failed to initialize app:', error);
       } finally {
@@ -89,6 +91,22 @@ function App(): React.JSX.Element {
 
     initApp();
   }, [loadSettings, initFromDatabase, setPhase]);
+
+  // Re-reconcile tracking-mode state whenever the app returns to the
+  // foreground. Catches: user granted/revoked ACTIVITY_RECOGNITION in
+  // system Settings, the OS killed our foreground service, or the
+  // persisted `syncEnabled` flag drifted from the actual native state
+  // (see ensureTrackingModeRunning docstring for the recovery cases).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        ensureTrackingModeRunning().catch(err =>
+          console.warn('[App] tracking-mode reconcile on resume failed:', err),
+        );
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
@@ -133,6 +151,9 @@ function App(): React.JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  splashFill: {
+    backgroundColor: '#000000',
   },
 });
 
