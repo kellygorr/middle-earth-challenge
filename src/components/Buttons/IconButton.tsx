@@ -1,5 +1,12 @@
 import React, { ReactNode, ReactElement, isValidElement } from 'react';
-import { Pressable, View, Insets, StyleProp, ViewStyle } from 'react-native';
+import {
+  Pressable,
+  View,
+  Insets,
+  StyleProp,
+  ViewStyle,
+  StyleSheet,
+} from 'react-native';
 import { useTheme } from '../../stores/settingsStore';
 import { borderRadius, iconButtonSizes } from '../../styles/global';
 import {
@@ -116,17 +123,16 @@ export default function IconButton({
   const badge = showBadge ? (
     <View
       pointerEvents="none"
-      style={{
-        position: 'absolute',
-        top: -3,
-        right: -3,
-        width: badgeSize,
-        height: badgeSize,
-        borderRadius: badgeSize / 2,
-        backgroundColor: badgeColor ?? '#F4B400',
-        borderWidth: 2,
-        borderColor: theme.colors.background,
-      }}
+      style={[
+        styles.badge,
+        {
+          width: badgeSize,
+          height: badgeSize,
+          borderRadius: badgeSize / 2,
+          backgroundColor: badgeColor ?? '#F4B400',
+          borderColor: theme.colors.background,
+        },
+      ]}
     />
   ) : null;
 
@@ -136,7 +142,7 @@ export default function IconButton({
       <View
         style={[
           isTransparent
-            ? { alignItems: 'center', justifyContent: 'center' }
+            ? styles.centered
             : { ...baseStyle, backgroundColor },
           style,
         ]}
@@ -201,3 +207,16 @@ export default function IconButton({
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  badge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    borderWidth: 2,
+  },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

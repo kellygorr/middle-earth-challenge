@@ -116,22 +116,22 @@ ${groups
     return `      {/* ${groupId} group - ${paths.length} paths */}
       <G id="${groupId}">
 ${paths
-  .map(path => {
-    const hasStroke = path.stroke !== null;
-    const hasExplicitFill = path.fill !== null;
+  .map(p => {
+    const hasStroke = p.stroke !== null;
+    const hasExplicitFill = p.fill !== null;
 
     // Build the path props
-    let pathProps = `          d="${path.d}"`;
+    let pathProps = `          d="${p.d}"`;
 
     if (hasStroke) {
-      pathProps += `\n          stroke="${path.stroke}"`;
+      pathProps += `\n          stroke="${p.stroke}"`;
     }
-    if (path.strokeWidth) {
-      pathProps += `\n          strokeWidth={${path.strokeWidth}}`;
+    if (p.strokeWidth) {
+      pathProps += `\n          strokeWidth={${p.strokeWidth}}`;
     }
 
     // Special handling for background-white path - use animated map background color as stroke
-    if (path.isBackgroundPath) {
+    if (p.isBackgroundPath) {
       return `        <AnimatedPath
 ${pathProps}
           stroke={colors.mapBackground}
@@ -144,7 +144,7 @@ ${pathProps}
     if (hasExplicitFill) {
       return `        <Path
 ${pathProps}
-          fill="${path.fill}"
+          fill="${p.fill}"
         />`;
     } else {
       return `        <AnimatedPath

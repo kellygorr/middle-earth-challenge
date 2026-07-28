@@ -232,11 +232,18 @@ export const useStatsStore = create<StatsStore>(() => ({
     );
 
     // Pace & Projections
+    // Count inclusive calendar days between the first entry and today
+    // (start-of-day → start-of-day + 1). Using raw timestamp subtraction
+    // here previously under-counted: e.g. an entry at 10 PM yesterday +
+    // an entry at 6 AM today spans 2 calendar days but only ~8 hours of
+    // wall-clock time, which would collapse to totalDays=1 while
+    // totalActiveDays=2 — making "excluding missed days" appear lower
+    // than the plain daily average.
+    const dayStartFirst = getStartOfDay(dateStarted.getTime());
+    const dayStartNow = getStartOfDay(now.getTime());
     const totalDays = Math.max(
       1,
-      Math.ceil(
-        (now.getTime() - dateStarted.getTime()) / (24 * 60 * 60 * 1000),
-      ),
+      Math.floor((dayStartNow - dayStartFirst) / (24 * 60 * 60 * 1000)) + 1,
     );
     const averageMilesPerDay =
       totalDays > 0 ? Math.round((miles / totalDays) * 10) / 10 : 0;

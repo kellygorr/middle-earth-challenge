@@ -456,7 +456,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
  * Modal dimension and layout constants
  */
 const MODAL_CONSTANTS = {
-  portraitHeightRatio: 0.8,
+  portraitHeightRatio: 0.9,
   maxWidth: 540,
   maxWidthNarrow: 440,
   landscapeWidthRatio: 0.65,

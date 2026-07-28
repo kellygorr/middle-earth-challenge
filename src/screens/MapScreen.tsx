@@ -36,7 +36,6 @@ import SyncIndicator from '../components/SyncIndicator';
 
 import { spacing } from '../styles/global';
 import { formatDistance } from '../utils/date';
-
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
 import { useInitializationStore } from '../stores/initializationStore';
@@ -52,6 +51,7 @@ import { GAME_PATH } from '../constants/mapPathData';
 import { useMapGestures } from '../hooks/useMapGestures';
 import { useInitialAnimation } from '../hooks/useInitialAnimation';
 import { useReactiveDimensions } from '../hooks/useReactiveDimensions';
+import { useLivePedometerDelta } from '../hooks/useLivePedometerDelta';
 
 import { useUniformMapLayout } from '../hooks/useUniformMapLayout';
 import { useGameProgressAnimation } from '../hooks/useGameProgressAnimation';
@@ -84,6 +84,7 @@ export default function MapScreen() {
   const reducedMapTitles = useSettingsStore(state => state.reducedMapTitles);
   const labelSize = useSettingsStore(state => state.labelSize);
   const useMiles = useSettingsStore(state => state.useMiles);
+  const trackingMode = useSettingsStore(state => state.trackingMode);
 
   // Info store for checkpoint/trivia info
   const {
@@ -106,6 +107,28 @@ export default function MapScreen() {
 
   // Miles from progress store (source of truth)
   const miles = useProgressStore(state => state.miles);
+
+  // Total lifetime step count, shown in a small chip below the miles
+  // button when the user is in pedometer mode. Health-app users don't
+  // see it because Health Connect / Apple Health is a "distance from
+  // any source" abstraction — a step counter would feel out of place
+  // and possibly wrong (steps aren't reported by e.g. treadmill sources).
+  //
+  // The display is the sum of two parts so the counter can visibly tick
+  // up while the user is walking with the app open, even though the
+  // pedometer only commits to SQLite every ~2 minutes:
+  //   totalSteps    = committedSteps + liveDelta
+  //   committedSteps = `progressStore.steps` — mirrors
+  //                    `progress_snapshot.steps` (SUM of every closed
+  //                    distance_entries.steps), maintained by the same
+  //                    writers that update `miles`. O(1) read.
+  //   liveDelta      = pedometer steps in the OPEN range
+  //                    [lastSyncTimestamp, now]. Pedometer-only — HC
+  //                    can't be queried live. See `useLivePedometerDelta`.
+  const committedSteps = useProgressStore(state => state.steps);
+  const liveDelta = useLivePedometerDelta();
+
+  const totalSteps = committedSteps + liveDelta;
 
   const firstCheckpoint = checkpointsData[0];
   const {
@@ -452,13 +475,16 @@ export default function MapScreen() {
       {/* Black bar for notch safe area in landscape */}
       {insets.left > 0 && (
         <View
-          style={[styles.notchBar, { left: 0, width: insets.left }]}
+          style={[styles.notchBar, styles.notchBarLeft, { width: insets.left }]}
           pointerEvents="none"
         />
       )}
 
-      {/* Traveled Miles Display - opens stats modal */}
-      {miles > 0 && (
+      {/* Top-left stack: total distance + today's steps chip. Rendered as a
+          single container so the two chips share the post-welcome enter
+          animation and stay flush against the left edge of the screen. */}
+      {(miles > 0 ||
+        (!showWelcome && trackingMode === 'pedometer' && totalSteps > 0)) && (
         <Animated.View
           style={[
             styles.milesContainer,
@@ -469,36 +495,66 @@ export default function MapScreen() {
             settingsEnterStyle,
           ]}
         >
-          <Button
-            onPress={() => {
-              clearStickyInfo();
-              pushModal({ type: 'stats' });
-            }}
-            variant="primary"
-            size={
-              labelSize === 'small'
-                ? 'small'
-                : labelSize === 'large'
-                ? 'large'
-                : 'default'
-            }
-            textSize={
-              labelSize === 'small'
-                ? 'small'
-                : labelSize === 'large'
-                ? 'large'
-                : 'default'
-            }
-            flatSide="left"
-            isLabelButton
-          >
-            {formatDistance(miles, {
-              includeUnits: true,
-              useLargeUnit: true,
-              noDecimals: true,
-              useMiles,
-            })}
-          </Button>
+          {miles > 0 && (
+            <Button
+              onPress={() => {
+                clearStickyInfo();
+                pushModal({ type: 'stats' });
+              }}
+              variant="primary"
+              size={
+                labelSize === 'small'
+                  ? 'small'
+                  : labelSize === 'large'
+                  ? 'large'
+                  : 'default'
+              }
+              textSize={
+                labelSize === 'small'
+                  ? 'small'
+                  : labelSize === 'large'
+                  ? 'large'
+                  : 'default'
+              }
+              flatSide="left"
+              isLabelButton
+            >
+              {formatDistance(miles, {
+                includeUnits: true,
+                useLargeUnit: true,
+                useMiles,
+              })}
+            </Button>
+          )}
+          {!showWelcome && trackingMode === 'pedometer' && totalSteps > 0 && (
+            <View style={styles.stepsChip}>
+              <Button
+                onPress={() => {
+                  clearStickyInfo();
+                  pushModal({ type: 'stats' });
+                }}
+                variant="primary"
+                size={
+                  labelSize === 'small'
+                    ? 'small'
+                    : labelSize === 'large'
+                    ? 'large'
+                    : 'default'
+                }
+                textSize={
+                  labelSize === 'small'
+                    ? 'small'
+                    : labelSize === 'large'
+                    ? 'large'
+                    : 'default'
+                }
+                flatSide="left"
+                isLabelButton
+              >
+                {`${totalSteps.toLocaleString()} steps`}
+              </Button>
+            </View>
+          )}
         </Animated.View>
       )}
 
@@ -610,7 +666,7 @@ export default function MapScreen() {
           <View style={styles.bottomIconColumn} pointerEvents="box-none">
             {/* Recenter Button */}
             <Animated.View
-              style={[{ alignSelf: 'flex-end' }, recenterButtonStyle]}
+              style={[styles.iconColumnItem, recenterButtonStyle]}
             >
               <IconButton
                 icon={
@@ -630,7 +686,7 @@ export default function MapScreen() {
             {/* Add Miles Button — disabled while syncing to avoid racing
                 manual edits against in-flight chunk writes. */}
             <Animated.View
-              style={[{ alignSelf: 'flex-end' }, settingsEnterStyle]}
+              style={[styles.iconColumnItem, settingsEnterStyle]}
             >
               <IconButton
                 icon={<PlusIcon size={iconSizes.medium} />}
@@ -700,6 +756,10 @@ export const styles = StyleSheet.create({
   },
   milesContainer: {
     position: 'absolute',
+    alignItems: 'flex-start',
+  },
+  stepsChip: {
+    marginTop: spacing.xs,
   },
   bottomRow: {
     flexDirection: 'row',
@@ -720,6 +780,9 @@ export const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: spacing.md,
   },
+  iconColumnItem: {
+    alignSelf: 'flex-end',
+  },
 
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -731,5 +794,8 @@ export const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: '#000000',
     zIndex: 50,
+  },
+  notchBarLeft: {
+    left: 0,
   },
 });

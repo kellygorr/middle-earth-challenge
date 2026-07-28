@@ -12,10 +12,12 @@ import { useProgressStore } from '../stores/progressStore';
 import type { SyncError } from '../stores/progressStore';
 import { typographyThemed } from '../styles/typography';
 import { useUIStore } from '../stores/uiStore';
-import { spacing, borderRadius } from '../styles/global';
+import { spacing, borderRadius, iconSizes } from '../styles/global';
 import { TrackingOptions } from './TrackingOptions';
 import { SyncNowRow } from './SyncNowRow';
 import Button from './Buttons/Button';
+import { IconButton } from './Buttons';
+import { PlusIcon, SyncIcon } from '../assets/icons';
 
 /**
  * Per-kind copy for the persistent sync-error banner.
@@ -24,27 +26,44 @@ import Button from './Buttons/Button';
  * before it ever reaches this component (see progressStore.setSyncStatus).
  * The default branch exists only as a safety net for future error kinds
  * that get added to the union but not classified here yet.
+ *
+ * The `showAddHint` flag opts a variant into the trailing "Manual entry is
+ * always available" line rendered separately in the component (with an
+ * inline `+` icon). We only surface that for permission errors, where the
+ * automatic path is genuinely blocked — not for transient issues like
+ * timeout, where nudging manual entry would misrepresent the state.
  */
 function getCopy(
   error: SyncError,
-  useMiles: boolean,
-): { headline: string; body: string } | null {
-  const unit = useMiles ? 'miles' : 'kilometers';
+): { headline: string; body: string; showAddHint: boolean } | null {
   switch (error.kind) {
     case 'permission':
+      // Copy varies by source so we can name the exact permission the
+      // user needs to re-grant. Only ever set for the currently-selected
+      // source, so we don't have to worry about mismatched contexts.
+      if (error.source === 'pedometer') {
+        return {
+          headline: 'Pedometer tracking is off',
+          body:
+            'The Physical activity permission was turned off or never granted, ' +
+            'so we can’t count your steps. Turn it back on to resume.',
+          showAddHint: true,
+        };
+      }
       return {
         headline: 'Disconnected from health data',
         body:
           'Your health app permission was revoked or never granted. ' +
-          'Reconnect below to sync automatically, or dismiss this and ' +
-          `log ${unit} with the + button.`,
+          'Reconnect below to sync automatically.',
+        showAddHint: true,
       };
     case 'timeout':
       return {
         headline: 'Sync took too long',
         body:
           'Your health app took too long to return one of the date ranges we asked for. ' +
-          'You haven\u2019t lost any newly synced data, and we\u2019ll pick up where the syncing left off.',
+          'You haven’t lost any newly synced data, and we’ll pick up where the syncing left off.',
+        showAddHint: false,
       };
     case 'unavailable':
       return {
@@ -52,14 +71,16 @@ function getCopy(
         body:
           Platform.OS === 'android'
             ? 'Health Connect is missing or out of date. Install or update it from the Play Store to sync your activity.'
-            : 'Your health app isn\u2019t available right now. We\u2019ll keep trying.',
+            : 'Your health app isn’t available right now. We’ll keep trying.',
+        showAddHint: false,
       };
     case 'backgroundDisabled':
       return {
         headline: 'Background updates are off',
         body:
-          'iOS isn\u2019t letting us refresh in the background, so new activity will only sync when you open the app. ' +
+          'iOS isn’t letting us refresh in the background, so new activity will only sync when you open the app. ' +
           'Turn on Background App Refresh in iOS Settings to fix this.',
+        showAddHint: false,
       };
     case 'unknown':
     default:
@@ -102,6 +123,10 @@ function formatTimestamp(at: number): string {
 export default function SyncErrorBanner() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
+  // Read so the pedometer permission row's IconButton variant tracks the
+  // same brand/outline state as the health-app row rendered by
+  // TrackingOptions — keeps both permission variants visually paired.
+  const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const lastSyncError = useProgressStore(state => state.lastSyncError);
   const lastSyncErrorAt = useProgressStore(state => state.lastSyncErrorAt);
   const clearLastSyncError = useProgressStore(
@@ -111,11 +136,12 @@ export default function SyncErrorBanner() {
 
   if (!lastSyncError) return null;
 
-  const copy = getCopy(lastSyncError, useMiles);
+  const copy = getCopy(lastSyncError);
   // Safety net: if we ever end up with an error kind we have no copy for,
   // render nothing rather than showing an empty card.
   if (!copy) return null;
-  const { headline, body } = copy;
+  const { headline, body, showAddHint } = copy;
+  const unitLabel = useMiles ? 'Miles' : 'Kilometers';
   const accent = '#F4B400'; // matches IconButton badge color
 
   return (
@@ -147,7 +173,36 @@ export default function SyncErrorBanner() {
           >
             {body}
           </Text>
-          {lastSyncErrorAt !== null && (
+          {/* Manual-entry hint: only for kinds where the automatic path is
+              actually blocked (permission). Unit is dynamic so we don't
+              lie to km users. The inline plus icon mirrors the pattern
+              used in SyncContentIOS's copy so the two references look
+              like the same UI element. */}
+          {showAddHint && (
+            <Text
+              style={[
+                typographyThemed(theme).body,
+                styles.addHint,
+                { color: theme.colors.textPrimary },
+              ]}
+            >
+              {`${unitLabel} can also be logged with the `}
+              <View style={styles.inlinePlus}>
+                <View style={styles.inlinePlusCircle}>
+                  <PlusIcon size={8} color="#fff" />
+                </View>
+              </View>
+              {' button.'}
+            </Text>
+          )}
+          {/* Timestamp is suppressed for `permission` errors because
+              trackingModeService restamps `lastSyncErrorAt` on every
+              foreground reconciliation, which makes it read as "just
+              now" every session and adds no signal. For transient kinds
+              (timeout / unavailable / backgroundDisabled), the stamp
+              reflects when the last failed sync tick happened and is
+              actually useful. */}
+          {lastSyncErrorAt !== null && lastSyncError.kind !== 'permission' && (
             <Text
               style={[
                 typographyThemed(theme).caption,
@@ -168,8 +223,8 @@ export default function SyncErrorBanner() {
         >
           <Text
             style={[
-              typographyThemed(theme).body,
-              { color: theme.colors.textSecondary, fontSize: 20 },
+              typographyThemed(theme).subtitleLarge,
+              { color: theme.colors.textSecondary },
             ]}
           >
             ×
@@ -205,15 +260,54 @@ export default function SyncErrorBanner() {
           </Button>
         </View>
       )}
-      {lastSyncError.kind === 'permission' && (
-        <View style={styles.retry}>
-          <TrackingOptions
-            showAddOption={false}
-            showDevToggle={false}
-            onOpenSyncModal={() => pushModal({ type: 'sync' })}
-          />
-        </View>
-      )}
+      {/* Permission recovery. Same visual shape for both sources — an
+          icon + text row you tap — but the destination differs:
+            • health-app  → TrackingOptions row opens our Sync modal, from
+              which the user can re-invoke the Health Connect / HealthKit
+              permission flow in-app.
+            • pedometer   → no in-app path exists once the Physical
+              activity permission is revoked (Android silently denies
+              re-requests), so we send the user to OS app settings. */}
+      {lastSyncError.kind === 'permission' &&
+        lastSyncError.source === 'health-app' && (
+          <View style={styles.retry}>
+            <TrackingOptions
+              showAddOption={false}
+              showDevToggle={false}
+              onOpenSyncModal={() => pushModal({ type: 'sync' })}
+            />
+          </View>
+        )}
+      {lastSyncError.kind === 'permission' &&
+        lastSyncError.source === 'pedometer' && (
+          <View style={styles.retry}>
+            <Pressable
+              style={styles.pedRow}
+              onPress={() => {
+                Linking.openSettings().catch(() => {
+                  // openSettings can reject on unusual configurations or
+                  // simulators; swallow so we don't crash the banner.
+                });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Open app settings to re-grant the Physical activity permission"
+            >
+              <IconButton
+                icon={<SyncIcon size={iconSizes.medium} />}
+                variant={syncEnabled ? 'brand' : 'outline'}
+              />
+              <Text
+                style={[
+                  typographyThemed(theme).captionSecondary,
+                  styles.pedRowText,
+                ]}
+              >
+                Open app settings to turn the Physical activity permission back
+                on
+              </Text>
+            </Pressable>
+          </View>
+        )}
       {lastSyncError.kind === 'backgroundDisabled' && (
         <View style={styles.retry}>
           <Button
@@ -243,7 +337,10 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
+    // Tight breathing room top & bottom so the banner sits snug against
+    // the surrounding modal content without looking marooned.
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
   topRow: {
     flexDirection: 'row',
@@ -257,11 +354,48 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: spacing.xs,
   },
+  // Trailing “you can always log manually” line. Small gap from the body
+  // paragraph so it reads as an aside rather than the same sentence.
+  addHint: {
+    marginTop: spacing.xs,
+  },
+  // Inline `+` icon inside a run of Text — same shape as the plus button
+  // on the map, at text-height. Duplicated from SyncContentIOS so we keep
+  // this component self-contained. The 2px translateY nudges the circle
+  // to sit on the text baseline rather than slightly above it.
+  inlinePlus: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ translateY: 2 }],
+  },
+  inlinePlusCircle: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   timestamp: {
     marginTop: spacing.xs,
   },
   retry: {
     marginTop: spacing.sm,
+  },
+  // Pedometer permission recovery row — mirrors the shape of the row
+  // TrackingOptions renders for the health-app case (IconButton + text
+  // in a Pressable) so both permission variants read as the same kind
+  // of affordance.
+  pedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  pedRowText: {
+    flex: 1,
+    flexShrink: 1,
   },
   dismissBtn: {
     paddingHorizontal: spacing.xs,

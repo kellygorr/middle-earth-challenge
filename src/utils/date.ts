@@ -85,11 +85,33 @@ const FEET_PER_MILE = 5280;
 const KM_PER_MILE = 1.60934;
 const METERS_PER_KM = 1000;
 
+/**
+ * Kilometers → miles. The internal data model always stores distance in
+ * miles; use this at input boundaries to convert user-entered km values
+ * before they hit the store / DB.
+ */
+export function kmToMiles(km: number): number {
+  return km / KM_PER_MILE;
+}
+
+/**
+ * Miles → kilometers. Use at output boundaries when populating an edit
+ * input for a user whose display preference is km, so they see and edit
+ * the number in the unit they picked.
+ */
+export function milesToKm(miles: number): number {
+  return miles * KM_PER_MILE;
+}
+
 interface FormatDistanceOptions {
   /** Append unit label (mi/ft or km/m) */
   includeUnits?: boolean;
   /** Always use miles/km, never convert to feet/meters */
   useLargeUnit?: boolean;
+  /** Always use feet/meters, never show miles/km. Takes precedence over
+   *  useLargeUnit. Intended for in-progress / live rows where the user
+   *  wants fine-grained feedback as they walk. */
+  forceSmallUnit?: boolean;
   /** Round down to whole number (prevents showing completion early) */
   noDecimals?: boolean;
   /** Use miles (true) or kilometers (false). Default: true (miles) */
@@ -122,20 +144,21 @@ export function formatDistance(
   const {
     includeUnits = false,
     useLargeUnit = false,
+    forceSmallUnit = false,
     noDecimals = false,
     useMiles = true,
   } = opts;
-
-  if (miles === 0) {
-    const zeroUnit = useMiles ? 'mi' : 'km';
-    return includeUnits ? `0 ${zeroUnit}` : '0';
-  }
 
   // Convert to km if needed
   const distance = useMiles ? miles : miles * KM_PER_MILE;
   const largeUnit = useMiles ? 'mi' : 'km';
   const smallUnit = useMiles ? 'ft' : 'm';
   const smallPerLarge = useMiles ? FEET_PER_MILE : METERS_PER_KM;
+
+  if (miles === 0) {
+    const zeroUnit = forceSmallUnit ? smallUnit : largeUnit;
+    return includeUnits ? `0 ${zeroUnit}` : '0';
+  }
 
   // Handle noDecimals - round down (floor) to prevent early completion display
   // Show "<1" for values between 0 and 1 to indicate progress
@@ -147,8 +170,10 @@ export function formatDistance(
     return includeUnits ? `${floored} ${largeUnit}` : floored.toString();
   }
 
-  // For useLargeUnit mode or values >= 1 (by magnitude), display in large units
-  if (useLargeUnit || Math.abs(distance) >= 1) {
+  // forceSmallUnit skips the >=1 large-unit branch entirely so a live
+  // "in progress" row keeps reporting feet/meters even after crossing
+  // a full mile/kilometer.
+  if (!forceSmallUnit && (useLargeUnit || Math.abs(distance) >= 1)) {
     let value: string;
     if (distance === Math.floor(distance)) {
       value = distance.toString();

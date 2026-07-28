@@ -13,6 +13,12 @@ interface TwoColumnRowProps {
   labels: [string, string];
   /** Values for left and right columns */
   values: [string | number, string | number];
+  /**
+   * Optional secondary values shown below the main values in a smaller/muted
+   * style. Pass `undefined` for either column to suppress the subvalue on
+   * that side.
+   */
+  subValues?: [string | undefined, string | undefined];
   /** Whether this is the last row (no bottom border) */
   isLast?: boolean;
 }
@@ -20,6 +26,7 @@ interface TwoColumnRowProps {
 export default function TwoColumnRow({
   labels,
   values,
+  subValues,
   isLast = false,
 }: TwoColumnRowProps) {
   const theme = useTheme();
@@ -28,10 +35,8 @@ export default function TwoColumnRow({
     <View
       style={[
         styles.row,
-        !isLast && {
-          borderBottomColor: theme.colors.divider,
-          borderBottomWidth: 1,
-        },
+        !isLast && styles.rowDivider,
+        !isLast && { borderBottomColor: theme.colors.divider },
       ]}
     >
       <View style={styles.column}>
@@ -39,12 +44,22 @@ export default function TwoColumnRow({
           {labels[0]}
         </Text>
         <Text style={typographyThemed(theme).bodyPrimary}>{values[0]}</Text>
+        {subValues?.[0] !== undefined && (
+          <Text style={typographyThemed(theme).captionSecondary}>
+            {subValues[0]}
+          </Text>
+        )}
       </View>
       <View style={[styles.column, styles.columnRight]}>
         <Text style={typographyThemed(theme).captionSecondary}>
           {labels[1]}
         </Text>
         <Text style={typographyThemed(theme).bodyPrimary}>{values[1]}</Text>
+        {subValues?.[1] !== undefined && (
+          <Text style={typographyThemed(theme).captionSecondary}>
+            {subValues[1]}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -54,6 +69,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     paddingVertical: spacing.sm,
+  },
+  rowDivider: {
+    borderBottomWidth: 1,
   },
   column: {
     flex: 1,

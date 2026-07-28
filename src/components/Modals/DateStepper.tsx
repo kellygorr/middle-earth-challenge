@@ -4,7 +4,7 @@ import { IconButton } from '../Buttons';
 import { ChevronIcon } from '../../assets/icons';
 import { useTheme } from '../../stores/settingsStore';
 import { typographyThemed } from '../../styles/typography';
-import { spacing, iconSizes } from '../../styles/global';
+import { iconSizes } from '../../styles/global';
 import { formatDateLabel } from '../../utils/date';
 
 interface DateStepperProps {
@@ -71,6 +71,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.md,
   },
 });
