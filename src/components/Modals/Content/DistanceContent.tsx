@@ -549,7 +549,14 @@ export default function DistanceContent() {
           </View>
           <View style={styles.entryValue}>
             <Text style={typographyThemed(theme).bodyPrimary}>
-              {formatDistance(item.miles, true)}
+              {formatDistance(item.miles, {
+                includeUnits: true,
+                useMiles,
+                // In-progress rows report feet/meters even at 0 and even
+                // after crossing a full unit, so a walker sees numbers
+                // move meaningfully instead of "0 mi" holding forever.
+                forceSmallUnit: inProgress,
+              })}
             </Text>
             <Text
               style={[

@@ -169,7 +169,15 @@ export async function ensureTrackingModeRunning(): Promise<void> {
 
   try {
     const env = await pedometerService.getEnvironment();
-    const permissionsOk = env.activityRecognition && env.hasSensor;
+    // Match the selection-time gate in SyncContentAndroid: both
+    // physical-activity AND background-activity (battery-opt allowlist)
+    // are required. If either is off we can't reliably keep the FGS
+    // alive across Doze, so treat it the same as an outright revoke
+    // and refuse to auto-restart.
+    const permissionsOk =
+      env.activityRecognition &&
+      env.hasSensor &&
+      env.ignoresBatteryOptimizations;
 
     if (!permissionsOk) {
       const s = useSettingsStore.getState();
@@ -179,6 +187,14 @@ export async function ensureTrackingModeRunning(): Promise<void> {
       // a banner.
       if (s.syncEnabled) {
         s.setSyncEnabled(false);
+        // Pick the most-specific message so the user knows which one
+        // to fix. Ordered: sensor > activity-recognition > bg-activity
+        // (sensor issues are unfixable by the user; the perms are).
+        const message = !env.hasSensor
+          ? 'Step counter sensor is unavailable on this device'
+          : !env.activityRecognition
+          ? 'Physical activity permission was revoked'
+          : 'Background activity access was revoked';
         useProgressStore.getState().setSyncStatus({
           phase: 'error',
           chunksDone: 0,
@@ -189,9 +205,7 @@ export async function ensureTrackingModeRunning(): Promise<void> {
           error: {
             kind: 'permission',
             source: 'pedometer',
-            message: env.hasSensor
-              ? 'ACTIVITY_RECOGNITION permission was revoked'
-              : 'Step counter sensor is unavailable on this device',
+            message,
           },
         });
       }

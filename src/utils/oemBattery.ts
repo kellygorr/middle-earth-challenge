@@ -46,6 +46,19 @@ export function isOemBatteryDevPreview(rawManufacturer: string): boolean {
 }
 
 /**
+ * True on stock-Google (Pixel) hardware. Used to conditionally show
+ * Pixel-specific navigation hints in the pedometer permission alerts
+ * — the "App battery usage → Allow background usage → Unrestricted"
+ * screen is a well-documented Pixel quirk where the parent-level
+ * toggle is cosmetic and the actual bit only flips via the drilled-in
+ * radio group. See:
+ *   https://stackoverflow.com/questions/78880281
+ */
+export function isPixelDevice(rawManufacturer: string): boolean {
+  return (rawManufacturer || '').toLowerCase().includes('google');
+}
+
+/**
  * Copy for the post-connect follow-up prompt on offender OEMs. Frames
  * the OEM battery step as the next dialog in the permission sequence
  * (matching stock Android's own "Allow to run in the background?" tone)

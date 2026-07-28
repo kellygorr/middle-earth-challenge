@@ -102,3 +102,22 @@ any place the code is doing something unusual without a comment
 explaining why. Deliverable: a categorized list of issues with
 severity, file references, and suggested fixes — no code changes,
 just a report the maintainers can triage.
+
+---
+
+## Revoke access (pedometer) only revokes one item
+
+The "Revoke access" flow for the pedometer source currently gives
+directions for revoking **one** of the required grants (physical
+activity, notifications, and the battery-optimization allowlist entry).
+The other two aren't addressed, so the user is left thinking they've
+fully revoked when they haven't.
+
+Fix: either walk the user through all three (deep-link each Settings
+screen sequentially) or, better, revoke what we can programmatically
+(stop the FGS, cancel WorkManager sweeps, clear the "was tracking"
+flag) and then surface a single Settings-panel deep-link for the
+runtime permissions the OS won't let us clear ourselves. Copy should
+be explicit about which grants Android forces the user to revoke by
+hand.
+

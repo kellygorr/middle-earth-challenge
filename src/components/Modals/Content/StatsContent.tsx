@@ -78,7 +78,8 @@ export default function StatsContent() {
         />
         {stats.journey.nextCheckpointName && (
           <StatRow
-            label={`Next: ${stats.journey.nextCheckpointName}`}
+            label="Next"
+            subLabel={stats.journey.nextCheckpointName}
             value={formatDistance(stats.journey.milesUntilNextCheckpoint, {
               includeUnits: true,
               useMiles,
@@ -102,15 +103,15 @@ export default function StatsContent() {
           label="Best day"
           value={
             stats.activity.bestDayMiles > 0
-              ? `${formatDistance(stats.activity.bestDayMiles, {
-                  includeUnits: true,
-                  useMiles,
-                })} (${formatDate(stats.activity.bestDayDate)})`
+              ? formatDate(stats.activity.bestDayDate)
               : '—'
           }
           subValue={
             stats.activity.bestDayMiles > 0
-              ? `${formatSteps(
+              ? `${formatDistance(stats.activity.bestDayMiles, {
+                  includeUnits: true,
+                  useMiles,
+                })} · ${formatSteps(
                   milesToSteps(stats.activity.bestDayMiles),
                 )} steps`
               : undefined

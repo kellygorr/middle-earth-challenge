@@ -18,6 +18,7 @@ import { PlusIcon } from '../../../assets/icons';
 import {
   isOemBatteryOffender,
   isOemBatteryDevPreview,
+  isPixelDevice,
   getOemBatteryPromptCopy,
 } from '../../../utils/oemBattery';
 
@@ -71,11 +72,15 @@ export default function SyncContentAndroid() {
   // switch is mid-flight. React state so it can disable the rows.
   const [busy, setBusy] = React.useState(false);
 
-  // Whether the OS has granted us the runtime access each source
-  // needs. Independent of whether that source is currently *active* —
-  // permissions persist across stopSyncing until explicitly revoked.
-  // Drives the visibility of the per-source blocks in the Revoke
-  // access section (no grant → no block).
+  // Whether the OS has granted us ANY of the runtime access the
+  // pedometer needs (physical activity, notifications, or background
+  // activity / battery-opt allowlist). Independent of whether the
+  // source is currently *active* — permissions persist across
+  // stopSyncing until explicitly revoked. Drives the visibility of
+  // the per-source blocks in the Revoke access section. Broadened
+  // from activity-recognition-only so the block doesn't disappear
+  // the moment the user turns off the first of three grants, leaving
+  // them with no visible path to clean up the rest.
   const [pedometerGranted, setPedometerGranted] = React.useState(false);
   const [hcGranted, setHcGranted] = React.useState(false);
 
@@ -133,15 +138,16 @@ export default function SyncContentAndroid() {
     try {
       if (pedometerService.isSupported()) {
         const env = await pedometerService.getEnvironment();
-        setPedometerGranted(!!env.activityRecognition);
+        setPedometerGranted(
+          !!env.activityRecognition ||
+            !!env.postNotifications ||
+            !!env.ignoresBatteryOptimizations,
+        );
         setManufacturer(env.manufacturer || '');
-        // Foreground-service running → Android is actively letting us
-        // work in the background right now. Treat that as sufficient
-        // for the "Background activity" checklist item even if the
-        // battery-optimization allowlist bit hasn't been flipped:
-        // many users tracking successfully never grant that runtime
-        // permission and it was confusing to see ○ next to a source
-        // that was clearly working.
+        // Track whether the foreground service is actually running.
+        // No longer used to satisfy the "Background activity"
+        // checklist item (that reads the OS allowlist directly), but
+        // still surfaced in permStatus for other diagnostics.
         let serviceRunning = false;
         try {
           serviceRunning = await pedometerService.isServiceRunning();
@@ -336,7 +342,31 @@ export default function SyncContentAndroid() {
   };
 
   // Start pedometer tracking (fresh or switching from health-app).
-  const connectPedometer = async () => {
+  //
+  // Two-stage permission flow:
+  //
+  //   1. Pre-flight (this function): check which required grants are
+  //      still missing. If any are, show a single explanatory alert
+  //      that lists them, warns that Android may silently drop the
+  //      system dialogs on retry, and offers "Continue" (fire the
+  //      native prompts) or "App Settings" (skip straight to app
+  //      settings). Predictable and always-available — the user is
+  //      never confused about why nothing happened.
+  //
+  //   2. Post-flight (performPedometerSwitch): after the native
+  //      switch resolves, verify each required grant actually landed.
+  //      If any didn't, undo (stopSyncing) and show a targeted alert
+  //      pointing the user at Settings for the specific miss. Only
+  //      after all required gates pass do we commit setSyncEnabled.
+  //
+  // OEM battery managers are surfaced as a final blocking dialog
+  // because they're unverifiable — we can't detect grant/denial from
+  // code, so the best we can do is show the "Open settings / I've
+  // done this" prompt once and trust the user's acknowledgement.
+  //
+  // Notifications are advisory (nice-to-have for the FGS notification
+  // shade + milestone alerts) and are NOT gated in either stage.
+  const performPedometerSwitch = async () => {
     setBusy(true);
     try {
       // Disconnect health-app if currently connected. Errors are logged
@@ -355,77 +385,170 @@ export default function SyncContentAndroid() {
       }
 
       const result = await switchTrackingMode('pedometer');
-      if (result.tracking) {
-        setSyncEnabled(true);
-        setPedometerGranted(true);
 
-        // OEM battery follow-up (Samsung / Xiaomi / Huawei / OnePlus /
-        // Oppo / Realme / Vivo). Presented as the next step in the same
-        // permission sequence — the stock Android battery-opt dialog
-        // fired inside switchTrackingMode covers Doze, but on these
-        // OEMs the manufacturer's own battery manager will still kill
-        // the FGS unless the user allow-lists us in their proprietary
-        // settings screen. Shown at most once (persisted flag) so it
-        // doesn't nag; discoverable afterwards via the "Battery
-        // settings" bullet in Required Access.
-        try {
-          const env = await pedometerService.getEnvironment();
-          const copy = getOemBatteryPromptCopy(env.manufacturer);
-          if (copy && !hasSeenOemBatteryPrompt) {
-            Alert.alert(copy.title, copy.body, [
-              {
-                text: 'Not now',
-                style: 'cancel',
-                onPress: () => setHasSeenOemBatteryPrompt(true),
-              },
-              {
-                text: 'Open settings',
-                onPress: () => {
-                  setHasSeenOemBatteryPrompt(true);
-                  pedometerService.openOemBatterySettings().catch(err => {
-                    console.warn(
-                      '[SyncContentAndroid] openOemBatterySettings:',
-                      err,
-                    );
-                  });
-                },
-              },
-            ]);
-          }
-        } catch (error) {
-          console.warn(
-            '[SyncContentAndroid] OEM battery follow-up prompt:',
-            error,
-          );
-        }
-
+      // Gate 1: Physical activity is required and verifiable. If the
+      // FGS failed to start it's almost always because the user
+      // declined ACTIVITY_RECOGNITION.
+      if (!result.tracking) {
+        setSyncEnabled(false);
+        showPedometerMissingAlert('Physical activity');
         return;
       }
 
-      // Failed to start — usually denied ACTIVITY_RECOGNITION.
-      setSyncEnabled(false);
-      const permissionDenied =
-        result.permissions && !result.permissions.activityRecognition;
-      Alert.alert(
-        permissionDenied ? 'Permission Required' : 'Could not start pedometer',
-        permissionDenied
-          ? 'Pedometer needs the Physical activity permission to count steps. You can grant it in Settings.'
-          : 'Something went wrong starting the pedometer. Please try again.',
-        permissionDenied
-          ? [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Open Settings',
-                onPress: () => {
-                  Linking.openSettings();
-                },
-              },
-            ]
-          : [{ text: 'OK' }],
-      );
+      // Gate 2: Background activity is required and verifiable. The
+      // OS dialog is throttled by Android after the first dismissal,
+      // so on the second+ attempt we won't see the prompt at all —
+      // the alert we show below is the reliable escape hatch.
+      const env = await pedometerService.getEnvironment();
+      if (!env.ignoresBatteryOptimizations) {
+        // Undo the switch — FGS started but we're refusing to commit
+        // the selection. Leaves the user back at "no source" so a
+        // half-configured pedometer isn't silently running.
+        await stopSyncing();
+        showPedometerMissingAlert('Background activity');
+        return;
+      }
+
+      // Gate 3: OEM battery manager (Samsung / Xiaomi / Huawei /
+      // OnePlus / Oppo / Realme / Vivo). Unverifiable from the app,
+      // so we can't truly block — the best we can do is a blocking
+      // dialog that requires an acknowledgement. Shown at most once
+      // (persisted flag) so it doesn't nag on every re-select; the
+      // "Battery settings*" bullet in the Required Access list keeps
+      // it discoverable.
+      const oemCopy = getOemBatteryPromptCopy(env.manufacturer);
+      if (oemCopy && !hasSeenOemBatteryPrompt) {
+        Alert.alert(oemCopy.title, oemCopy.body, [
+          {
+            text: 'Open settings',
+            onPress: () => {
+              setHasSeenOemBatteryPrompt(true);
+              pedometerService.openOemBatterySettings().catch(err => {
+                console.warn(
+                  '[SyncContentAndroid] openOemBatterySettings:',
+                  err,
+                );
+              });
+            },
+          },
+          {
+            text: "I've done this",
+            onPress: () => setHasSeenOemBatteryPrompt(true),
+          },
+        ]);
+      }
+
+      // All gates passed — commit the selection.
+      setSyncEnabled(true);
+      setPedometerGranted(true);
     } finally {
       setBusy(false);
     }
+  };
+
+  // Shown after a failed grant attempt for a specific required item.
+  // Because Android throttles / suppresses re-prompts, Settings is
+  // the reliable path forward.
+  const showPedometerMissingAlert = (item: string) => {
+    // Pixel-specific hint for the background-activity case: the
+    // parent-level "Allow background usage" toggle on the App battery
+    // usage screen is cosmetic — users have to tap the row (not the
+    // switch) to drill into a sub-page and select "Unrestricted"
+    // from a radio group. Well-documented Android 14+ Pixel quirk
+    // (see: https://stackoverflow.com/questions/78880281).
+    const pixelHint =
+      item === 'Background activity' && isPixelDevice(manufacturer)
+        ? '\n\nOn Pixel: tap App battery usage → tap the "Allow ' +
+          'background usage" row (not the toggle) → pick ' +
+          '"Unrestricted". The parent toggle by itself does not work.'
+        : '';
+
+    Alert.alert(
+      `${item} required`,
+      `${item} access wasn't granted. Android may not re-show the system ` +
+        'prompt, so please grant it manually in app settings, then tap ' +
+        'Pedometer again.' +
+        pixelHint,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'App Settings',
+          onPress: () => {
+            Linking.openSettings();
+          },
+        },
+      ],
+    );
+  };
+
+  // Pre-flight explainer: check what's still missing, and if anything
+  // is, show one clear alert before firing any native prompts. If
+  // everything is already granted, skip straight to the switch.
+  const connectPedometer = async () => {
+    setBusy(true);
+    let env;
+    try {
+      env = pedometerService.isSupported()
+        ? await pedometerService.getEnvironment()
+        : null;
+    } catch (error) {
+      console.warn('[SyncContentAndroid] pre-flight getEnvironment:', error);
+      env = null;
+    } finally {
+      setBusy(false);
+    }
+
+    const missingActivity = !env?.activityRecognition;
+    const missingBackground = !env?.ignoresBatteryOptimizations;
+    const missingNotifications = !env?.postNotifications;
+
+    // If both required grants are already in place, skip the explainer
+    // and switch directly — no reason to nag a returning user.
+    if (!missingActivity && !missingBackground) {
+      performPedometerSwitch();
+      return;
+    }
+
+    // Build the bulleted list dynamically so we only mention what's
+    // actually still missing — no noise about already-granted items.
+    const bullets: string[] = [];
+    if (missingActivity) bullets.push('• Physical activity (required)');
+    if (missingBackground) bullets.push('• Background activity (required)');
+    if (missingNotifications) bullets.push('• Notifications (optional)');
+
+    // Pixel-specific note. See showPedometerMissingAlert comment.
+    const pixelHint =
+      missingBackground && isPixelDevice(env?.manufacturer || '')
+        ? '\n\nOn Pixel, granting Background activity is not obvious: ' +
+          'in App battery usage, tap the "Allow background usage" row ' +
+          '(not the toggle) and pick "Unrestricted".'
+        : '';
+
+    Alert.alert(
+      'Pedometer access needed',
+      'The pedometer still needs:\n\n' +
+        bullets.join('\n') +
+        '\n\nTap Continue to grant them one at a time. Once popups have ' +
+        'been denied or skipped, Android may not show them again — if ' +
+        'that has happened, tap App Settings to turn them on manually, ' +
+        'then come back and tap Pedometer again.' +
+        pixelHint,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'App Settings',
+          onPress: () => {
+            Linking.openSettings();
+          },
+        },
+        {
+          text: 'Continue',
+          onPress: () => {
+            performPedometerSwitch();
+          },
+        },
+      ],
+    );
   };
 
   const handleSelectHealthApp = () => {
@@ -607,22 +730,18 @@ export default function SyncContentAndroid() {
                       : 'ungranted',
                   },
                   {
-                    label: 'Notifications',
-                    status: permStatus.postNotifications
+                    label: 'Background activity',
+                    // Reflects the OS "Allow background usage" toggle
+                    // (`PowerManager.isIgnoringBatteryOptimizations`).
+                    // A running foreground service does NOT satisfy
+                    // this: Android still kills the service after ~1
+                    // hour of screen-off Doze unless the app is on the
+                    // background-activity allowlist. Showing "granted"
+                    // just because the FGS was currently alive gave
+                    // users a false sense of security.
+                    status: permStatus.ignoresBatteryOptimizations
                       ? 'granted'
                       : 'ungranted',
-                  },
-                  {
-                    label: 'Background activity',
-                    // Live FGS satisfies this item on its own; the
-                    // battery-opt allowlist is only a fallback signal
-                    // for when the service isn't currently running
-                    // (e.g. pedometer isn't the active source).
-                    status:
-                      permStatus.pedometerServiceRunning ||
-                      permStatus.ignoresBatteryOptimizations
-                        ? 'granted'
-                        : 'ungranted',
                   },
                   // On aggressive-battery OEMs (Samsung/Xiaomi/Huawei/
                   // OnePlus/Oppo/Realme/Vivo) the user also needs to
@@ -640,6 +759,17 @@ export default function SyncContentAndroid() {
                         } satisfies AccessItem,
                       ]
                     : []),
+                  // Notifications last because they're optional \u2014 the
+                  // pedometer counts steps fine without them, they only
+                  // gate the foreground-service notification and
+                  // milestone alerts. Labelled explicitly so users don't
+                  // read \u25cb as a blocker.
+                  {
+                    label: 'Notifications (optional)',
+                    status: permStatus.postNotifications
+                      ? 'granted'
+                      : 'ungranted',
+                  },
                 ]}
                 statusFootnotes={{
                   unverifiable: '*Cannot verify battery settings from app',
@@ -757,8 +887,14 @@ export default function SyncContentAndroid() {
                   styles.sectionText,
                 ]}
               >
-                Open the Android app settings and turn off the Physical activity
-                permission.
+                Android has no single "revoke" action for the pedometer. Open
+                the app settings and turn off each grant you no longer want:
+                {'\n'}• Permissions → Physical activity → Don't allow
+                {'\n'}• Battery → Optimized (removes background activity access)
+                {oemBatteryAffected
+                  ? "\n• Your device's battery manager (remove auto-start / background allowance)"
+                  : ''}
+                {'\n'}• Permissions → Notifications → Don't allow
               </Text>
               <View style={styles.revokeButtonRow}>
                 <Button
