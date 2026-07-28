@@ -1,6 +1,11 @@
 import { Theme } from '../../styles/themes';
 
-export type ButtonVariant = 'primary' | 'brand' | 'outline' | 'transparent';
+export type ButtonVariant =
+  | 'primary'
+  | 'primaryInverted'
+  | 'brand'
+  | 'outline'
+  | 'transparent';
 
 /**
  * Get text/icon color for a button variant
@@ -14,6 +19,7 @@ export function getButtonTextColor(
     case 'brand':
       return theme.colors.buttonBrandText;
     case 'outline':
+    case 'primaryInverted':
       return theme.colors.buttonOutlineText;
     case 'transparent':
       return theme.colors.textPrimary;
@@ -35,6 +41,7 @@ export function getButtonBackgroundColor(
     case 'transparent':
       return 'transparent';
     case 'outline':
+    case 'primaryInverted':
       return theme.colors.buttonOutlineBg;
     case 'brand':
       return theme.colors.buttonBrandBackground;

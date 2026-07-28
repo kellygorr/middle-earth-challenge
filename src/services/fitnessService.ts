@@ -1,8 +1,12 @@
 import { Platform } from 'react-native';
 import { HealthDistanceRecord, SyncProvider } from '../types';
-
-// Average stride length in meters (approximately 0.762m or 2.5 feet)
-const AVERAGE_STRIDE_METERS = 0.762;
+import {
+  AVERAGE_STRIDE_METERS,
+  metersToMiles,
+  milesToMeters,
+  milesToSteps,
+  stepsToMiles,
+} from '../utils/stride';
 
 /**
  * Fitness service abstraction layer
@@ -283,27 +287,101 @@ class FitnessService implements FitnessServiceInterface {
   }
 
   /**
-   * Disconnect from health service and revoke permissions
-   * Note: On Android 14+, permissions are not immediately revoked - they will be revoked when the app restarts
-   * Note: On iOS, permissions cannot be revoked programmatically - user must go to Settings
+   * Disconnect from the health service in-app (stop real-time updates
+   * and reset internal state). Does NOT revoke OS-level permissions —
+   * use {@link revokePermissions} for that.
+   *
+   * The split lets us differentiate "user turned syncing off" (which
+   * should leave permissions intact so re-enabling doesn't require
+   * another approval flow) from "user wants to revoke access entirely".
    */
   async disconnect(): Promise<void> {
     try {
       this.stopRealTimeUpdates();
+      this.isInitialized = false;
+      this.currentProvider = 'none';
+    } catch (error) {
+      console.error('[FitnessService] Disconnect error:', error);
+    }
+  }
 
-      if (Platform.OS === 'android' && this.isInitialized) {
+  /**
+   * Revoke OS-level permissions granted to the app.
+   * - Android: calls Health Connect's revokeAllPermissions. Per the
+   *   Health Connect API, revocations only take effect after the app
+   *   process restarts.
+   * - iOS: no-op. HealthKit does not support programmatic revocation;
+   *   the user must remove access from Settings → Health → Middle
+   *   Earth Challenge.
+   */
+  async revokePermissions(): Promise<void> {
+    try {
+      if (Platform.OS === 'android') {
         const hc = await getHealthConnectModule();
         if (hc) {
           await hc.revokeAllPermissions();
         }
       }
-      // Note: iOS HealthKit doesn't support programmatic permission revocation
-      // User must revoke permissions manually in Settings → Health → Middle Earth Challenge
-
-      this.isInitialized = false;
-      this.currentProvider = 'none';
+      // iOS: intentional no-op.
     } catch (error) {
-      console.error('[FitnessService] Disconnect error:', error);
+      console.error('[FitnessService] Revoke permissions error:', error);
+    }
+  }
+
+  /**
+   * Whether Health Connect has any of our requested read permissions
+   * currently granted. Android-only; returns false on other platforms.
+   *
+   * Does not prompt the user — safe to call passively (e.g. on mount)
+   * to decide whether to surface revoke UI.
+   *
+   * Note: after {@link revokePermissions}, HC keeps reporting these as
+   * granted until the app process restarts (HC API limitation).
+   */
+  async hasHealthConnectPermissions(): Promise<boolean> {
+    if (Platform.OS !== 'android') return false;
+    try {
+      const hc = await getHealthConnectModule();
+      if (!hc) return false;
+      // initialize() is idempotent and required before querying grants.
+      const initialized = await hc.initialize();
+      if (!initialized) return false;
+      const granted = await hc.getGrantedPermissions();
+      return granted.some(
+        p =>
+          p.accessType === 'read' &&
+          (p.recordType === 'Distance' || p.recordType === 'Steps'),
+      );
+    } catch (error) {
+      console.warn('[FitnessService] hasHealthConnectPermissions:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Per-record-type breakdown of Health Connect read permissions.
+   * Powers the status-tagged Required Access list in the Sync modal.
+   * Android-only; returns all-false on other platforms.
+   */
+  async getHealthConnectGrants(): Promise<{
+    steps: boolean;
+    distance: boolean;
+  }> {
+    if (Platform.OS !== 'android') return { steps: false, distance: false };
+    try {
+      const hc = await getHealthConnectModule();
+      if (!hc) return { steps: false, distance: false };
+      const initialized = await hc.initialize();
+      if (!initialized) return { steps: false, distance: false };
+      const granted = await hc.getGrantedPermissions();
+      const has = (recordType: string) =>
+        granted.some(
+          p => p.accessType === 'read' && p.recordType === recordType,
+        );
+      return { steps: has('Steps'), distance: has('Distance') };
+    } catch (error) {
+      console.warn('[FitnessService] getHealthConnectGrants:', error);
+      return { steps: false, distance: false };
     }
   }
 
@@ -354,6 +432,16 @@ class FitnessService implements FitnessServiceInterface {
     const options = {
       startDate: startDate.toISOString(),
       endDate: new Date().toISOString(),
+      // Pin the unit explicitly. react-native-health's default for distance
+      // happens to be miles, but relying on that is fragile — pinning
+      // guarantees the value we receive matches our internal model.
+      unit: appleHealth.default.Constants.Units.mile,
+    };
+    // Step queries take the same time range but no distance unit; strip it
+    // so we don't accidentally send a distance unit to a count query.
+    const stepOptions = {
+      startDate: options.startDate,
+      endDate: options.endDate,
     };
 
     let distanceMiles = 0;
@@ -368,7 +456,7 @@ class FitnessService implements FitnessServiceInterface {
             if (err) {
               reject(err);
             } else {
-              // Distance is returned in miles
+              // Distance is in miles (requested via options.unit above)
               resolve(results?.value || 0);
             }
           },
@@ -383,7 +471,7 @@ class FitnessService implements FitnessServiceInterface {
     try {
       const steps = await new Promise<number>((resolve, reject) => {
         appleHealth.default.getStepCount(
-          options,
+          stepOptions,
           (err: string, results: { value: number }) => {
             if (err) {
               reject(err);
@@ -506,7 +594,9 @@ class FitnessService implements FitnessServiceInterface {
 
   /**
    * iOS-specific distance records query
-   * Uses daily samples to get individual records with timestamps
+   * Uses daily samples to get individual records with timestamps.
+   * Pulls both distance and step samples, and picks whichever signal
+   * covers more mileage — same rule as the Android path.
    */
   private async getDistanceRecordsBetweenIOS(
     startDate: Date,
@@ -525,106 +615,87 @@ class FitnessService implements FitnessServiceInterface {
       // Get daily samples for better granularity
       includeManuallyAdded: true,
     };
+    const distanceOptions = {
+      ...options,
+      // Pin the distance unit explicitly (see getDistanceSinceIOS for rationale).
+      unit: appleHealth.default.Constants.Units.mile,
+    };
 
-    const records: HealthDistanceRecord[] = [];
+    type Sample = {
+      value: number;
+      startDate: string;
+      endDate: string;
+      id?: string;
+    };
 
-    // Try to get walking/running distance samples
+    // Pull distance samples (values in miles per options.unit above).
+    let distanceSamples: Sample[] = [];
     try {
-      const distanceSamples = await new Promise<
-        Array<{
-          value: number;
-          startDate: string;
-          endDate: string;
-          id?: string;
-        }>
-      >((resolve, reject) => {
+      distanceSamples = await new Promise<Sample[]>((resolve, reject) => {
         appleHealth.default.getDailyDistanceWalkingRunningSamples(
-          options,
-          (
-            err: string,
-            results: Array<{
-              value: number;
-              startDate: string;
-              endDate: string;
-              id?: string;
-            }>,
-          ) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
+          distanceOptions,
+          (err: string, results: Sample[]) => {
+            if (err) reject(err);
+            else resolve(results || []);
           },
         );
       });
-
-      for (const sample of distanceSamples) {
-        if (sample.value > 0) {
-          records.push({
-            // Use ah_ prefix for Apple Health records to distinguish from Health Connect
-            id: sample.id || `ah_${sample.startDate}_${sample.endDate}`,
-            startTime: sample.startDate,
-            endTime: sample.endDate,
-            // Apple Health returns distance in miles, convert to meters for consistency
-            distanceMeters: this.milesToMeters(sample.value),
-          });
-        }
-      }
-
-      if (records.length > 0) {
-        return records;
-      }
     } catch {
-      // Distance samples not available, trying steps fallback
+      // Distance samples not available
     }
 
-    // Fallback to step samples if no distance data
+    // Pull step samples.
+    let stepSamples: Sample[] = [];
     try {
-      const stepSamples = await new Promise<
-        Array<{
-          value: number;
-          startDate: string;
-          endDate: string;
-          id?: string;
-        }>
-      >((resolve, reject) => {
+      stepSamples = await new Promise<Sample[]>((resolve, reject) => {
         appleHealth.default.getDailyStepCountSamples(
           options,
-          (
-            err: string,
-            results: Array<{
-              value: number;
-              startDate: string;
-              endDate: string;
-              id?: string;
-            }>,
-          ) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(results || []);
-            }
+          (err: string, results: Sample[]) => {
+            if (err) reject(err);
+            else resolve(results || []);
           },
         );
       });
-
-      for (const sample of stepSamples) {
-        if (sample.value > 0) {
-          // Convert steps to distance using average stride length
-          const distanceMeters = sample.value * AVERAGE_STRIDE_METERS;
-          records.push({
-            id: sample.id || `ah_steps_${sample.startDate}_${sample.endDate}`,
-            startTime: sample.startDate,
-            endTime: sample.endDate,
-            distanceMeters,
-          });
-        }
-      }
     } catch {
-      // Step samples also not available
+      // Step samples not available
     }
 
-    return records;
+    // Compare totals and pick the winner. Apple Health returns distance
+    // in miles; steps are unitless counts.
+    const totalDistanceMiles = distanceSamples.reduce(
+      (sum, s) => sum + (s.value || 0),
+      0,
+    );
+    const totalSteps = stepSamples.reduce((sum, s) => sum + (s.value || 0), 0);
+    const stepsMiles = stepsToMiles(totalSteps);
+
+    if (stepsMiles >= totalDistanceMiles) {
+      return stepSamples
+        .filter(s => (s.value || 0) > 0)
+        .map(s => {
+          const steps = s.value || 0;
+          return {
+            id: s.id || `ah_steps_${s.startDate}_${s.endDate}`,
+            startTime: s.startDate,
+            endTime: s.endDate,
+            distanceMeters: steps * AVERAGE_STRIDE_METERS,
+            steps,
+          };
+        });
+    }
+
+    return distanceSamples
+      .filter(s => (s.value || 0) > 0)
+      .map(s => {
+        const miles = s.value || 0;
+        return {
+          id: s.id || `ah_${s.startDate}_${s.endDate}`,
+          startTime: s.startDate,
+          endTime: s.endDate,
+          distanceMeters: milesToMeters(miles),
+          steps: milesToSteps(miles),
+        };
+      });
   }
 
   /**
@@ -637,27 +708,35 @@ class FitnessService implements FitnessServiceInterface {
     const hc = await getHealthConnectModule();
     if (!hc) return [];
 
+    const timeRangeFilter = {
+      operator: 'between' as const,
+      startTime: startDate.toISOString(),
+      endTime: endDate.toISOString(),
+    };
+
+    // Pull both signals in parallel. Either can throw for permission
+    // reasons — surface those to the caller so it can trigger a
+    // permission re-request. Other failures fall through with an empty
+    // record list on that side, and the other signal (if any) wins.
+    let distanceRecords: Array<{
+      metadata?: { id?: string };
+      startTime: string;
+      endTime: string;
+      distance?: { inMeters?: number };
+    }> = [];
+    let stepsRecords: Array<{
+      metadata?: { id?: string };
+      startTime: string;
+      endTime: string;
+      count?: number;
+    }> = [];
+
     try {
       const distanceResult = await hc.readRecords('Distance', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDate.toISOString(),
-          endTime: endDate.toISOString(),
-        },
+        timeRangeFilter,
       });
-
-      const records: HealthDistanceRecord[] = distanceResult.records.map(
-        record => ({
-          id: record.metadata?.id || `hc_${record.startTime}`,
-          startTime: record.startTime,
-          endTime: record.endTime,
-          distanceMeters: record.distance?.inMeters || 0,
-        }),
-      );
-
-      return records;
+      distanceRecords = distanceResult.records as typeof distanceRecords;
     } catch (error) {
-      // Re-throw permission errors so they can be handled by the caller
       const errorMessage = String(error);
       if (
         errorMessage.includes('SecurityException') ||
@@ -665,8 +744,68 @@ class FitnessService implements FitnessServiceInterface {
       ) {
         throw error;
       }
-      return [];
     }
+
+    try {
+      const stepsResult = await hc.readRecords('Steps', {
+        timeRangeFilter,
+      });
+      stepsRecords = stepsResult.records as typeof stepsRecords;
+    } catch (error) {
+      const errorMessage = String(error);
+      if (
+        errorMessage.includes('SecurityException') ||
+        errorMessage.includes('permission')
+      ) {
+        throw error;
+      }
+    }
+
+    // Compare the two signals' totals in miles and pick the winner.
+    // The whole game is scored in "walking equivalent" so we intentionally
+    // take the larger signal — a small Distance record from a logged
+    // workout shouldn't shadow a much larger casual-walking Steps total,
+    // and vice versa.
+    const totalMeters = distanceRecords.reduce(
+      (sum, r) => sum + (r.distance?.inMeters || 0),
+      0,
+    );
+    const totalSteps = stepsRecords.reduce((sum, r) => sum + (r.count || 0), 0);
+    const distanceMiles = metersToMiles(totalMeters);
+    const stepsMiles = stepsToMiles(totalSteps);
+
+    if (stepsMiles >= distanceMiles) {
+      // Steps wins → emit per-Steps-record entries with the measured
+      // step count intact. Miles derives from the same stride constant
+      // used everywhere else.
+      return stepsRecords
+        .filter(r => (r.count || 0) > 0)
+        .map(r => {
+          const steps = r.count || 0;
+          return {
+            id: r.metadata?.id || `hc_steps_${r.startTime}`,
+            startTime: r.startTime,
+            endTime: r.endTime,
+            distanceMeters: steps * AVERAGE_STRIDE_METERS,
+            steps,
+          };
+        });
+    }
+
+    // Distance wins → emit per-Distance-record entries with steps
+    // derived from the record's meters.
+    return distanceRecords
+      .filter(r => (r.distance?.inMeters || 0) > 0)
+      .map(r => {
+        const meters = r.distance?.inMeters || 0;
+        return {
+          id: r.metadata?.id || `hc_${r.startTime}`,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          distanceMeters: meters,
+          steps: milesToSteps(metersToMiles(meters)),
+        };
+      });
   }
 
   /**
@@ -701,23 +840,21 @@ class FitnessService implements FitnessServiceInterface {
    * Convert meters to miles
    */
   private metersToMiles(meters: number): number {
-    return meters * 0.000621371;
+    return metersToMiles(meters);
   }
 
   /**
    * Convert steps to miles using average stride length
    */
   private stepsToMiles(steps: number): number {
-    // Convert steps to meters using average stride, then to miles
-    const meters = steps * AVERAGE_STRIDE_METERS;
-    return this.metersToMiles(meters);
+    return stepsToMiles(steps);
   }
 
   /**
    * Convert miles to meters
    */
   private milesToMeters(miles: number): number {
-    return miles / 0.000621371;
+    return milesToMeters(miles);
   }
 }
 
@@ -899,6 +1036,7 @@ export class MockFitnessService implements FitnessServiceInterface {
             startTime: sample.startTime.toISOString(),
             endTime: sample.endTime.toISOString(),
             distanceMeters: sample.distanceMiles * 1609.34,
+            steps: milesToSteps(sample.distanceMiles),
           });
         }
       }
@@ -913,6 +1051,7 @@ export class MockFitnessService implements FitnessServiceInterface {
         startTime: new Date(now - 3600000).toISOString(),
         endTime: new Date(now).toISOString(),
         distanceMeters: this.mockDistance * 1609.34,
+        steps: milesToSteps(this.mockDistance),
       },
     ];
   }
@@ -950,7 +1089,15 @@ export function getActiveFitnessService(): FitnessServiceInterface {
   return activeFitnessService;
 }
 
-export function useMockFitnessService(enable: boolean): void {
+/**
+ * Swap the active fitness service between the real Health Connect / Apple
+ * Health provider and the in-memory mock. Guarded by `__DEV__` so release
+ * builds are always the real service.
+ *
+ * Note: this is a plain module-level setter, not a React hook. The name
+ * does not start with `use` to avoid tripping react-hooks/rules-of-hooks.
+ */
+export function setMockFitnessService(enable: boolean): void {
   if (!__DEV__) return; // safety: never swap in release
   activeFitnessService = enable ? mockFitnessService : fitnessService;
 }

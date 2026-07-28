@@ -61,6 +61,7 @@ export interface Theme {
     buttonDisabledText: string;
     // Pressed state
     buttonPressed: string;
+    buttonPressedInverted: string;
     // Success state
     successBg: string;
     successText: string;
@@ -159,6 +160,7 @@ export const classicTheme: Theme = {
     buttonDisabledText: '#F5EFE0',
     // Pressed state
     buttonPressed: 'rgba(107, 89, 67, 1)',
+    buttonPressedInverted: '#EBE3D2',
     // Success state
     successBg: '#F5EFE0',
     successText: '#A0826D',
@@ -237,6 +239,7 @@ export const minimalistTheme: Theme = {
     buttonDisabledText: '#E0E0E0',
     // Pressed state
     buttonPressed: '#757575',
+    buttonPressedInverted: '#EDEDED',
     // Success state
     successBg: '#E0E0E0',
     successText: '#757575',

@@ -25,7 +25,7 @@ import {
   textSizeScale,
   scaleTextStyle,
 } from '../../styles/typography';
-import { spacing, borderRadius, buttonTokens } from '../../styles/global';
+import { spacing, buttonTokens } from '../../styles/global';
 import { ButtonVariant, getButtonTextColor } from './buttonColors';
 
 interface ButtonProps {
@@ -119,7 +119,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       const filledColor =
         variant === 'brand'
           ? theme.colors.buttonBrandBackground
-          : variant === 'outline'
+          : variant === 'outline' || variant === 'primaryInverted'
           ? theme.colors.buttonOutlineBg
           : theme.colors.buttonPrimaryBackground;
 
@@ -131,13 +131,17 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       );
 
       // Apply pressed overrides
+      const pressedColor =
+        variant === 'primaryInverted'
+          ? theme.colors.buttonPressedInverted
+          : theme.colors.buttonPressed;
       const backgroundColor =
         variant === 'outline'
           ? baseBackground
           : interpolateColor(
               pressedSV.value,
               [0, 1],
-              [baseBackground, theme.colors.buttonPressed],
+              [baseBackground, pressedColor],
             );
 
       const baseBorderColor =

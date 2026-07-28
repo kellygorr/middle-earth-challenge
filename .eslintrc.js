@@ -26,5 +26,20 @@ module.exports = {
         ],
       },
     },
+    {
+      // Jest globals for test files and the shared jest setup script.
+      // Without this override every `jest.mock(...)` / `jest.fn()` call
+      // triggers a `no-undef` error under the default `@react-native`
+      // config, since jest isn't part of the base globals set.
+      files: [
+        'jest.setup.js',
+        '**/__tests__/**/*.{ts,tsx,js}',
+        '**/*.test.{ts,tsx,js}',
+      ],
+      env: {
+        jest: true,
+      },
+    },
   ],
 };
+
