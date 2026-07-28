@@ -11,6 +11,8 @@ import { spacing } from '../../styles/global';
 interface StatRowProps {
   /** Label text on the left */
   label: string;
+  /** Optional secondary label shown below the main label in a smaller/muted style */
+  subLabel?: string;
   /** Value text on the right */
   value: string | number;
   /** Optional secondary value shown below the main value in a smaller/muted style */
@@ -21,6 +23,7 @@ interface StatRowProps {
 
 export default function StatRow({
   label,
+  subLabel,
   value,
   subValue,
   isLast = false,
@@ -35,9 +38,18 @@ export default function StatRow({
         !isLast && { borderBottomColor: theme.colors.divider },
       ]}
     >
-      <Text style={[typographyThemed(theme).bodyPrimary, styles.label]}>
-        {label}
-      </Text>
+      <View style={styles.labelColumn}>
+        <Text style={[typographyThemed(theme).bodyPrimary, styles.label]}>
+          {label}
+        </Text>
+        {subLabel !== undefined && (
+          <Text
+            style={[typographyThemed(theme).captionSecondary, styles.subLabel]}
+          >
+            {subLabel}
+          </Text>
+        )}
+      </View>
       <View style={styles.valueColumn}>
         <Text style={[typographyThemed(theme).bodyPrimary, styles.value]}>
           {value}
@@ -58,14 +70,20 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    // Top-align so multi-line values (subValue) don't pull the label
+    // to the vertical center of the row.
+    alignItems: 'flex-start',
     paddingVertical: spacing.sm,
   },
   rowDivider: {
     borderBottomWidth: 1,
   },
-  label: {
+  labelColumn: {
     flex: 1,
+  },
+  label: {},
+  subLabel: {
+    marginTop: 2,
   },
   valueColumn: {
     alignItems: 'flex-end',

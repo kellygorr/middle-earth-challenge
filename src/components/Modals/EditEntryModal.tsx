@@ -3,7 +3,7 @@
  * modal for editing / deleting a single history entry.
  *
  * Layout:
- *   [reset]        Edit entry            [X]
+ *   [reset]        Edit            [X]
  *              original: 2:30 PM · 5.2 mi
  *                  [Miles] [Steps]
  *              [◄]  Mon, Jul 26  [►]
@@ -282,7 +282,7 @@ export default function EditEntryModal() {
                   styles.title,
                 ]}
               >
-                Edit entry
+                Edit
               </Text>
               <IconButton
                 icon={

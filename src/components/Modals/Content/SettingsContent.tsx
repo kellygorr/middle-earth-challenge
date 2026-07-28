@@ -252,7 +252,10 @@ export default function SettingsContent() {
                   <Text style={[typographyThemed(theme).captionSecondary]}>
                     {`Last synced: ${new Date(
                       lastSyncTimestamp,
-                    ).toLocaleString()}`}
+                    ).toLocaleString(undefined, {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}`}
                   </Text>
                 )}
               </>
