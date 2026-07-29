@@ -1,5 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, Alert, Linking, AppState } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Alert,
+  Linking,
+  AppState,
+  Switch,
+} from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
@@ -47,6 +55,10 @@ export default function SyncContentAndroid() {
   const setSyncStartDate = useSettingsStore(state => state.setSyncStartDate);
   const setLastSyncTimestamp = useSettingsStore(
     state => state.setLastSyncTimestamp,
+  );
+  const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
+  const setLiveSyncEnabled = useSettingsStore(
+    state => state.setLiveSyncEnabled,
   );
   const hasSeenOemBatteryPrompt = useSettingsStore(
     state => state.hasSeenOemBatteryPrompt,
@@ -450,25 +462,46 @@ export default function SyncContentAndroid() {
   // Because Android throttles / suppresses re-prompts, Settings is
   // the reliable path forward.
   const showPedometerMissingAlert = (item: string) => {
-    // Pixel-specific hint for the background-activity case: the
-    // parent-level "Allow background usage" toggle on the App battery
-    // usage screen is cosmetic — users have to tap the row (not the
-    // switch) to drill into a sub-page and select "Unrestricted"
-    // from a radio group. Well-documented Android 14+ Pixel quirk
-    // (see: https://stackoverflow.com/questions/78880281).
-    const pixelHint =
-      item === 'Background activity' && isPixelDevice(manufacturer)
-        ? '\n\nOn Pixel: tap App battery usage → tap the "Allow ' +
-          'background usage" row (not the toggle) → pick ' +
-          '"Unrestricted". The parent toggle by itself does not work.'
-        : '';
+    // Pixel + Background activity is a special case: the OS system
+    // prompt (ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) is silently
+    // suppressed on Pixel Android 14+, and the parent "Allow
+    // background usage" toggle on the App battery usage screen is
+    // cosmetic — the actual bit only flips via a sub-page with a
+    // radio group. Well-documented quirk, see:
+    //   https://stackoverflow.com/questions/78880281
+    // So on Pixel we replace the generic "grant it manually" copy
+    // with the exact drill-in path.
+    if (item === 'Background activity' && isPixelDevice(manufacturer)) {
+      Alert.alert(
+        'Background activity required',
+        'You need to select "Unrestricted" in your Pixel\'s battery ' +
+          "settings. The system popup won't appear, so this must be " +
+          'done manually:\n\n' +
+          '1. Open App Settings\n' +
+          '2. Tap "App battery usage"\n' +
+          '3. Tap the "Allow background usage" row (the text label, ' +
+          'not the switch on the right)\n' +
+          '4. If the toggle at the top of the next screen is off, turn ' +
+          'it on\n' +
+          '5. Select "Unrestricted"',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'App Settings',
+            onPress: () => {
+              Linking.openSettings();
+            },
+          },
+        ],
+      );
+      return;
+    }
 
     Alert.alert(
       `${item} required`,
       `${item} access wasn't granted. Android may not re-show the system ` +
         'prompt, so please grant it manually in app settings, then tap ' +
-        'Pedometer again.' +
-        pixelHint,
+        'Pedometer again.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -516,23 +549,17 @@ export default function SyncContentAndroid() {
     if (missingBackground) bullets.push('• Background activity (required)');
     if (missingNotifications) bullets.push('• Notifications (optional)');
 
-    // Pixel-specific note. See showPedometerMissingAlert comment.
-    const pixelHint =
-      missingBackground && isPixelDevice(env?.manufacturer || '')
-        ? '\n\nOn Pixel, granting Background activity is not obvious: ' +
-          'in App battery usage, tap the "Allow background usage" row ' +
-          '(not the toggle) and pick "Unrestricted".'
-        : '';
-
+    // Pre-flight copy is deliberately short — the Pixel-specific
+    // "Allow background usage → Unrestricted" hint lives in the
+    // post-flight showPedometerMissingAlert so it's only shown when
+    // that grant actually fails.
     Alert.alert(
       'Pedometer access needed',
       'The pedometer still needs:\n\n' +
         bullets.join('\n') +
-        '\n\nTap Continue to grant them one at a time. Once popups have ' +
-        'been denied or skipped, Android may not show them again — if ' +
-        'that has happened, tap App Settings to turn them on manually, ' +
-        'then come back and tap Pedometer again.' +
-        pixelHint,
+        '\n\nTap Continue to grant access, or grant access manually ' +
+        'in app settings. If a popup was denied, access will need to ' +
+        'be given manually.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -850,6 +877,42 @@ export default function SyncContentAndroid() {
         </View>
       </View>
 
+      {/* Live sync toggle — only meaningful when a health-app source is
+          active. Pedometer streams from the sensor as it goes, so there's
+          nothing to throttle there. Mirrors the toggle in Settings so
+          users can flip it without leaving the Sync flow. */}
+      {isHealthAppActive && (
+        <View style={[styles.section, styles.liveSyncRow]}>
+          <View style={styles.liveSyncTextCol}>
+            <Text
+              style={[
+                typographyThemed(theme).captionPrimary,
+                styles.sectionLabel,
+              ]}
+            >
+              Live sync
+            </Text>
+            <Text
+              style={[
+                typographyThemed(theme).captionSecondary,
+                styles.sectionText,
+              ]}
+            >
+              See your progress update in real-time in this app.
+            </Text>
+          </View>
+          <Switch
+            value={liveSyncEnabled}
+            onValueChange={setLiveSyncEnabled}
+            trackColor={{
+              false: theme.colors.switchInactive,
+              true: theme.colors.buttonPrimary,
+            }}
+            thumbColor={theme.colors.surface}
+          />
+        </View>
+      )}
+
       {(pedometerGranted || hcGranted) && (
         <View style={styles.section}>
           <Text
@@ -1084,5 +1147,13 @@ const styles = StyleSheet.create({
   sectionText: {
     textAlign: 'left',
     marginTop: spacing.xs,
+  },
+  liveSyncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  liveSyncTextCol: {
+    flex: 1,
   },
 });
