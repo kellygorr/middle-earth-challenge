@@ -102,25 +102,39 @@ class StepCounterService : Service(), SensorEventListener {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    // Foreground promotion first — required within a few seconds of
-    // startForegroundService or the OS will kill us with an ANR.
-    startInForeground()
-
-    // Permission gate: without ACTIVITY_RECOGNITION we can't legally
-    // subscribe to the step sensor. Stop cleanly; the module surfaces the
-    // failure to JS.
+    // Permission gate BEFORE foreground promotion: on Android 14+
+    // startForeground(type=health) throws SecurityException synchronously
+    // if ACTIVITY_RECOGNITION isn't held, which crashes the whole
+    // process. This path is hit when the OS auto-restarts our
+    // START_STICKY service after killing us for a permission revocation
+    // (user revoked Physical activity in system Settings). START_NOT_STICKY
+    // so the OS doesn't loop the retry.
     if (ContextCompat.checkSelfPermission(
         this, Manifest.permission.ACTIVITY_RECOGNITION) !=
         PackageManager.PERMISSION_GRANTED) {
-      Log.w(TAG, "ACTIVITY_RECOGNITION not granted; stopping service.")
+      Log.w(TAG, "ACTIVITY_RECOGNITION not granted; stopping before FGS promotion.")
       stopSelf()
       return START_NOT_STICKY
     }
 
-    // Absent step sensor (rare — mostly emulators or old hardware).
+    // Absent step sensor (rare — mostly emulators or old hardware). Check
+    // before promoting to foreground so we don't leave a dead service in
+    // the foreground for even a moment.
     val sensor = stepSensor
     if (sensor == null) {
       Log.w(TAG, "TYPE_STEP_COUNTER not present; stopping service.")
+      stopSelf()
+      return START_NOT_STICKY
+    }
+
+    // Foreground promotion — required within a few seconds of
+    // startForegroundService or the OS will kill us with an ANR.
+    try {
+      startInForeground()
+    } catch (se: SecurityException) {
+      // Extremely narrow race: permission revoked between the check
+      // above and startForeground(). Bail cleanly rather than crashing.
+      Log.w(TAG, "startForeground threw SecurityException; stopping.", se)
       stopSelf()
       return START_NOT_STICKY
     }
