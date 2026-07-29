@@ -399,12 +399,17 @@ export default function DistanceContent() {
     setEditingEntry(item, item.date as number);
   };
 
-  if (dayGroups.length === 0) {
+  // Guard on dayGroupsWithLive (not dayGroups) so pedometer mode always
+  // renders the list — the memo prepends a synthetic today group with the
+  // live in-progress row whenever trackingMode === 'pedometer', so the
+  // empty state only fires for: (a) no source selected, or (b) health-app
+  // selected before the first sync lands.
+  if (dayGroupsWithLive.length === 0) {
     const unit = useMiles ? 'miles' : 'kilometers';
-    const addCopy = `Add ${unit} to get started tracking your journey`;
+    const addCopy = `Add ${unit}/steps to get started on your journey`;
     const syncedCopy = `Your health app is connected. ${
       useMiles ? 'Miles' : 'Kilometers'
-    } will appear here as they sync.`;
+    } will appear here as they sync (~5 minutes when live sync is enabled).`;
 
     const orSeparator = (
       <Text

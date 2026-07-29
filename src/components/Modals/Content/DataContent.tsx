@@ -40,6 +40,7 @@ export default function DataContent() {
               .removeDistanceEntriesBySource([
                 'health-connect',
                 'apple-health',
+                'pedometer',
               ]);
 
             // Reset sync bookmarks so the next sync's fromDate falls back
@@ -147,7 +148,7 @@ export default function DataContent() {
               Delete synced data
             </Text>
             <Text style={[typographyThemed(theme).captionSecondary]}>
-              Remove all data synced from health app. This does not disconnect
+              Remove all synced health data. This does not disconnect
               syncing — future syncs will import data from this point forward.
             </Text>
           </View>
