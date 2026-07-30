@@ -60,12 +60,13 @@ export default function SettingsContent() {
   const pushModal = useUIStore(state => state.pushModal);
   // Mirror SyncNowRow's internal guard so the wrapper's top border does not
   // render as an empty row when no health provider is connected.
-  const showSyncNow = syncEnabled && syncProvider !== 'none';
+  const showSyncNow =
+    syncEnabled && syncProvider !== 'none' && trackingMode === 'health-app';
   // Live sync is only meaningful when we have a health-app provider whose
   // fetch cadence we can throttle. Pedometer is inherently live (steps
   // stream from the sensor as they happen), so the toggle would be a
   // dead-end there — hide it entirely.
-  const showLiveSync = syncEnabled && trackingMode !== 'pedometer';
+  const showLiveSync = syncEnabled && trackingMode === 'health-app';
 
   return (
     <>
@@ -246,12 +247,13 @@ export default function SettingsContent() {
                 </Text>
                 {lastSyncTimestamp && (
                   <Text style={[typographyThemed(theme).captionSecondary]}>
-                    {`Last synced: ${new Date(
-                      lastSyncTimestamp,
-                    ).toLocaleString(undefined, {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })}`}
+                    {`Last synced: ${new Date(lastSyncTimestamp).toLocaleString(
+                      undefined,
+                      {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      },
+                    )}`}
                   </Text>
                 )}
               </>

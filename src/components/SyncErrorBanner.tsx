@@ -12,12 +12,10 @@ import { useProgressStore } from '../stores/progressStore';
 import type { SyncError } from '../stores/progressStore';
 import { typographyThemed } from '../styles/typography';
 import { useUIStore } from '../stores/uiStore';
-import { spacing, borderRadius, iconSizes } from '../styles/global';
-import { TrackingOptions } from './TrackingOptions';
+import { spacing, borderRadius } from '../styles/global';
 import { SyncNowRow } from './SyncNowRow';
 import Button from './Buttons/Button';
-import { IconButton } from './Buttons';
-import { PlusIcon, SyncIcon } from '../assets/icons';
+import { PlusIcon } from '../assets/icons';
 
 /**
  * Per-kind copy for the persistent sync-error banner.
@@ -50,12 +48,38 @@ function getCopy(
           showAddHint: true,
         };
       }
+      if (error.source === 'both') {
+        return {
+          headline: 'Automatic tracking stopped',
+          body:
+            'Access to both Pedometer and Health Connect was removed. ' +
+            'Choose a source in Sync settings to resume tracking.',
+          showAddHint: true,
+        };
+      }
       return {
         headline: 'Disconnected from health data',
         body:
           'Your health app permission was revoked or never granted. ' +
           'Reconnect below to sync automatically.',
         showAddHint: true,
+      };
+    case 'sourceFallback':
+      if (error.unavailableSource === 'pedometer') {
+        return {
+          headline: 'Switched to Health Connect',
+          body:
+            'Pedometer permission was removed, so Health Connect is now ' +
+            'your tracking source.',
+          showAddHint: false,
+        };
+      }
+      return {
+        headline: 'Switched to Pedometer',
+        body:
+          'Health Connect access was removed, so Pedometer is now your ' +
+          'tracking source.',
+        showAddHint: false,
       };
     case 'timeout':
       return {
@@ -123,10 +147,6 @@ function formatTimestamp(at: number): string {
 export default function SyncErrorBanner() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
-  // Read so the pedometer permission row's IconButton variant tracks the
-  // same brand/outline state as the health-app row rendered by
-  // TrackingOptions — keeps both permission variants visually paired.
-  const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const lastSyncError = useProgressStore(state => state.lastSyncError);
   const lastSyncErrorAt = useProgressStore(state => state.lastSyncErrorAt);
   const clearLastSyncError = useProgressStore(
@@ -260,54 +280,18 @@ export default function SyncErrorBanner() {
           </Button>
         </View>
       )}
-      {/* Permission recovery. Same visual shape for both sources — an
-          icon + text row you tap — but the destination differs:
-            • health-app  → TrackingOptions row opens our Sync modal, from
-              which the user can re-invoke the Health Connect / HealthKit
-              permission flow in-app.
-            • pedometer   → no in-app path exists once the Physical
-              activity permission is revoked (Android silently denies
-              re-requests), so we send the user to OS app settings. */}
-      {lastSyncError.kind === 'permission' &&
-        lastSyncError.source === 'health-app' && (
-          <View style={styles.retry}>
-            <TrackingOptions
-              showAddOption={false}
-              showDevToggle={false}
-              onOpenSyncModal={() => pushModal({ type: 'sync' })}
-            />
-          </View>
-        )}
-      {lastSyncError.kind === 'permission' &&
-        lastSyncError.source === 'pedometer' && (
-          <View style={styles.retry}>
-            <Pressable
-              style={styles.pedRow}
-              onPress={() => {
-                Linking.openSettings().catch(() => {
-                  // openSettings can reject on unusual configurations or
-                  // simulators; swallow so we don't crash the banner.
-                });
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Open app settings to re-grant the Physical activity permission"
-            >
-              <IconButton
-                icon={<SyncIcon size={iconSizes.medium} />}
-                variant={syncEnabled ? 'brand' : 'outline'}
-              />
-              <Text
-                style={[
-                  typographyThemed(theme).captionSecondary,
-                  styles.pedRowText,
-                ]}
-              >
-                Open app settings to turn the Physical activity permission back
-                on
-              </Text>
-            </Pressable>
-          </View>
-        )}
+      {(lastSyncError.kind === 'permission' ||
+        lastSyncError.kind === 'sourceFallback') && (
+        <View style={styles.retry}>
+          <Button
+            variant="primary"
+            size="small"
+            onPress={() => pushModal({ type: 'sync' })}
+          >
+            Sync settings
+          </Button>
+        </View>
+      )}
       {lastSyncError.kind === 'backgroundDisabled' && (
         <View style={styles.retry}>
           <Button

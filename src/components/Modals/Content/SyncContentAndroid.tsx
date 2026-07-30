@@ -13,11 +13,13 @@ import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
 import { fitnessService } from '../../../services/fitnessService';
 import { pedometerService } from '../../../services/pedometerService';
-import { switchTrackingMode } from '../../../services/trackingModeService';
+import {
+  getTrackingModeForSources,
+  switchTrackingMode,
+} from '../../../services/trackingModeService';
 import { commitPedometerRange } from '../../../services/pedometerCommit';
 import Button from '../../Buttons/Button';
 import SectionHeader from '../SectionHeader';
-import RadioRow from '../RadioRow';
 import AccessExpander, { AccessItem } from '../AccessExpander';
 import SettingsRef from '../../SettingsRef';
 import { SyncNowRow } from '../../SyncNowRow';
@@ -32,8 +34,8 @@ import {
 /**
  * SyncContentAndroid - Android-only Sync modal content.
  *
- * Two-source flow with a radio picker (Pedometer / Health Connect).
- * Radios are unfilled on first install — the user must actively opt in.
+ * Two-source flow with independent switches (Pedometer / Health Connect).
+ * Both switches are off on first install — the user must actively opt in.
  *
  * State model:
  * - syncEnabled=false, any trackingMode: no source active (manual entry
@@ -41,8 +43,8 @@ import {
  *   preference so re-enabling remembers.
  * - syncEnabled=true, trackingMode='health-app', syncProvider set:
  *   Health Connect active.
- * - syncEnabled=true, trackingMode='pedometer', syncProvider='none':
- *   Pedometer active.
+ * - syncEnabled=true, trackingMode='pedometer', syncProvider='none': Pedometer.
+ * - syncEnabled=true, trackingMode='dual', syncProvider set: both sources.
  */
 export default function SyncContentAndroid() {
   const theme = useTheme();
@@ -76,9 +78,10 @@ export default function SyncContentAndroid() {
   const setHcRevokePendingRestart = useSettingsStore(
     state => state.setHcRevokePendingRestart,
   );
-  const showSyncNow = syncEnabled && syncProvider !== 'none';
+  const showSyncNow =
+    syncEnabled && syncProvider !== 'none' && trackingMode === 'health-app';
 
-  // Local guard against tapping multiple radios / stop while a source
+  // Local guard against toggling multiple sources while a source
   // switch is mid-flight. React state so it can disable the rows.
   const [busy, setBusy] = React.useState(false);
 
@@ -97,7 +100,7 @@ export default function SyncContentAndroid() {
   // Lowercase manufacturer string from Build.MANUFACTURER, cached from
   // the same getEnvironment() call that drives pedometerGranted. Used
   // to decide whether to add the "Battery settings" bullet to the
-  // pedometer radio's Required Access list (Samsung / Xiaomi / Huawei /
+  // pedometer source's Required Access list (Samsung / Xiaomi / Huawei /
   // OnePlus / Oppo / Realme / Vivo). Empty string until the first env
   // fetch resolves — isOemBatteryOffender('') returns false, so the
   // bullet stays hidden during that window.
@@ -210,8 +213,13 @@ export default function SyncContentAndroid() {
   }, [refreshGrantedState]);
 
   const isHealthAppActive =
+    syncEnabled &&
+    (trackingMode === 'health-app' || trackingMode === 'dual') &&
+    syncProvider !== 'none';
+  const isPedometerActive =
+    syncEnabled && (trackingMode === 'pedometer' || trackingMode === 'dual');
+  const isHealthOnlyActive =
     syncEnabled && trackingMode === 'health-app' && syncProvider !== 'none';
-  const isPedometerActive = syncEnabled && trackingMode === 'pedometer';
 
   // Try to obtain Health Connect sync permission. Sets the sync
   // bookkeeping on success. Returns true if the caller can proceed.
@@ -330,21 +338,22 @@ export default function SyncContentAndroid() {
     }
   };
 
-  // Connect Health Connect (fresh or switching from pedometer). If
-  // switching from pedometer we also flip trackingMode via
-  // switchTrackingMode so a stale 'pedometer' mode doesn't linger. The
-  // watermark reset inside switchTrackingMode is safe here because
-  // health-app sync uses syncStartDate (just set by
-  // attemptHealthConnectSync) as its anchor when lastSyncTimestamp is
-  // null.
+  // Connect Health Connect without turning off an active pedometer. The
+  // resulting combination determines whether this is health-only or dual.
   const connectHealthApp = async () => {
     setBusy(true);
     try {
       const ok = await ensureHealthConnectAvailable();
       if (!ok) return;
       const connected = await attemptHealthConnectSync();
-      if (connected && trackingMode === 'pedometer') {
-        await switchTrackingMode('health-app');
+      if (connected) {
+        const targetMode = getTrackingModeForSources(isPedometerActive, true);
+        if (targetMode) {
+          const result = await switchTrackingMode(targetMode);
+          if (targetMode === 'dual' && !result.tracking) {
+            await switchTrackingMode('health-app');
+          }
+        }
       }
     } finally {
       setBusy(false);
@@ -365,7 +374,8 @@ export default function SyncContentAndroid() {
   //
   //   2. Post-flight (performPedometerSwitch): after the native
   //      switch resolves, verify each required grant actually landed.
-  //      If any didn't, undo (stopSyncing) and show a targeted alert
+  //      If any didn't, preserve any active Health Connect source and show a
+  //      targeted alert.
   //      pointing the user at Settings for the specific miss. Only
   //      after all required gates pass do we commit setSyncEnabled.
   //
@@ -379,28 +389,20 @@ export default function SyncContentAndroid() {
   const performPedometerSwitch = async () => {
     setBusy(true);
     try {
-      // Disconnect health-app if currently connected. Errors are logged
-      // but not surfaced — the switch should proceed even if disconnect
-      // fails, because we can only run one source at a time.
-      if (syncProvider !== 'none') {
-        try {
-          await fitnessService.disconnect();
-        } catch (error) {
-          console.warn(
-            '[SyncContentAndroid] pre-switch fitness disconnect:',
-            error,
-          );
-        }
-        setSyncProvider('none');
-      }
-
-      const result = await switchTrackingMode('pedometer');
+      const targetMode = getTrackingModeForSources(true, isHealthAppActive);
+      if (!targetMode) return;
+      const result = await switchTrackingMode(targetMode);
 
       // Gate 1: Physical activity is required and verifiable. If the
       // FGS failed to start it's almost always because the user
       // declined ACTIVITY_RECOGNITION.
       if (!result.tracking) {
-        setSyncEnabled(false);
+        if (isHealthAppActive) {
+          await switchTrackingMode('health-app');
+          setSyncEnabled(true);
+        } else {
+          setSyncEnabled(false);
+        }
         showPedometerMissingAlert('Physical activity');
         return;
       }
@@ -411,10 +413,14 @@ export default function SyncContentAndroid() {
       // the alert we show below is the reliable escape hatch.
       const env = await pedometerService.getEnvironment();
       if (!env.ignoresBatteryOptimizations) {
-        // Undo the switch — FGS started but we're refusing to commit
-        // the selection. Leaves the user back at "no source" so a
-        // half-configured pedometer isn't silently running.
-        await stopSyncing();
+        // Undo the pedometer switch so a half-configured source is not
+        // silently left running. Preserve Health Connect when it was active.
+        if (isHealthAppActive) {
+          await switchTrackingMode('health-app');
+          setSyncEnabled(true);
+        } else {
+          await stopSyncing();
+        }
         showPedometerMissingAlert('Background activity');
         return;
       }
@@ -576,32 +582,48 @@ export default function SyncContentAndroid() {
     );
   };
 
-  const handleSelectHealthApp = () => {
+  const handleSelectHealthApp = async () => {
     if (busy) return;
     if (isHealthAppActive) {
-      // Tap the currently-active source to toggle it off. Just stop
-      // syncing in-app; permissions remain until explicitly revoked
-      // from the Revoke access section below.
-      stopSyncing();
+      if (trackingMode !== 'dual') {
+        await stopSyncing();
+        return;
+      }
+      setBusy(true);
+      try {
+        await switchTrackingMode('pedometer');
+        try {
+          await fitnessService.disconnect();
+        } catch (error) {
+          console.warn('[SyncContentAndroid] health disconnect:', error);
+        }
+        setSyncProvider('none');
+        setSyncEnabled(true);
+      } finally {
+        setBusy(false);
+      }
       return;
     }
-    // Switch directly, whether coming from pedometer or a fresh connect.
-    // We used to interrupt cross-source switches with a "Switch to X?"
-    // confirmation, but that's noise: the user just tapped the target
-    // radio, and if they don't want to grant Health Connect access
-    // they'll say no to the permission prompt that follows.
-    connectHealthApp();
+    await connectHealthApp();
   };
 
-  const handleSelectPedometer = () => {
+  const handleSelectPedometer = async () => {
     if (busy) return;
     if (isPedometerActive) {
-      // Tap the currently-active source to toggle it off. See note above.
-      stopSyncing();
+      if (trackingMode === 'dual') {
+        setBusy(true);
+        try {
+          await switchTrackingMode('health-app');
+          setSyncEnabled(true);
+        } finally {
+          setBusy(false);
+        }
+      } else {
+        await stopSyncing();
+      }
       return;
     }
-    // Switch directly \u2014 same reasoning as handleSelectHealthApp.
-    connectPedometer();
+    await connectPedometer();
   };
 
   // Turn off tracking entirely — back to manual-entry-only. Preserves
@@ -619,7 +641,10 @@ export default function SyncContentAndroid() {
           );
         }
       }
-      if (trackingMode === 'pedometer' && pedometerService.isSupported()) {
+      if (
+        (trackingMode === 'pedometer' || trackingMode === 'dual') &&
+        pedometerService.isSupported()
+      ) {
         const { lastSyncTimestamp } = useSettingsStore.getState();
         if (lastSyncTimestamp) {
           try {
@@ -665,6 +690,10 @@ export default function SyncContentAndroid() {
             setBusy(true);
             try {
               await fitnessService.revokePermissions();
+              if (trackingMode === 'dual') {
+                await switchTrackingMode('pedometer');
+                setSyncProvider('none');
+              }
               // HC will keep reporting the grants until process
               // restart, so we flip a persisted flag that swaps the
               // button for a confirmation banner and repaints the
@@ -678,7 +707,7 @@ export default function SyncContentAndroid() {
             } finally {
               setBusy(false);
             }
-            if (isHealthAppActive) {
+            if (trackingMode === 'health-app') {
               // If HC is the active source, also stop syncing so app
               // state matches the (soon-to-be) revoked permission.
               stopSyncing();
@@ -696,10 +725,9 @@ export default function SyncContentAndroid() {
   };
 
   return (
-    <>
-      <SectionHeader title="Sync options" />
-
-      <View style={styles.pickerSection}>
+    <View style={styles.sectionStack}>
+      <View>
+        <SectionHeader title="Sync options" />
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.introText]}
         >
@@ -711,14 +739,13 @@ export default function SyncContentAndroid() {
           </View>{' '}
           from the map.
         </Text>
+      </View>
+
+      <View>
         <Text
-          style={[
-            typographyThemed(theme).captionPrimary,
-            styles.sectionLabel,
-            styles.chooseSourceLabel,
-          ]}
+          style={[typographyThemed(theme).captionPrimary, styles.sectionLabel]}
         >
-          Choose your source
+          Choose your sources
         </Text>
         <Text
           style={[
@@ -726,27 +753,43 @@ export default function SyncContentAndroid() {
             styles.chooseSourceHelp,
           ]}
         >
-          Selecting an option will prompt you to approve the required access.
+          Selecting a source will prompt you to approve the required access.
+          With both enabled, completed days use whichever source recorded more
+          distance.
         </Text>
         <View style={styles.pickerRows}>
-          <RadioRow
-            label="Pedometer"
-            description={
-              <>
-                Uses your phone's built-in step counter{'\n'}
-                Lightweight background tracking — counts steps even when the app
-                is closed, without draining your battery{'\n'}
-                <Text style={typographyThemed(theme).captionSecondaryBold}>
-                  Speed:
-                </Text>{' '}
-                Immediate
-              </>
-            }
-            selected={isPedometerActive}
-            onPress={handleSelectPedometer}
-            disabled={busy}
-            footer={
+          <View>
+            <View style={styles.sourceRow}>
+              <View style={styles.sourceTextCol}>
+                <Text style={typographyThemed(theme).bodyPrimary}>
+                  Pedometer
+                </Text>
+              </View>
+              <Switch
+                value={isPedometerActive}
+                onValueChange={handleSelectPedometer}
+                disabled={busy}
+                trackColor={{
+                  false: theme.colors.switchInactive,
+                  true: theme.colors.buttonPrimary,
+                }}
+                thumbColor={theme.colors.surface}
+              />
+            </View>
+            <View style={styles.sourceFooter}>
               <AccessExpander
+                label="Overview"
+                items={[
+                  "Uses your phone's built-in step counter.",
+                  'Lightweight background tracking counts steps even when the app is closed, without draining your battery.',
+                  {
+                    emphasizedPrefix: 'Speed:',
+                    label: 'Immediate',
+                  },
+                ]}
+              />
+              <AccessExpander
+                flushTop
                 items={[
                   {
                     label: 'Physical activity',
@@ -800,36 +843,43 @@ export default function SyncContentAndroid() {
                   unverifiable: '*Cannot verify battery settings from app',
                 }}
               />
-            }
-          />
-          <RadioRow
-            label="Health Connect"
-            description={
+            </View>
+          </View>
+          <View style={styles.sourceSectionGap}>
+            <View style={styles.sourceRow}>
+              <View style={styles.sourceTextCol}>
+                <Text style={typographyThemed(theme).bodyPrimary}>
+                  Health Connect
+                </Text>
+              </View>
+              <Switch
+                value={isHealthAppActive}
+                onValueChange={handleSelectHealthApp}
+                disabled={busy}
+                trackColor={{
+                  false: theme.colors.switchInactive,
+                  true: theme.colors.buttonPrimary,
+                }}
+                thumbColor={theme.colors.surface}
+              />
+            </View>
+            <View style={styles.sourceFooter}>
               <>
-                Sync from Health Connect which aggregates all your health data
-                in one place. Data is only synced when using the app.
-                {'\n'}
-                <Text style={typographyThemed(theme).captionSecondaryBold}>
-                  Speed:
-                </Text>{' '}
-                ~1-5min. Health Connect releases the data in batches on its own
-                schedule.
-              </>
-            }
-            selected={isHealthAppActive}
-            onPress={handleSelectHealthApp}
-            disabled={busy}
-            footer={
-              <>
-                {/* Manual "Sync now" trigger sits above Required Access so
-                    an active Health Connect user sees the refresh control
-                    right under the source they just selected. */}
-                {isHealthAppActive && showSyncNow && (
-                  <View style={{ marginBottom: spacing.sm }}>
-                    <SyncNowRow />
-                  </View>
-                )}
                 <AccessExpander
+                  label="Overview"
+                  items={[
+                    'Aggregates all your health data in one place.',
+                    'Data is synced only while using the app.',
+                    {
+                      emphasizedPrefix: 'Speed:',
+                      label:
+                        '~1-5 min. Health Connect releases data in batches on its own schedule.',
+                    },
+                    'Built into Android 14+ or available from the Play Store.',
+                  ]}
+                />
+                <AccessExpander
+                  flushTop
                   items={[
                     {
                       label:
@@ -860,18 +910,16 @@ export default function SyncContentAndroid() {
                     pendingRestart: '*Restart app to reset',
                   }}
                 />
-                <Text
-                  style={[
-                    typographyThemed(theme).captionSecondary,
-                    styles.chooseSourceHelp,
-                  ]}
-                >
-                  Health Connect is built into Android 14+ or can be installed
-                  from the Play Store.
-                </Text>
+                {/* Keep the manual sync action after the source details and
+                    required-access checklist. */}
+                {isHealthAppActive && showSyncNow && (
+                  <View style={{ marginTop: spacing.sm }}>
+                    <SyncNowRow />
+                  </View>
+                )}
               </>
-            }
-          />
+            </View>
+          </View>
         </View>
       </View>
 
@@ -879,8 +927,8 @@ export default function SyncContentAndroid() {
           active. Pedometer streams from the sensor as it goes, so there's
           nothing to throttle there. Mirrors the toggle in Settings so
           users can flip it without leaving the Sync flow. */}
-      {isHealthAppActive && (
-        <View style={[styles.section, styles.liveSyncRow]}>
+      {isHealthOnlyActive && (
+        <View style={styles.liveSyncRow}>
           <View style={styles.liveSyncTextCol}>
             <Text
               style={[
@@ -912,7 +960,7 @@ export default function SyncContentAndroid() {
       )}
 
       {(pedometerGranted || hcGranted) && (
-        <View style={styles.section}>
+        <View>
           <Text
             style={[
               typographyThemed(theme).captionPrimary,
@@ -987,7 +1035,7 @@ export default function SyncContentAndroid() {
                 ]}
               >
                 Revoke the app's access to Health Connect. Changes take effect
-                after the app restarts (a limitation of the Health Connect API).
+                after the app restarts (this is a limitation of Health Connect).
               </Text>
               {hcSessionRevoked ? (
                 <>
@@ -1037,7 +1085,7 @@ export default function SyncContentAndroid() {
         </View>
       )}
 
-      <View style={styles.section}>
+      <View>
         <Text
           style={[typographyThemed(theme).captionPrimary, styles.sectionLabel]}
         >
@@ -1051,7 +1099,7 @@ export default function SyncContentAndroid() {
         </Text>
       </View>
 
-      <View style={styles.section}>
+      <View>
         <Text
           style={[typographyThemed(theme).captionPrimary, styles.sectionLabel]}
         >
@@ -1065,7 +1113,7 @@ export default function SyncContentAndroid() {
           servers.
         </Text>
       </View>
-    </>
+    </View>
   );
 }
 
@@ -1096,17 +1144,29 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     opacity: 0.7,
   },
-  pickerSection: {
-    marginTop: spacing.sm,
-  },
   pickerRows: {
     marginTop: spacing.xs,
+  },
+  sourceRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  sourceTextCol: {
+    flex: 1,
+  },
+  sourceFooter: {
+    paddingRight: spacing.md,
+  },
+  sourceSectionGap: {
+    marginTop: spacing.md,
   },
   introText: {
     textAlign: 'left',
   },
-  section: {
-    marginTop: spacing.xl,
+  sectionStack: {
+    gap: spacing.xl,
   },
   // Outer wrapper is the same 14px size as the SettingsIcon in SettingsRef
   // so both inline refs sit at the same spot on the text line. The inner
@@ -1135,9 +1195,6 @@ const styles = StyleSheet.create({
   sectionLabel: {
     textAlign: 'left',
     fontWeight: '600',
-  },
-  chooseSourceLabel: {
-    marginTop: spacing.md,
   },
   chooseSourceHelp: {
     marginTop: spacing.xs,

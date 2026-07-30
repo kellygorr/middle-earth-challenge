@@ -45,8 +45,13 @@ export type SyncError =
        * set for the currently-selected source, so we never nag users
        * about permissions on a source they aren't using.
        */
-      source: 'health-app' | 'pedometer';
+      source: 'health-app' | 'pedometer' | 'both';
       message: string;
+    }
+  | {
+      kind: 'sourceFallback';
+      unavailableSource: 'health-app' | 'pedometer';
+      activeSource: 'health-app' | 'pedometer';
     }
   | {
       kind: 'timeout';

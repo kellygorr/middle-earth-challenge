@@ -17,8 +17,7 @@ import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
 // migration error (syntax error, disk full, corruption) rethrows so we
 // see it during dev rather than silently corrupting state.
 function isDuplicateColumnError(error: unknown): boolean {
-  const message =
-    error instanceof Error ? error.message : String(error ?? '');
+  const message = error instanceof Error ? error.message : String(error ?? '');
   return /duplicate column/i.test(message);
 }
 
@@ -73,6 +72,7 @@ class Database {
         sync_provider TEXT NOT NULL DEFAULT 'none',
         sync_start_date INTEGER,
         last_sync_timestamp INTEGER,
+        last_health_reconciled_through INTEGER,
         live_sync_enabled INTEGER NOT NULL DEFAULT 0,
         tracking_mode TEXT NOT NULL DEFAULT 'health-app',
         has_seen_oem_battery_prompt INTEGER NOT NULL DEFAULT 0,
@@ -130,6 +130,14 @@ class Database {
     try {
       this.db.executeSync(
         `ALTER TABLE user_settings ADD COLUMN last_notified_checkpoint_index INTEGER NOT NULL DEFAULT -1`,
+      );
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+    }
+
+    try {
+      this.db.executeSync(
+        `ALTER TABLE user_settings ADD COLUMN last_health_reconciled_through INTEGER`,
       );
     } catch (error) {
       if (!isDuplicateColumnError(error)) throw error;
@@ -261,6 +269,8 @@ class Database {
       syncProvider: ((row as any).sync_provider as SyncProvider) ?? 'none',
       syncStartDate: (row as any).sync_start_date ?? null,
       lastSyncTimestamp: (row as any).last_sync_timestamp ?? null,
+      lastHealthReconciledThrough:
+        (row as any).last_health_reconciled_through ?? null,
       liveSyncEnabled: (row as any).live_sync_enabled === 1,
       trackingMode:
         ((row as any).tracking_mode as TrackingMode) ?? 'health-app',
@@ -279,7 +289,7 @@ class Database {
     if (!this.db) throw new Error('Database not initialized');
 
     const fields: string[] = [];
-    const values: (string | number)[] = [];
+    const values: (string | number | null)[] = [];
 
     if (updates.labelSize !== undefined) {
       fields.push('label_size = ?');
@@ -328,6 +338,10 @@ class Database {
     if (updates.lastSyncTimestamp !== undefined) {
       fields.push('last_sync_timestamp = ?');
       values.push(updates.lastSyncTimestamp ?? 0);
+    }
+    if (updates.lastHealthReconciledThrough !== undefined) {
+      fields.push('last_health_reconciled_through = ?');
+      values.push(updates.lastHealthReconciledThrough);
     }
     if (updates.liveSyncEnabled !== undefined) {
       fields.push('live_sync_enabled = ?');

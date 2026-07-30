@@ -75,6 +75,8 @@ export async function getAggregatedAndroidDistanceRecords(
   // Garmin. Raw readRecords totals do not perform that deduplication.
   let distanceMeters = 0;
   let steps = 0;
+  let distanceError: unknown = null;
+  let stepsError: unknown = null;
 
   try {
     const distanceResult = await hc.aggregateRecord({
@@ -83,6 +85,7 @@ export async function getAggregatedAndroidDistanceRecords(
     });
     distanceMeters = distanceResult.DISTANCE?.inMeters || 0;
   } catch (error) {
+    distanceError = error;
     const errorMessage = String(error);
     if (
       errorMessage.includes('SecurityException') ||
@@ -99,6 +102,7 @@ export async function getAggregatedAndroidDistanceRecords(
     });
     steps = stepsResult.COUNT_TOTAL || 0;
   } catch (error) {
+    stepsError = error;
     const errorMessage = String(error);
     if (
       errorMessage.includes('SecurityException') ||
@@ -106,6 +110,10 @@ export async function getAggregatedAndroidDistanceRecords(
     ) {
       throw error;
     }
+  }
+
+  if (distanceError && stepsError) {
+    throw stepsError;
   }
 
   const distanceMiles = metersToMiles(distanceMeters);
@@ -424,22 +432,35 @@ class FitnessService implements FitnessServiceInterface {
    * granted until the app process restarts (HC API limitation).
    */
   async hasHealthConnectPermissions(): Promise<boolean> {
-    if (Platform.OS !== 'android') return false;
+    return (await this.getHealthConnectPermissionState()) === 'granted';
+  }
+
+  /**
+   * Passive Health Connect grant check for lifecycle reconciliation.
+   * `unknown` means the provider could not be queried, so callers must not
+   * interpret it as a revoke or change the user's selected sources.
+   */
+  async getHealthConnectPermissionState(): Promise<
+    'granted' | 'revoked' | 'unknown'
+  > {
+    if (Platform.OS !== 'android') return 'unknown';
     try {
       const hc = await getHealthConnectModule();
-      if (!hc) return false;
+      if (!hc) return 'unknown';
       // initialize() is idempotent and required before querying grants.
       const initialized = await hc.initialize();
-      if (!initialized) return false;
+      if (!initialized) return 'unknown';
       const granted = await hc.getGrantedPermissions();
       return granted.some(
         p =>
           p.accessType === 'read' &&
           (p.recordType === 'Distance' || p.recordType === 'Steps'),
-      );
+      )
+        ? 'granted'
+        : 'revoked';
     } catch (error) {
-      console.warn('[FitnessService] hasHealthConnectPermissions:', error);
-      return false;
+      console.warn('[FitnessService] getHealthConnectPermissionState:', error);
+      return 'unknown';
     }
   }
 
@@ -650,12 +671,11 @@ class FitnessService implements FitnessServiceInterface {
     startDate: Date,
     endDate: Date,
   ): Promise<HealthDistanceRecord[]> {
-    try {
-      if (!this.isInitialized) {
-        console.warn('[FitnessService] Fitness service not initialized');
-        return [];
-      }
+    if (!this.isInitialized) {
+      throw new Error('Fitness service not initialized');
+    }
 
+    try {
       if (Platform.OS === 'ios') {
         return await this.getDistanceRecordsBetweenIOS(startDate, endDate);
       } else if (Platform.OS === 'android') {

@@ -31,7 +31,10 @@ export function useLivePedometerDelta(): number {
   const [liveDelta, setLiveDelta] = useState(0);
 
   useEffect(() => {
-    if (trackingMode !== 'pedometer' || !pedometerService.isSupported()) {
+    if (
+      (trackingMode !== 'pedometer' && trackingMode !== 'dual') ||
+      !pedometerService.isSupported()
+    ) {
       setLiveDelta(0);
       return;
     }

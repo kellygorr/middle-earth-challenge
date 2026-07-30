@@ -49,7 +49,10 @@ export async function pedometerBackgroundTask(): Promise<void> {
     // is scheduled to be cancelled but may fire once more before the
     // cancellation propagates. Bail rather than committing a spurious
     // row against whatever mode the user has now.
-    if (settings.trackingMode !== 'pedometer') {
+    if (
+      settings.trackingMode !== 'pedometer' &&
+      settings.trackingMode !== 'dual'
+    ) {
       return;
     }
 

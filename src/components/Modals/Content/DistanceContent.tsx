@@ -213,7 +213,7 @@ export default function DistanceContent() {
   // render the row even when the delta is zero.
   const trackingMode = useSettingsStore(state => state.trackingMode);
   const liveSteps = useLivePedometerDelta();
-  const showLiveRow = trackingMode === 'pedometer';
+  const showLiveRow = trackingMode === 'pedometer' || trackingMode === 'dual';
   const liveMiles = showLiveRow ? stepsToMiles(liveSteps) : 0;
 
   const dayGroupsWithLive = useMemo(() => {
