@@ -54,6 +54,91 @@ async function getAppleHealthModule() {
   return appleHealthModule;
 }
 
+type HealthConnectAggregator = Pick<
+  typeof import('react-native-health-connect'),
+  'aggregateRecord'
+>;
+
+export async function getAggregatedAndroidDistanceRecords(
+  hc: HealthConnectAggregator,
+  startDate: Date,
+  endDate: Date,
+): Promise<HealthDistanceRecord[]> {
+  const timeRangeFilter = {
+    operator: 'between' as const,
+    startTime: startDate.toISOString(),
+    endTime: endDate.toISOString(),
+  };
+
+  // Aggregate reads apply Health Connect's user-selected Activity app
+  // priorities, removing overlap between sources such as a phone and a
+  // Garmin. Raw readRecords totals do not perform that deduplication.
+  let distanceMeters = 0;
+  let steps = 0;
+
+  try {
+    const distanceResult = await hc.aggregateRecord({
+      recordType: 'Distance',
+      timeRangeFilter,
+    });
+    distanceMeters = distanceResult.DISTANCE?.inMeters || 0;
+  } catch (error) {
+    const errorMessage = String(error);
+    if (
+      errorMessage.includes('SecurityException') ||
+      errorMessage.includes('permission')
+    ) {
+      throw error;
+    }
+  }
+
+  try {
+    const stepsResult = await hc.aggregateRecord({
+      recordType: 'Steps',
+      timeRangeFilter,
+    });
+    steps = stepsResult.COUNT_TOTAL || 0;
+  } catch (error) {
+    const errorMessage = String(error);
+    if (
+      errorMessage.includes('SecurityException') ||
+      errorMessage.includes('permission')
+    ) {
+      throw error;
+    }
+  }
+
+  const distanceMiles = metersToMiles(distanceMeters);
+  const stepsMiles = stepsToMiles(steps);
+  const rangeId = `${startDate.getTime()}_${endDate.getTime()}`;
+
+  if (stepsMiles >= distanceMiles) {
+    return steps > 0
+      ? [
+          {
+            id: `hc_steps_aggregate_${rangeId}`,
+            startTime: startDate.toISOString(),
+            endTime: endDate.toISOString(),
+            distanceMeters: steps * AVERAGE_STRIDE_METERS,
+            steps,
+          },
+        ]
+      : [];
+  }
+
+  return distanceMeters > 0
+    ? [
+        {
+          id: `hc_distance_aggregate_${rangeId}`,
+          startTime: startDate.toISOString(),
+          endTime: endDate.toISOString(),
+          distanceMeters,
+          steps: milesToSteps(distanceMiles),
+        },
+      ]
+    : [];
+}
+
 class FitnessService implements FitnessServiceInterface {
   private isInitialized = false;
   private currentProvider: SyncProvider = 'none';
@@ -707,105 +792,7 @@ class FitnessService implements FitnessServiceInterface {
   ): Promise<HealthDistanceRecord[]> {
     const hc = await getHealthConnectModule();
     if (!hc) return [];
-
-    const timeRangeFilter = {
-      operator: 'between' as const,
-      startTime: startDate.toISOString(),
-      endTime: endDate.toISOString(),
-    };
-
-    // Pull both signals in parallel. Either can throw for permission
-    // reasons — surface those to the caller so it can trigger a
-    // permission re-request. Other failures fall through with an empty
-    // record list on that side, and the other signal (if any) wins.
-    let distanceRecords: Array<{
-      metadata?: { id?: string };
-      startTime: string;
-      endTime: string;
-      distance?: { inMeters?: number };
-    }> = [];
-    let stepsRecords: Array<{
-      metadata?: { id?: string };
-      startTime: string;
-      endTime: string;
-      count?: number;
-    }> = [];
-
-    try {
-      const distanceResult = await hc.readRecords('Distance', {
-        timeRangeFilter,
-      });
-      distanceRecords = distanceResult.records as typeof distanceRecords;
-    } catch (error) {
-      const errorMessage = String(error);
-      if (
-        errorMessage.includes('SecurityException') ||
-        errorMessage.includes('permission')
-      ) {
-        throw error;
-      }
-    }
-
-    try {
-      const stepsResult = await hc.readRecords('Steps', {
-        timeRangeFilter,
-      });
-      stepsRecords = stepsResult.records as typeof stepsRecords;
-    } catch (error) {
-      const errorMessage = String(error);
-      if (
-        errorMessage.includes('SecurityException') ||
-        errorMessage.includes('permission')
-      ) {
-        throw error;
-      }
-    }
-
-    // Compare the two signals' totals in miles and pick the winner.
-    // The whole game is scored in "walking equivalent" so we intentionally
-    // take the larger signal — a small Distance record from a logged
-    // workout shouldn't shadow a much larger casual-walking Steps total,
-    // and vice versa.
-    const totalMeters = distanceRecords.reduce(
-      (sum, r) => sum + (r.distance?.inMeters || 0),
-      0,
-    );
-    const totalSteps = stepsRecords.reduce((sum, r) => sum + (r.count || 0), 0);
-    const distanceMiles = metersToMiles(totalMeters);
-    const stepsMiles = stepsToMiles(totalSteps);
-
-    if (stepsMiles >= distanceMiles) {
-      // Steps wins → emit per-Steps-record entries with the measured
-      // step count intact. Miles derives from the same stride constant
-      // used everywhere else.
-      return stepsRecords
-        .filter(r => (r.count || 0) > 0)
-        .map(r => {
-          const steps = r.count || 0;
-          return {
-            id: r.metadata?.id || `hc_steps_${r.startTime}`,
-            startTime: r.startTime,
-            endTime: r.endTime,
-            distanceMeters: steps * AVERAGE_STRIDE_METERS,
-            steps,
-          };
-        });
-    }
-
-    // Distance wins → emit per-Distance-record entries with steps
-    // derived from the record's meters.
-    return distanceRecords
-      .filter(r => (r.distance?.inMeters || 0) > 0)
-      .map(r => {
-        const meters = r.distance?.inMeters || 0;
-        return {
-          id: r.metadata?.id || `hc_${r.startTime}`,
-          startTime: r.startTime,
-          endTime: r.endTime,
-          distanceMeters: meters,
-          steps: milesToSteps(metersToMiles(meters)),
-        };
-      });
+    return getAggregatedAndroidDistanceRecords(hc, startDate, endDate);
   }
 
   /**

@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Alert, Linking } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
-import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
 import { fitnessService } from '../../../services/fitnessService';
@@ -29,8 +28,7 @@ export default function SyncContentIOS() {
   const setLastSyncTimestamp = useSettingsStore(
     state => state.setLastSyncTimestamp,
   );
-  const miles = useProgressStore(state => state.miles) || 0;
-  const showSyncNow = syncEnabled && miles > 0;
+  const showSyncNow = syncEnabled && syncProvider !== 'none';
 
   const [busy, setBusy] = React.useState(false);
 

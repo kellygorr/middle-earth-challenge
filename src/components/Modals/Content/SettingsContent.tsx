@@ -9,7 +9,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
-import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
 import {
   spacing,
@@ -59,12 +58,9 @@ export default function SettingsContent() {
     state => state.setLiveSyncEnabled,
   );
   const pushModal = useUIStore(state => state.pushModal);
-  const miles = useProgressStore(state => state.miles) || 0;
-  // Mirror SyncNowRow's full internal guard (syncEnabled + syncProvider !==
-  // 'none' + miles > 0) so the wrapper's top border doesn't render as an
-  // empty bordered row above the Live sync section — which used to show
-  // as a double line in pedometer mode (syncProvider === 'none' there).
-  const showSyncNow = syncEnabled && syncProvider !== 'none' && miles > 0;
+  // Mirror SyncNowRow's internal guard so the wrapper's top border does not
+  // render as an empty row when no health provider is connected.
+  const showSyncNow = syncEnabled && syncProvider !== 'none';
   // Live sync is only meaningful when we have a health-app provider whose
   // fetch cadence we can throttle. Pedometer is inherently live (steps
   // stream from the sensor as they happen), so the toggle would be a
@@ -269,9 +265,7 @@ export default function SettingsContent() {
           </Pressable>
         </View>
 
-        {/* Manual sync trigger. Hidden entirely when not connected or before
-            the first sync lands miles — otherwise it looks like the user
-            needs to tap it to sync, but tapping wouldn't do anything yet. */}
+        {/* Manual sync trigger. Hidden when no health provider is connected. */}
         {showSyncNow && (
           <View
             style={[

@@ -31,13 +31,8 @@ export function SyncNowRow() {
   const isSyncing = useProgressStore(
     state => state.syncStatus.phase === 'syncing',
   );
-  const miles = useProgressStore(state => state.miles) || 0;
 
-  // Hide until we actually have activity to refresh. Right after connecting,
-  // an auto-sync is already in flight, and showing this button implies the
-  // user needs to tap it — but tapping wouldn't do anything meaningful yet.
-  // Once the first sync lands miles, this becomes a useful manual refresh.
-  if (!syncEnabled || syncProvider === 'none' || miles <= 0) return null;
+  if (!syncEnabled || syncProvider === 'none') return null;
 
   return (
     <View style={styles.row}>
