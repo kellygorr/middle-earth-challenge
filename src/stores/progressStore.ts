@@ -108,8 +108,7 @@ interface ProgressStore {
   lastSyncError: SyncError | null;
   lastSyncErrorAt: number | null;
   // Dev/test override state
-  isTestOverride: boolean;
-  testOverrideBaseMiles: number | null;
+  testOverrideMiles: number | null;
 
   // Initialization (loads from database)
   initFromDatabase: () => Promise<void>;
@@ -137,6 +136,7 @@ interface ProgressStore {
   persistMilesSnapshot: () => Promise<void>;
 
   // Selectors / derived values
+  getDisplayMiles: () => number;
   getProgressMiles: () => number;
   getProgressPercentage: () => number;
   getTotalMiles: () => number;
@@ -175,8 +175,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   syncStatus: initialSyncStatus,
   lastSyncError: null,
   lastSyncErrorAt: null,
-  isTestOverride: false,
-  testOverrideBaseMiles: null,
+  testOverrideMiles: null,
 
   // Initialize from database on app start
   initFromDatabase: async () => {
@@ -215,21 +214,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   // Actions
   setMiles: miles => set({ miles }),
   setSteps: steps => set({ steps: Math.max(0, Math.round(steps)) }),
-  setTestMiles: miles =>
-    set(state => ({
-      miles,
-      isTestOverride: true,
-      testOverrideBaseMiles:
-        state.isTestOverride && typeof state.testOverrideBaseMiles === 'number'
-          ? state.testOverrideBaseMiles
-          : state.miles ?? 0,
-    })),
-  clearTestOverride: () =>
-    set(state => ({
-      miles: state.testOverrideBaseMiles ?? state.miles,
-      isTestOverride: false,
-      testOverrideBaseMiles: null,
-    })),
+  setTestMiles: miles => set({ testOverrideMiles: miles }),
+  clearTestOverride: () => set({ testOverrideMiles: null }),
 
   setTriviaUnlocks: unlocks => set({ triviaUnlocks: unlocks }),
 
@@ -458,8 +444,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       syncStatus: initialSyncStatus,
       lastSyncError: null,
       lastSyncErrorAt: null,
-      isTestOverride: false,
-      testOverrideBaseMiles: null,
+      testOverrideMiles: null,
     });
 
     // Clear database
@@ -472,8 +457,9 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   },
 
   // Selectors / derived values
+  getDisplayMiles: () => get().testOverrideMiles ?? get().miles ?? 0,
   getProgressMiles: () => {
-    const miles = get().miles ?? 0;
+    const miles = get().getDisplayMiles();
     return Math.max(0, Math.min(miles, TOTAL_JOURNEY_MILES));
   },
   getProgressPercentage: () => {
@@ -500,7 +486,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   // Removed unused selectors: getCheckpointIndexForCumulativeMiles, getIndexForPoint
 
   getCheckpointIndexForMiles: () => {
-    const totalMiles = get().miles ?? 0;
+    const totalMiles = get().getDisplayMiles();
     let byIdx = -1;
     for (let i = 0; i < checkpoints.length; i++) {
       const m = checkpoints[i]?.CUMULATIVE_MILES ?? 0;
@@ -517,12 +503,12 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   // Removed unused selector: getCheckpointProgressFor
 
   getRemainingMilesTo: targetMiles => {
-    const miles = get().miles ?? 0;
+    const miles = get().getDisplayMiles();
     return Math.max(0, (targetMiles ?? 0) - miles);
   },
 
   isExactlyOnCheckpoint: () => {
-    const miles = get().miles ?? 0;
+    const miles = get().getDisplayMiles();
     const eps = 1e-6;
     const idx = checkpoints.findIndex(
       cp => Math.abs((cp?.CUMULATIVE_MILES ?? -Infinity) - miles) < eps,
@@ -543,7 +529,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   },
 
   isLockedCheckpoint: targetMiles => {
-    const miles = get().miles ?? 0;
+    const miles = get().getDisplayMiles();
     return miles < (targetMiles ?? 0);
   },
 
@@ -589,7 +575,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
 
   getCurrentCheckpoint: () => {
     const cps = checkpoints;
-    const miles = get().miles ?? 0;
+    const miles = get().getDisplayMiles();
     const eps = 1e-6;
     // Only return a checkpoint if we're exactly on it
     const idx = cps.findIndex(
@@ -605,7 +591,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   },
 
   getCurrentTrivia: () => {
-    const miles = get().miles ?? 0;
+    const miles = get().getDisplayMiles();
     const eps = 1e-6;
     const items = trivia;
     for (const t of items) {

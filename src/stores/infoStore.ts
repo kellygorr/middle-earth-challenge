@@ -66,7 +66,7 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       isModalVisible: false, // Start with modal closed
       stickyUntilMilesChange: sticky,
       lastMilesAtSelection: sticky
-        ? useProgressStore.getState().miles || 0
+        ? useProgressStore.getState().getDisplayMiles()
         : null,
     }),
 
@@ -112,7 +112,7 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       itemType: type,
       isModalVisible: false, // SharedModal handles visibility now
       stickyUntilMilesChange: true,
-      lastMilesAtSelection: useProgressStore.getState().miles || 0,
+      lastMilesAtSelection: useProgressStore.getState().getDisplayMiles(),
     });
 
     // Compute title
@@ -175,7 +175,7 @@ export const useInfoStore = create<InfoStore>((set, get) => ({
       lastMilesAtSelection,
     } = get();
     if (!currentItem) return false;
-    const miles = useProgressStore.getState().miles || 0;
+    const miles = useProgressStore.getState().getDisplayMiles();
     const isCheckpointItem = itemType === 'checkpoint';
     const isTriviaItem = itemType === 'trivia';
     const eps = 1e-6;

@@ -13,6 +13,7 @@ import checkpointsRaw from '../../constants/checkpoints.json';
 import triviaRaw from '../../constants/trivia.json';
 import type { PointType } from '../../types';
 import { TOTAL_JOURNEY_MILES } from '../../constants/gameConstants';
+import { milesToSteps } from '../../utils/stride';
 import { useProgressStore } from '../progressStore';
 
 const checkpoints = checkpointsRaw as PointType[];
@@ -41,8 +42,47 @@ function setEntries(
 }
 
 beforeEach(() => {
-  setMiles(0);
+  useProgressStore.setState({
+    miles: 0,
+    steps: 0,
+    testOverrideMiles: null,
+  });
   setEntries([]);
+});
+
+describe('Dev Walk override', () => {
+  it('changes displayed progress without mutating real totals', () => {
+    useProgressStore.setState({ miles: 4, steps: 8400 });
+    useProgressStore.getState().setTestMiles(12.5);
+
+    expect(useProgressStore.getState().miles).toBe(4);
+    expect(useProgressStore.getState().steps).toBe(8400);
+    expect(useProgressStore.getState().getDisplayMiles()).toBe(12.5);
+    expect(milesToSteps(useProgressStore.getState().getDisplayMiles())).toBe(
+      milesToSteps(12.5),
+    );
+  });
+
+  it('clears repeated overrides without restoring or rewriting real totals', () => {
+    useProgressStore.setState({ miles: 4, steps: 8400 });
+
+    useProgressStore.getState().setTestMiles(10);
+    useProgressStore.getState().setTestMiles(20);
+    useProgressStore.getState().clearTestOverride();
+
+    expect(useProgressStore.getState().miles).toBe(4);
+    expect(useProgressStore.getState().steps).toBe(8400);
+    expect(useProgressStore.getState().getDisplayMiles()).toBe(4);
+  });
+
+  it('drives checkpoint selectors from the temporary override', () => {
+    useProgressStore.setState({ miles: 4, steps: 8400 });
+
+    useProgressStore.getState().setTestMiles(120);
+
+    expect(useProgressStore.getState().isExactlyOnCheckpoint()).toBe(1);
+    expect(useProgressStore.getState().getCheckpointIndexForMiles()).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -156,12 +196,16 @@ describe('getCheckpointIndexForMiles', () => {
 describe('getLatestCompletedCheckpointNumber', () => {
   it('is 0 when no checkpoints have been reached', () => {
     setMiles(1);
-    expect(useProgressStore.getState().getLatestCompletedCheckpointNumber()).toBe(0);
+    expect(
+      useProgressStore.getState().getLatestCompletedCheckpointNumber(),
+    ).toBe(0);
   });
 
   it('is 1-based when a checkpoint has been reached', () => {
     setMiles(120); // Bree, index 1
-    expect(useProgressStore.getState().getLatestCompletedCheckpointNumber()).toBe(2);
+    expect(
+      useProgressStore.getState().getLatestCompletedCheckpointNumber(),
+    ).toBe(2);
   });
 });
 
@@ -209,7 +253,9 @@ describe('getRemainingMilesTo', () => {
 
   it('handles null/undefined target defensively', () => {
     setMiles(100);
-    expect(useProgressStore.getState().getRemainingMilesTo(null as any)).toBe(0);
+    expect(useProgressStore.getState().getRemainingMilesTo(null as any)).toBe(
+      0,
+    );
   });
 });
 
@@ -220,9 +266,7 @@ describe('getRemainingMilesTo', () => {
 describe('getNextCheckpointAfterMiles', () => {
   it('returns the next checkpoint strictly after the given miles', () => {
     const bree = checkpoints[1];
-    const next = useProgressStore
-      .getState()
-      .getNextCheckpointAfterMiles(0);
+    const next = useProgressStore.getState().getNextCheckpointAfterMiles(0);
     expect(next?.name).toBe(bree.name);
   });
 
@@ -383,9 +427,7 @@ describe('getPointFromIndex', () => {
 
   it('returns null for out-of-range indices', () => {
     expect(useProgressStore.getState().getPointFromIndex(-1)).toBeNull();
-    expect(
-      useProgressStore.getState().getPointFromIndex(9999),
-    ).toBeNull();
+    expect(useProgressStore.getState().getPointFromIndex(9999)).toBeNull();
     expect(
       useProgressStore.getState().getPointFromIndex(NaN as unknown as number),
     ).toBeNull();
