@@ -198,8 +198,8 @@ export default function MiddleEarthMapSkia({
     const zoom = zoomScale?.value ?? 1;
     const K = 0.004; // tuning constant
     const delta = zoom > 1 ? (K * (zoom - 1)) / zoom : 0; // 0 at normal zoom
-    return Math.max(0, Math.min(base + delta, 1));
-  }, [gameProgress, zoomScale]);
+    return Math.max(0, Math.min(base + delta, basePathEnd.value, 1));
+  }, [gameProgress, zoomScale, basePathEnd]);
 
   const containerStyle = useMemo(
     () => ({ width, height, overflow: 'hidden' as const }),
