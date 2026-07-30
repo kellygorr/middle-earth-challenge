@@ -25,7 +25,9 @@ export default function StatsContent() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
   const distanceEntries = useProgressStore(state => state.distanceEntries);
-  const miles = useProgressStore(state => state.miles);
+  const realMiles = useProgressStore(state => state.miles);
+  const testOverrideMiles = useProgressStore(state => state.testOverrideMiles);
+  const miles = testOverrideMiles ?? realMiles;
   const hasEnoughData = useStatsStore(state => state.hasEnoughDataForStats)(
     distanceEntries,
   );

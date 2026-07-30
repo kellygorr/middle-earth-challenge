@@ -131,9 +131,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
       uiState.pendingDeletions.length > 0
     ) {
       const progressState = useProgressStore.getState();
-      const baseMiles = progressState.isTestOverride
-        ? progressState.testOverrideBaseMiles ?? 0
-        : progressState.miles ?? 0;
+      const baseMiles = progressState.miles ?? 0;
       const pendingTotal = uiState.pendingEntries.reduce(
         (sum, e) => sum + (e?.miles ?? 0),
         0,
@@ -162,7 +160,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
         await progressState.persistMilesSnapshot();
       }
 
-      if (progressState.isTestOverride) {
+      if (progressState.testOverrideMiles !== null) {
         progressState.clearTestOverride();
       }
     }
