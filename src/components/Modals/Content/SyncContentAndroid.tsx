@@ -9,7 +9,6 @@ import {
   Switch,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
-import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
 import { fitnessService } from '../../../services/fitnessService';
@@ -77,8 +76,7 @@ export default function SyncContentAndroid() {
   const setHcRevokePendingRestart = useSettingsStore(
     state => state.setHcRevokePendingRestart,
   );
-  const miles = useProgressStore(state => state.miles) || 0;
-  const showSyncNow = syncEnabled && miles > 0;
+  const showSyncNow = syncEnabled && syncProvider !== 'none';
 
   // Local guard against tapping multiple radios / stop while a source
   // switch is mid-flight. React state so it can disable the rows.
