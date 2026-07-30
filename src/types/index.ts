@@ -46,7 +46,8 @@ export type DistanceSource =
   | 'manual-steps'
   | 'health-connect'
   | 'apple-health'
-  | 'pedometer';
+  | 'pedometer'
+  | 'health-reconciliation';
 
 // Distance entry types
 export interface DistanceEntry {
@@ -77,7 +78,7 @@ export type SyncProvider = 'none' | 'health-connect' | 'apple-health';
  *  - 'pedometer'   Raw step counter via a foreground service on Android.
  *                  Not yet supported on iOS — see docs/pedometer-mode.md.
  */
-export type TrackingMode = 'health-app' | 'pedometer';
+export type TrackingMode = 'health-app' | 'pedometer' | 'dual';
 
 export interface UserSettings {
   id: string;
@@ -94,6 +95,7 @@ export interface UserSettings {
   syncProvider: SyncProvider; // Which fitness service to sync with
   syncStartDate: number | null; // Unix timestamp when sync was enabled
   lastSyncTimestamp: number | null; // Last successful sync timestamp
+  lastHealthReconciledThrough: number | null; // Exclusive local-midnight boundary for dual mode
   liveSyncEnabled: boolean; // Auto-sync while app is open (health-app mode only)
   trackingMode: TrackingMode; // Source of step / distance data
   /**

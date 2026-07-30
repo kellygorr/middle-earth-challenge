@@ -28,20 +28,37 @@ export function SyncNowRow() {
   const theme = useTheme();
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
+  const trackingMode = useSettingsStore(state => state.trackingMode);
+  const lastSyncTimestamp = useSettingsStore(state => state.lastSyncTimestamp);
   const isSyncing = useProgressStore(
     state => state.syncStatus.phase === 'syncing',
   );
 
-  if (!syncEnabled || syncProvider === 'none') return null;
+  if (!syncEnabled || syncProvider === 'none' || trackingMode === 'dual') {
+    return null;
+  }
 
   return (
     <View style={styles.row}>
-      <Text
-        style={[typographyThemed(theme).captionSecondary, styles.label]}
-        numberOfLines={2}
-      >
-        Pull the latest activity from your health app
-      </Text>
+      <View style={styles.label}>
+        <Text
+          style={typographyThemed(theme).captionSecondary}
+          numberOfLines={2}
+        >
+          Pull the latest activity from your health app
+        </Text>
+        {lastSyncTimestamp && (
+          <Text style={typographyThemed(theme).captionSecondary}>
+            {`Last synced: ${new Date(lastSyncTimestamp).toLocaleString(
+              undefined,
+              {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              },
+            )}`}
+          </Text>
+        )}
+      </View>
       <Button
         variant="brand"
         size="small"
@@ -66,5 +83,6 @@ const styles = StyleSheet.create({
   label: {
     flex: 1,
     flexShrink: 1,
+    gap: spacing.xs,
   },
 });

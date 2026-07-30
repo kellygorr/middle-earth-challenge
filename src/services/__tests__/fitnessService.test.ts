@@ -13,7 +13,10 @@ describe('fitnessService Android aggregation', () => {
         Promise.resolve(
           recordType === 'Steps'
             ? { COUNT_TOTAL: 7000, dataOrigins: ['garmin', 'phone'] }
-            : { DISTANCE: { inMeters: 4000 }, dataOrigins: ['garmin', 'phone'] },
+            : {
+                DISTANCE: { inMeters: 4000 },
+                dataOrigins: ['garmin', 'phone'],
+              },
         ),
     );
 
@@ -32,5 +35,19 @@ describe('fitnessService Android aggregation', () => {
       id: `hc_steps_aggregate_${start.getTime()}_${end.getTime()}`,
       steps: 7000,
     });
+  });
+
+  it('rejects when both aggregate signals fail', async () => {
+    mockAggregateRecord.mockRejectedValue(new Error('Health Connect offline'));
+    const start = new Date('2026-07-30T00:00:00.000Z');
+    const end = new Date('2026-07-31T00:00:00.000Z');
+
+    await expect(
+      getAggregatedAndroidDistanceRecords(
+        { aggregateRecord: mockAggregateRecord },
+        start,
+        end,
+      ),
+    ).rejects.toThrow('Health Connect offline');
   });
 });

@@ -125,22 +125,30 @@ const AndroidPedometer: PedometerService = {
       postNotifications: boolean;
     } = { activityRecognition: true, postNotifications: true };
 
+    const permissions: Parameters<
+      typeof PermissionsAndroid.requestMultiple
+    >[0] = [];
     if (Number(Platform.Version) >= 29) {
-      const res = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
+      permissions.push(PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION);
+    }
+    if (Number(Platform.Version) >= 33) {
+      permissions.push(
+        'android.permission.POST_NOTIFICATIONS' as (typeof permissions)[number],
       );
-      results.activityRecognition = res === PermissionsAndroid.RESULTS.GRANTED;
     }
 
-    if (Number(Platform.Version) >= 33) {
-      const res = await PermissionsAndroid.request(
-        // Cast: POST_NOTIFICATIONS was added in RN 0.70+ but older type defs
-        // may not include it. Runtime value is 'android.permission.POST_NOTIFICATIONS'.
-        'android.permission.POST_NOTIFICATIONS' as Parameters<
-          typeof PermissionsAndroid.request
-        >[0],
-      );
-      results.postNotifications = res === PermissionsAndroid.RESULTS.GRANTED;
+    if (permissions.length > 0) {
+      const grants = await PermissionsAndroid.requestMultiple(permissions);
+      if (Number(Platform.Version) >= 29) {
+        results.activityRecognition =
+          grants[PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION] ===
+          PermissionsAndroid.RESULTS.GRANTED;
+      }
+      if (Number(Platform.Version) >= 33) {
+        results.postNotifications =
+          grants['android.permission.POST_NOTIFICATIONS'] ===
+          PermissionsAndroid.RESULTS.GRANTED;
+      }
     }
 
     return results;

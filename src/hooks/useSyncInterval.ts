@@ -21,16 +21,20 @@ import {
 import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
 import { METERS_TO_MILES } from '../utils/stride';
 import { buildChunks } from '../utils/chunkRange';
+import { reconcileCompletedDualTrackingDays } from '../services/dualSourceReconciliation';
+import { switchTrackingMode } from '../services/trackingModeService';
 
 /**
  * Module-level handle so UI outside the hook (overlay retry button, Settings
  * "Sync now") can request a sync without prop-drilling. Registered by the
  * hook on mount; null when the hook isn't mounted.
  */
-let activePerformSync: ((force?: boolean) => Promise<void>) | null = null;
+let activePerformSync:
+  | ((force?: boolean, reconcileDual?: boolean) => Promise<void>)
+  | null = null;
 
 export function requestSyncNow(): Promise<void> {
-  return activePerformSync ? activePerformSync(true) : Promise.resolve();
+  return activePerformSync ? activePerformSync(true, true) : Promise.resolve();
 }
 
 export function isSyncRunnerMounted(): boolean {
@@ -127,14 +131,14 @@ export function useSyncInterval() {
   const inFlightRef = useRef(false);
 
   const performSync = useCallback(
-    async (forceSync = false) => {
+    async (forceSync = false, reconcileDual = false) => {
       // Pedometer mode has its own, much simpler flow: read a single
       // step-count window from the native service and ingest it as one
       // entry. It does *not* require syncEnabled / syncProvider /
       // liveSyncEnabled because the tracking service itself is the
       // "provider", and it polls unconditionally while the user has
       // chosen pedometer mode.
-      if (trackingMode === 'pedometer') {
+      if (trackingMode === 'pedometer' || trackingMode === 'dual') {
         if (inFlightRef.current) return;
         if (!pedometerService.isSupported()) return;
         inFlightRef.current = true;
@@ -144,6 +148,33 @@ export function useSyncInterval() {
             setLastSyncTimestamp,
             setSyncStatus,
           });
+          if (
+            trackingMode === 'dual' &&
+            reconcileDual &&
+            syncProvider !== 'none'
+          ) {
+            try {
+              await reconcileCompletedDualTrackingDays();
+            } catch (error) {
+              const classified = classifySyncError(error);
+              if (classified.kind === 'permission') {
+                await switchTrackingMode('pedometer');
+                useSettingsStore.getState().setSyncProvider('none');
+              }
+              throw error;
+            }
+          }
+        } catch (error) {
+          if (trackingMode === 'dual') {
+            const classified = classifySyncError(error);
+            setSyncStatus(prev => ({
+              ...prev,
+              phase: 'error',
+              error: classified,
+            }));
+          } else {
+            throw error;
+          }
         } finally {
           inFlightRef.current = false;
         }
@@ -364,13 +395,14 @@ export function useSyncInterval() {
     // always polls (the foreground service is the data source; there's
     // no reason to skip a cheap DB read). Health-app mode still gates on
     // syncEnabled + liveSyncEnabled to preserve battery and API budget.
-    const shouldPoll =
-      trackingMode === 'pedometer' || (syncEnabled && liveSyncEnabled);
+    const usesPedometer =
+      trackingMode === 'pedometer' || trackingMode === 'dual';
+    const shouldPoll = usesPedometer || (syncEnabled && liveSyncEnabled);
 
     // Whether an initial "catch me up right now" sync should fire once
     // the app is ready. Pedometer mode wants an immediate read on mount
     // so the UI reflects steps taken between the last app close and now.
-    const shouldRunInitialSync = trackingMode === 'pedometer' || syncEnabled;
+    const shouldRunInitialSync = usesPedometer || syncEnabled;
 
     const startInterval = () => {
       if (intervalRef.current) {
@@ -384,10 +416,9 @@ export function useSyncInterval() {
         // the JS-side "commit" is only about *materializing* a row and
         // advancing the watermark. A separate 2s display-refresh timer
         // lives on the map screen for the always-current miles counter.
-        const intervalMs =
-          trackingMode === 'pedometer'
-            ? PEDOMETER_LIVE_COMMIT_INTERVAL_MS
-            : SYNC_INTERVAL_MS;
+        const intervalMs = usesPedometer
+          ? PEDOMETER_LIVE_COMMIT_INTERVAL_MS
+          : SYNC_INTERVAL_MS;
         intervalRef.current = setInterval(performSync, intervalMs);
       }
     };
@@ -406,7 +437,7 @@ export function useSyncInterval() {
 
       if (wasBackground && isActive) {
         if (shouldRunInitialSync) {
-          performSync(true);
+          performSync(true, true);
         }
         if (shouldPoll) {
           startInterval();
@@ -419,8 +450,8 @@ export function useSyncInterval() {
         // silently dropped entirely if the user switched modes while
         // backgrounded. Fire-and-forget: RN gives us ~5s before it kills
         // timers, which is plenty for a single native call + SQLite write.
-        if (trackingMode === 'pedometer') {
-          performSync(true).catch(err =>
+        if (usesPedometer) {
+          performSync(true, false).catch(err =>
             console.warn(
               '[useSyncInterval] pedometer background-flush failed:',
               err,
@@ -442,7 +473,7 @@ export function useSyncInterval() {
       !hasPerformedInitialSyncRef.current
     ) {
       hasPerformedInitialSyncRef.current = true;
-      performSync(true);
+      performSync(true, true);
     }
 
     if (shouldPoll && initReady) {

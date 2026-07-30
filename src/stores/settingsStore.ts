@@ -29,6 +29,7 @@ interface SettingsStore extends UserSettings {
   setSyncProvider: (provider: SyncProvider) => void;
   setSyncStartDate: (date: number | null) => void;
   setLastSyncTimestamp: (timestamp: number | null) => void;
+  setLastHealthReconciledThrough: (timestamp: number | null) => void;
   setLiveSyncEnabled: (enabled: boolean) => void;
   setTrackingMode: (mode: TrackingMode) => void;
   setHasSeenOemBatteryPrompt: (seen: boolean) => void;
@@ -55,6 +56,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   syncProvider: 'none',
   syncStartDate: null,
   lastSyncTimestamp: null,
+  lastHealthReconciledThrough: null,
   liveSyncEnabled: false,
   trackingMode: 'health-app',
   hasSeenOemBatteryPrompt: false,
@@ -112,8 +114,16 @@ export const useSettingsStore = create<SettingsStore>(set => ({
 
   // Sync actions
   setSyncEnabled: enabled => {
-    set({ syncEnabled: enabled });
-    database.updateUserSettings({ syncEnabled: enabled });
+    const resetDualReconciliation =
+      !enabled && useSettingsStore.getState().trackingMode === 'dual';
+    set({
+      syncEnabled: enabled,
+      ...(resetDualReconciliation ? { lastHealthReconciledThrough: null } : {}),
+    });
+    database.updateUserSettings({
+      syncEnabled: enabled,
+      ...(resetDualReconciliation ? { lastHealthReconciledThrough: null } : {}),
+    });
   },
 
   setSyncProvider: provider => {
@@ -129,6 +139,11 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   setLastSyncTimestamp: timestamp => {
     set({ lastSyncTimestamp: timestamp });
     database.updateUserSettings({ lastSyncTimestamp: timestamp });
+  },
+
+  setLastHealthReconciledThrough: timestamp => {
+    set({ lastHealthReconciledThrough: timestamp });
+    database.updateUserSettings({ lastHealthReconciledThrough: timestamp });
   },
 
   setLiveSyncEnabled: enabled => {
@@ -176,6 +191,8 @@ export const useSettingsStore = create<SettingsStore>(set => ({
         syncProvider: settings.syncProvider ?? 'none',
         syncStartDate: settings.syncStartDate ?? null,
         lastSyncTimestamp: settings.lastSyncTimestamp ?? null,
+        lastHealthReconciledThrough:
+          settings.lastHealthReconciledThrough ?? null,
         liveSyncEnabled: settings.liveSyncEnabled ?? false,
         trackingMode: settings.trackingMode ?? 'health-app',
         hasSeenOemBatteryPrompt: settings.hasSeenOemBatteryPrompt ?? false,

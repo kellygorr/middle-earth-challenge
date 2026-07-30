@@ -130,9 +130,10 @@ export default function MapScreen() {
   const committedSteps = useProgressStore(state => state.steps);
   const liveDelta = useLivePedometerDelta();
 
-  const totalSteps = testOverrideMiles !== null
-    ? milesToSteps(testOverrideMiles)
-    : committedSteps + liveDelta;
+  const totalSteps =
+    testOverrideMiles !== null
+      ? milesToSteps(testOverrideMiles)
+      : committedSteps + liveDelta;
 
   const firstCheckpoint = checkpointsData[0];
   const {
@@ -488,7 +489,9 @@ export default function MapScreen() {
           single container so the two chips share the post-welcome enter
           animation and stay flush against the left edge of the screen. */}
       {(miles > 0 ||
-        (!showWelcome && trackingMode === 'pedometer' && totalSteps > 0)) && (
+        (!showWelcome &&
+          (trackingMode === 'pedometer' || trackingMode === 'dual') &&
+          totalSteps > 0)) && (
         <Animated.View
           style={[
             styles.milesContainer,
@@ -530,35 +533,37 @@ export default function MapScreen() {
               })}
             </Button>
           )}
-          {!showWelcome && trackingMode === 'pedometer' && totalSteps > 0 && (
-            <View style={styles.stepsChip}>
-              <Button
-                onPress={() => {
-                  clearStickyInfo();
-                  pushModal({ type: 'stats' });
-                }}
-                variant="primary"
-                size={
-                  labelSize === 'small'
-                    ? 'small'
-                    : labelSize === 'large'
-                    ? 'large'
-                    : 'default'
-                }
-                textSize={
-                  labelSize === 'small'
-                    ? 'small'
-                    : labelSize === 'large'
-                    ? 'large'
-                    : 'default'
-                }
-                flatSide="left"
-                isLabelButton
-              >
-                {`${totalSteps.toLocaleString()} steps`}
-              </Button>
-            </View>
-          )}
+          {!showWelcome &&
+            (trackingMode === 'pedometer' || trackingMode === 'dual') &&
+            totalSteps > 0 && (
+              <View style={styles.stepsChip}>
+                <Button
+                  onPress={() => {
+                    clearStickyInfo();
+                    pushModal({ type: 'stats' });
+                  }}
+                  variant="primary"
+                  size={
+                    labelSize === 'small'
+                      ? 'small'
+                      : labelSize === 'large'
+                      ? 'large'
+                      : 'default'
+                  }
+                  textSize={
+                    labelSize === 'small'
+                      ? 'small'
+                      : labelSize === 'large'
+                      ? 'large'
+                      : 'default'
+                  }
+                  flatSide="left"
+                  isLabelButton
+                >
+                  {`${totalSteps.toLocaleString()} steps`}
+                </Button>
+              </View>
+            )}
         </Animated.View>
       )}
 

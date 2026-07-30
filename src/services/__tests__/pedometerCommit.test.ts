@@ -171,6 +171,27 @@ describe('commitPedometerRange', () => {
     expect(first).toBe('pedo_12345');
   });
 
+  it('splits a range crossing local midnight into daily entries', async () => {
+    const fromMs = new Date(2026, 6, 30, 23, 59).getTime();
+    const midnight = new Date(2026, 6, 31, 0, 0).getTime();
+    const toMs = new Date(2026, 6, 31, 0, 1).getTime();
+    mockGetStepsBetween
+      .mockResolvedValueOnce({ steps: 400, fromMs, toMs: midnight })
+      .mockResolvedValueOnce({ steps: 600, fromMs: midnight, toMs });
+
+    const result = await commitPedometerRange(fromMs, toMs);
+
+    expect(mockGetStepsBetween).toHaveBeenNthCalledWith(1, fromMs, midnight);
+    expect(mockGetStepsBetween).toHaveBeenNthCalledWith(2, midnight, toMs);
+    const inserted = mockStoreState.ref.addDistanceEntries.mock.calls[0][0];
+    expect(inserted).toHaveLength(2);
+    expect(inserted.map((entry: any) => entry.id)).toEqual([
+      `pedo_${fromMs}`,
+      `pedo_${midnight}`,
+    ]);
+    expect(result.steps).toBe(1000);
+  });
+
   it('rethrows read failures so the caller can surface a sync error', async () => {
     const boom = new Error('native read failed');
     mockGetStepsBetween.mockRejectedValueOnce(boom);
@@ -187,7 +208,9 @@ describe('commitPedometerRange', () => {
       fromMs: 0,
       toMs: 1000,
     });
-    mockCheckAndFireMilestones.mockRejectedValueOnce(new Error('notifier down'));
+    mockCheckAndFireMilestones.mockRejectedValueOnce(
+      new Error('notifier down'),
+    );
 
     // Should resolve, not reject — commit path swallows notifier errors by design.
     const result = await commitPedometerRange(0, 1000);

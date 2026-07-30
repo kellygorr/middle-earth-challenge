@@ -4,6 +4,48 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
 import { pedometerService } from './pedometerService';
 import { commitPedometerRange } from './pedometerCommit';
+import { startOfLocalDay } from './dualSourceReconciliation';
+import { fitnessService } from './fitnessService';
+
+const usesPedometer = (mode: TrackingMode) =>
+  mode === 'pedometer' || mode === 'dual';
+
+let trackingModeTransitionsInProgress = 0;
+
+export type DualPermissionOutcome =
+  | 'dual'
+  | 'health-app'
+  | 'pedometer'
+  | 'none'
+  | 'unknown';
+
+export function resolveDualPermissionOutcome(
+  pedometerAvailable: boolean,
+  healthPermission: 'granted' | 'revoked' | 'unknown',
+): DualPermissionOutcome {
+  if (healthPermission === 'unknown') return 'unknown';
+  if (pedometerAvailable && healthPermission === 'granted') return 'dual';
+  if (pedometerAvailable) return 'pedometer';
+  if (healthPermission === 'granted') return 'health-app';
+  return 'none';
+}
+
+export function getTrackingModeForSources(
+  pedometerEnabled: boolean,
+  healthEnabled: boolean,
+): TrackingMode | null {
+  if (pedometerEnabled && healthEnabled) return 'dual';
+  if (pedometerEnabled) return 'pedometer';
+  if (healthEnabled) return 'health-app';
+  return null;
+}
+
+export function getDualModeInitialCursor(
+  _previous: TrackingMode,
+  now: number,
+): number {
+  return startOfLocalDay(now);
+}
 
 /**
  * Coordinates switching the app's data source between Health Connect /
@@ -39,7 +81,7 @@ export interface SwitchResult {
  * Switch the app's tracking mode. Safe to call with the current mode —
  * it will re-request permissions / re-start the service if needed.
  */
-export async function switchTrackingMode(
+async function performTrackingModeSwitch(
   mode: TrackingMode,
 ): Promise<SwitchResult> {
   const settings = useSettingsStore.getState();
@@ -53,8 +95,8 @@ export async function switchTrackingMode(
   // still see everything the service captured before the last 2-min
   // commit.
   if (
-    previous === 'pedometer' &&
-    mode !== 'pedometer' &&
+    usesPedometer(previous) &&
+    mode !== previous &&
     pedometerService.isSupported() &&
     settings.lastSyncTimestamp
   ) {
@@ -78,8 +120,15 @@ export async function switchTrackingMode(
   progress.clearLastSyncError();
 
   settings.setTrackingMode(mode);
+  if (mode === 'dual' && previous !== 'dual') {
+    settings.setLastHealthReconciledThrough(
+      getDualModeInitialCursor(previous, Date.now()),
+    );
+  } else if (previous === 'dual' && mode !== 'dual') {
+    settings.setLastHealthReconciledThrough(null);
+  }
 
-  if (mode === 'pedometer') {
+  if (usesPedometer(mode)) {
     if (!pedometerService.isSupported()) {
       // iOS today. Persist the preference so the UI can reflect the
       // user's intent, but do not attempt to start anything.
@@ -123,7 +172,7 @@ export async function switchTrackingMode(
   // Switching to health-app: stop the service if we were previously in
   // pedometer mode. Ignored on iOS (isSupported === false makes stop a
   // no-op, but we still gate to avoid the roundtrip).
-  if (previous === 'pedometer' && pedometerService.isSupported()) {
+  if (usesPedometer(previous) && pedometerService.isSupported()) {
     try {
       await pedometerService.stopTracking();
     } catch (error) {
@@ -132,6 +181,17 @@ export async function switchTrackingMode(
   }
 
   return { mode, tracking: false };
+}
+
+export async function switchTrackingMode(
+  mode: TrackingMode,
+): Promise<SwitchResult> {
+  trackingModeTransitionsInProgress += 1;
+  try {
+    return await performTrackingModeSwitch(mode);
+  } finally {
+    trackingModeTransitionsInProgress -= 1;
+  }
 }
 
 /**
@@ -163,8 +223,9 @@ export async function switchTrackingMode(
  */
 export async function ensureTrackingModeRunning(): Promise<void> {
   if (Platform.OS !== 'android') return;
+  if (trackingModeTransitionsInProgress > 0) return;
   const settings = useSettingsStore.getState();
-  if (settings.trackingMode !== 'pedometer') return;
+  if (!usesPedometer(settings.trackingMode)) return;
   if (!pedometerService.isSupported()) return;
 
   try {
@@ -179,14 +240,92 @@ export async function ensureTrackingModeRunning(): Promise<void> {
       env.hasSensor &&
       env.ignoresBatteryOptimizations;
 
+    if (settings.trackingMode === 'dual') {
+      const healthPermission =
+        await fitnessService.getHealthConnectPermissionState();
+      const permissionOutcome = resolveDualPermissionOutcome(
+        permissionsOk,
+        healthPermission,
+      );
+
+      if (permissionOutcome === 'health-app') {
+        await switchTrackingMode('health-app');
+        useProgressStore.getState().setSyncStatus({
+          phase: 'error',
+          chunksDone: 0,
+          chunksTotal: 0,
+          milesAdded: 0,
+          startedAt: null,
+          lastProgressAt: null,
+          error: {
+            kind: 'sourceFallback',
+            unavailableSource: 'pedometer',
+            activeSource: 'health-app',
+          },
+        });
+        return;
+      }
+
+      if (permissionOutcome === 'pedometer') {
+        await switchTrackingMode('pedometer');
+        useSettingsStore.getState().setSyncProvider('none');
+        useProgressStore.getState().setSyncStatus({
+          phase: 'error',
+          chunksDone: 0,
+          chunksTotal: 0,
+          milesAdded: 0,
+          startedAt: null,
+          lastProgressAt: null,
+          error: {
+            kind: 'sourceFallback',
+            unavailableSource: 'health-app',
+            activeSource: 'pedometer',
+          },
+        });
+        return;
+      }
+
+      if (permissionOutcome === 'none') {
+        const current = useSettingsStore.getState();
+        current.setLastHealthReconciledThrough(null);
+        current.setSyncProvider('none');
+        current.setSyncEnabled(false);
+        await pedometerService.stopTracking().catch(error => {
+          console.warn(
+            'ensureTrackingModeRunning: stopTracking failed:',
+            error,
+          );
+        });
+        useProgressStore.getState().setSyncStatus({
+          phase: 'error',
+          chunksDone: 0,
+          chunksTotal: 0,
+          milesAdded: 0,
+          startedAt: null,
+          lastProgressAt: null,
+          error: {
+            kind: 'permission',
+            source: 'both',
+            message: 'Pedometer and Health Connect permissions were revoked',
+          },
+        });
+        return;
+      }
+    }
+
     if (!permissionsOk) {
       const s = useSettingsStore.getState();
+      s.setLastHealthReconciledThrough(null);
       // Only surface the permission banner when the user thought they
       // were tracking (syncEnabled=true). If they'd already stopped
       // syncing, permissions being off is expected and doesn't warrant
       // a banner.
       if (s.syncEnabled) {
-        s.setSyncEnabled(false);
+        if (s.trackingMode === 'pedometer') {
+          s.setSyncEnabled(false);
+        } else if (s.trackingMode === 'dual') {
+          await switchTrackingMode('health-app');
+        }
         // Pick the most-specific message so the user knows which one
         // to fix. Ordered: sensor > activity-recognition > bg-activity
         // (sensor issues are unfixable by the user; the perms are).
@@ -238,7 +377,7 @@ export async function ensureTrackingModeRunning(): Promise<void> {
       // flag: this is the drift-recovery case. Also make sure
       // syncProvider reflects the pedometer state model.
       s.setSyncEnabled(true);
-      if (s.syncProvider !== 'none') {
+      if (s.trackingMode === 'pedometer' && s.syncProvider !== 'none') {
         s.setSyncProvider('none');
       }
     }

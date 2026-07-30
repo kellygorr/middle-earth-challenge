@@ -54,38 +54,52 @@ export async function commitPedometerRange(
     return { steps: 0, miles: 0, entryWritten: false };
   }
 
+  const segments: Array<{ fromMs: number; toMs: number }> = [];
+  let segmentStart = fromMs;
+  while (segmentStart < toMs) {
+    const nextMidnight = new Date(segmentStart);
+    nextMidnight.setHours(24, 0, 0, 0);
+    const segmentEnd = Math.min(toMs, nextMidnight.getTime());
+    segments.push({ fromMs: segmentStart, toMs: segmentEnd });
+    segmentStart = segmentEnd;
+  }
+
+  const entries: DistanceEntry[] = [];
   let steps = 0;
-  try {
-    const window = await pedometerService.getStepsBetween(fromMs, toMs);
-    steps = Math.max(0, Math.floor(window.steps));
-  } catch (error) {
-    console.warn('[pedometer] commit read failed', { fromMs, toMs, error });
-    // Re-throw so the caller can surface a sync error if it wants to.
-    throw error;
+  for (const segment of segments) {
+    try {
+      const window = await pedometerService.getStepsBetween(
+        segment.fromMs,
+        segment.toMs,
+      );
+      const segmentSteps = Math.max(0, Math.floor(window.steps));
+      steps += segmentSteps;
+      if (segmentSteps > 0) {
+        entries.push({
+          id: `pedo_${segment.fromMs}`,
+          saveId: DEFAULT_SAVE_ID,
+          date:
+            segment.fromMs + Math.floor((segment.toMs - segment.fromMs) / 2),
+          miles: stepsToMiles(segmentSteps),
+          steps: segmentSteps,
+          source: 'pedometer',
+        });
+      }
+    } catch (error) {
+      console.warn('[pedometer] commit read failed', {
+        fromMs: segment.fromMs,
+        toMs: segment.toMs,
+        error,
+      });
+      throw error;
+    }
   }
 
   const miles = stepsToMiles(steps);
 
-  // Empty window — skip the row entirely. Idle overnight periods
-  // shouldn't clutter the Distance list with zero-mile entries. Caller
-  // still advances the watermark.
-  if (steps <= 0) {
+  if (entries.length === 0) {
     return { steps: 0, miles: 0, entryWritten: false };
   }
-
-  // Row id is `pedo_${fromMs}` so it's stable and re-runs are safe: if
-  // a commit was in flight when the app was killed, the next run starts
-  // from the *advanced* watermark, so no duplicate id can be generated.
-  // `date` is the window midpoint so multi-hour BG rows sort into their
-  // correct day rather than the day at which walking started.
-  const entry: DistanceEntry = {
-    id: `pedo_${fromMs}`,
-    saveId: DEFAULT_SAVE_ID,
-    date: fromMs + Math.floor((toMs - fromMs) / 2),
-    miles,
-    steps,
-    source: 'pedometer',
-  };
 
   const progress = useProgressStore.getState();
   // Snapshot before-total so we can compare with the after-total below
@@ -93,7 +107,7 @@ export async function commitPedometerRange(
   // in this window. Must be read before `addDistanceEntries` mutates
   // the store.
   const milesBefore = progress.miles ?? 0;
-  await progress.addDistanceEntries([entry]);
+  await progress.addDistanceEntries(entries);
 
   // Recompute total from the store — cheaper and less race-prone than
   // tracking a running total across ticks.
