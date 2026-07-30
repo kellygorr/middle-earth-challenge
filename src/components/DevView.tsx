@@ -32,8 +32,9 @@ export default function DevView({
   const insets = useSafeAreaInsets();
   const isLandscape = width > height;
   const setTestOverrideMiles = useProgressStore(state => state.setTestMiles);
-  const isTestOverride = useProgressStore(state => state.isTestOverride);
-  const currentMiles = useProgressStore(state => state.miles);
+  const realMiles = useProgressStore(state => state.miles);
+  const testOverrideMiles = useProgressStore(state => state.testOverrideMiles);
+  const currentMiles = testOverrideMiles ?? realMiles;
   const setDevMode = useSettingsStore(state => state.setDevMode);
   const useMiles = useSettingsStore(state => state.useMiles);
   const [testMiles, setTestMiles] = useState('');
@@ -117,10 +118,10 @@ export default function DevView({
 
   // Initialize with current miles when opening, clear when test override ends
   useEffect(() => {
-    if (!isTestOverride && currentMiles !== null) {
+    if (testOverrideMiles === null && currentMiles !== null) {
       setTestMiles(String(Math.round(currentMiles * 100) / 100));
     }
-  }, [isTestOverride, currentMiles]);
+  }, [testOverrideMiles, currentMiles]);
 
   return (
     <View

@@ -36,6 +36,7 @@ import SyncIndicator from '../components/SyncIndicator';
 
 import { spacing } from '../styles/global';
 import { formatDistance } from '../utils/date';
+import { milesToSteps } from '../utils/stride';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
 import { useInitializationStore } from '../stores/initializationStore';
@@ -74,7 +75,7 @@ export default function MapScreen() {
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const phase = useInitializationStore(state => state.phase);
   const setPhase = useInitializationStore(state => state.setPhase);
-  const gameProgressAnimEnabled = phase === 'active';
+  const gameProgressAnimEnabled = phase !== 'loading';
   const devMode = useSettingsStore(state => state.devMode);
   const showPointLabels = useSettingsStore(state => state.showPointLabels);
   const setShowPointLabels = useSettingsStore(
@@ -105,8 +106,9 @@ export default function MapScreen() {
   // Check if info modal is open via SharedModal stack
   const isInfoModalOpen = useUIStore(state => state.isModalOpen('info'));
 
-  // Miles from progress store (source of truth)
-  const miles = useProgressStore(state => state.miles);
+  const realMiles = useProgressStore(state => state.miles);
+  const testOverrideMiles = useProgressStore(state => state.testOverrideMiles);
+  const miles = testOverrideMiles ?? realMiles;
 
   // Total lifetime step count, shown in a small chip below the miles
   // button when the user is in pedometer mode. Health-app users don't
@@ -128,7 +130,9 @@ export default function MapScreen() {
   const committedSteps = useProgressStore(state => state.steps);
   const liveDelta = useLivePedometerDelta();
 
-  const totalSteps = committedSteps + liveDelta;
+  const totalSteps = testOverrideMiles !== null
+    ? milesToSteps(testOverrideMiles)
+    : committedSteps + liveDelta;
 
   const firstCheckpoint = checkpointsData[0];
   const {
@@ -665,9 +669,7 @@ export default function MapScreen() {
           {/* Icon column: recenter on top, + on bottom. */}
           <View style={styles.bottomIconColumn} pointerEvents="box-none">
             {/* Recenter Button */}
-            <Animated.View
-              style={[styles.iconColumnItem, recenterButtonStyle]}
-            >
+            <Animated.View style={[styles.iconColumnItem, recenterButtonStyle]}>
               <IconButton
                 icon={
                   <RecenterIcon
@@ -685,9 +687,7 @@ export default function MapScreen() {
 
             {/* Add Miles Button — disabled while syncing to avoid racing
                 manual edits against in-flight chunk writes. */}
-            <Animated.View
-              style={[styles.iconColumnItem, settingsEnterStyle]}
-            >
+            <Animated.View style={[styles.iconColumnItem, settingsEnterStyle]}>
               <IconButton
                 icon={<PlusIcon size={iconSizes.medium} />}
                 onPress={() => {
