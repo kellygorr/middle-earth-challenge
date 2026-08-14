@@ -8,7 +8,7 @@ export interface PointType {
   name: string;
   x: number;
   y: number;
-  labelPosition?: 'top' | 'right';
+  labelPosition?: 'top' | 'right' | 'left';
   description?: {
     text: string;
     image?: string;
@@ -80,6 +80,8 @@ export type SyncProvider = 'none' | 'health-connect' | 'apple-health';
  */
 export type TrackingMode = 'health-app' | 'pedometer' | 'dual';
 
+export type { FriendAffinity } from '../constants/friendAffinities';
+
 export interface UserSettings {
   id: string;
   labelSize: LabelSize;
@@ -124,6 +126,15 @@ export interface UserSettings {
    * re-processed for any reason (backfill, dev tools, retry).
    */
   lastNotifiedCheckpointIndex: number;
+  // Friend-progress settings
+  sharingEnabled: boolean;
+  sharingDisplayName: string | null;
+  sharingAffinity:
+    | import('../constants/friendAffinities').FriendAffinity
+    | null;
+  sharingDeletionPending: boolean;
+  lastPublishedMiles: number | null;
+  lastSharedProgressSyncAt: number | null;
 }
 
 // Journey segment definition (from distance.md)

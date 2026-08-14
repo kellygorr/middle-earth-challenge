@@ -17,7 +17,8 @@ interface PointProps {
   // Single active flag for both checkpoint outline and inner fill, and for trivia
   isActive: boolean;
   showLabel: boolean;
-  labelPosition?: 'top' | 'right';
+  labelPosition?: 'top' | 'right' | 'left';
+  labelHeight: number;
   type?: 'checkpoint' | 'trivia';
   onPress?: () => void;
 }
@@ -27,6 +28,7 @@ function Point({
   isActive,
   showLabel,
   labelPosition = 'right',
+  labelHeight,
   type = 'checkpoint',
   onPress,
 }: PointProps) {
@@ -74,7 +76,11 @@ function Point({
       style={[
         styles.container,
         { marginLeft: -centerOffset, marginTop: -centerOffset },
-        labelPosition === 'top' ? styles.containerColumn : styles.containerRow,
+        labelPosition === 'top'
+          ? styles.containerColumn
+          : labelPosition === 'left'
+          ? styles.containerAnchored
+          : styles.containerRow,
       ]}
       pointerEvents="box-none"
     >
@@ -87,7 +93,7 @@ function Point({
       >
         {type === 'trivia' ? (
           /* Simple filled circle for trivia */
-          <Animated.View style={[styles.innerCircle, innerAnimatedStyle]} />
+          <Animated.View style={[styles.triviaCircle, innerAnimatedStyle]} />
         ) : (
           /* Target icon for checkpoints */
           <>
@@ -106,6 +112,8 @@ function Point({
           style={[
             labelPosition === 'top'
               ? styles.nameContainerAbove
+              : labelPosition === 'left'
+              ? [styles.nameContainerLeft, { top: (24 - labelHeight) / 2 }]
               : styles.nameContainerRight,
             labelAnimatedStyle,
           ]}
@@ -154,6 +162,10 @@ const styles = StyleSheet.create({
     flexDirection: 'column-reverse', // Label above circle
     alignItems: 'flex-start', // Align to left edge
   },
+  containerAnchored: {
+    width: 24,
+    height: 24,
+  },
   circleContainer: {
     // Container for circles that will be animated
     width: 24,
@@ -175,6 +187,11 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
   },
+  triviaCircle: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
   nameContainer: {
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -182,6 +199,12 @@ const styles = StyleSheet.create({
   },
   nameContainerRight: {
     marginLeft: 6,
+  },
+  nameContainerLeft: {
+    position: 'absolute',
+    right: 30,
+    minWidth: 120,
+    alignItems: 'flex-end',
   },
   nameContainerAbove: {
     marginBottom: 4,

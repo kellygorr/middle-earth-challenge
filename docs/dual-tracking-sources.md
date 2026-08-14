@@ -143,8 +143,10 @@ Store at most one reconciliation entry per local date with a stable ID:
 health_reconciliation_YYYY-MM-DD
 ```
 
-The entry contains only the top-up miles and corresponding derived steps. An
-upsert replaces an earlier calculation; a zero top-up removes any existing row.
+The entry contains independent top-ups for miles and steps. Each field compares
+the health aggregate with already credited tracked entries, preserving measured
+steps rather than deriving them from the mileage difference. An upsert replaces
+an earlier calculation; zero top-ups for both fields remove any existing row.
 The operation must be idempotent.
 
 Manual, manual-distance, and manual-steps entries remain additive and are
@@ -162,7 +164,8 @@ For each eligible completed local day:
 3. Convert both to miles and choose the larger walking equivalent.
 4. Sum existing Health Connect, Apple Health, and pedometer entries assigned to
    that interval, excluding manual and reconciliation entries.
-5. Calculate `max(healthMiles - pedometerMiles, 0)`.
+5. Calculate `max(healthMiles - trackedMiles, 0)` and
+   `max(healthSteps - trackedSteps, 0)` independently.
 6. Upsert or remove the stable reconciliation entry.
 7. Recalculate total miles and steps from all entries.
 8. Persist the progress snapshot.

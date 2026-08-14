@@ -5,6 +5,7 @@ import {
   TextSize,
   SyncProvider,
   TrackingMode,
+  FriendAffinity,
 } from '../types';
 import { ThemeName, themes } from '../styles/themes';
 import { database } from '../services/database';
@@ -35,6 +36,12 @@ interface SettingsStore extends UserSettings {
   setHasSeenOemBatteryPrompt: (seen: boolean) => void;
   setHcRevokePendingRestart: (pending: boolean) => void;
   setLastNotifiedCheckpointIndex: (index: number) => void;
+  setSharingEnabled: (enabled: boolean) => void;
+  setSharingDisplayName: (displayName: string | null) => void;
+  setSharingAffinity: (affinity: FriendAffinity | null) => void;
+  setSharingDeletionPending: (pending: boolean) => void;
+  setLastPublishedMiles: (miles: number | null) => void;
+  setLastSharedProgressSyncAt: (timestamp: number | null) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -62,6 +69,12 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   hasSeenOemBatteryPrompt: false,
   hcRevokePendingRestart: false,
   lastNotifiedCheckpointIndex: -1,
+  sharingEnabled: false,
+  sharingDisplayName: null,
+  sharingAffinity: null,
+  sharingDeletionPending: false,
+  lastPublishedMiles: null,
+  lastSharedProgressSyncAt: null,
 
   // Actions - each setter also persists to database
   setLabelSize: size => {
@@ -171,6 +184,36 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     database.updateUserSettings({ lastNotifiedCheckpointIndex: index });
   },
 
+  setSharingEnabled: enabled => {
+    set({ sharingEnabled: enabled });
+    database.updateUserSettings({ sharingEnabled: enabled });
+  },
+
+  setSharingDisplayName: displayName => {
+    set({ sharingDisplayName: displayName });
+    database.updateUserSettings({ sharingDisplayName: displayName });
+  },
+
+  setSharingAffinity: affinity => {
+    set({ sharingAffinity: affinity });
+    database.updateUserSettings({ sharingAffinity: affinity });
+  },
+
+  setSharingDeletionPending: pending => {
+    set({ sharingDeletionPending: pending });
+    database.updateUserSettings({ sharingDeletionPending: pending });
+  },
+
+  setLastPublishedMiles: miles => {
+    set({ lastPublishedMiles: miles });
+    database.updateUserSettings({ lastPublishedMiles: miles });
+  },
+
+  setLastSharedProgressSyncAt: timestamp => {
+    set({ lastSharedProgressSyncAt: timestamp });
+    database.updateUserSettings({ lastSharedProgressSyncAt: timestamp });
+  },
+
   loadSettings: async () => {
     try {
       const settings = await database.getUserSettings();
@@ -198,6 +241,12 @@ export const useSettingsStore = create<SettingsStore>(set => ({
         hasSeenOemBatteryPrompt: settings.hasSeenOemBatteryPrompt ?? false,
         hcRevokePendingRestart: settings.hcRevokePendingRestart ?? false,
         lastNotifiedCheckpointIndex: settings.lastNotifiedCheckpointIndex ?? -1,
+        sharingEnabled: settings.sharingEnabled ?? false,
+        sharingDisplayName: settings.sharingDisplayName ?? null,
+        sharingAffinity: settings.sharingAffinity ?? null,
+        sharingDeletionPending: settings.sharingDeletionPending ?? false,
+        lastPublishedMiles: settings.lastPublishedMiles ?? null,
+        lastSharedProgressSyncAt: settings.lastSharedProgressSyncAt ?? null,
         isLoaded: true,
       });
     } catch (error) {

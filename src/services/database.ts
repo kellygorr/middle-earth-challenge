@@ -6,6 +6,7 @@ import {
   SyncProvider,
   TrackingMode,
   DistanceSource,
+  FriendAffinity,
 } from '../types';
 import { ThemeName } from '../styles/themes';
 import { AVERAGE_STRIDE_METERS, METERS_TO_MILES } from '../utils/stride';
@@ -77,7 +78,13 @@ class Database {
         tracking_mode TEXT NOT NULL DEFAULT 'health-app',
         has_seen_oem_battery_prompt INTEGER NOT NULL DEFAULT 0,
         hc_revoke_pending_restart INTEGER NOT NULL DEFAULT 0,
-        last_notified_checkpoint_index INTEGER NOT NULL DEFAULT -1
+        last_notified_checkpoint_index INTEGER NOT NULL DEFAULT -1,
+        sharing_enabled INTEGER NOT NULL DEFAULT 0,
+        sharing_display_name TEXT,
+        sharing_affinity_selection TEXT,
+        sharing_deletion_pending INTEGER NOT NULL DEFAULT 0,
+        last_published_miles REAL,
+        last_shared_progress_sync_at INTEGER
       )
     `);
 
@@ -141,6 +148,22 @@ class Database {
       );
     } catch (error) {
       if (!isDuplicateColumnError(error)) throw error;
+    }
+
+    const sharingMigrations = [
+      `ALTER TABLE user_settings ADD COLUMN sharing_enabled INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE user_settings ADD COLUMN sharing_display_name TEXT`,
+      `ALTER TABLE user_settings ADD COLUMN sharing_affinity_selection TEXT`,
+      `ALTER TABLE user_settings ADD COLUMN sharing_deletion_pending INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE user_settings ADD COLUMN last_published_miles REAL`,
+      `ALTER TABLE user_settings ADD COLUMN last_shared_progress_sync_at INTEGER`,
+    ];
+    for (const migration of sharingMigrations) {
+      try {
+        this.db.executeSync(migration);
+      } catch (error) {
+        if (!isDuplicateColumnError(error)) throw error;
+      }
     }
 
     // Distance entries table
@@ -280,6 +303,14 @@ class Database {
         typeof (row as any).last_notified_checkpoint_index === 'number'
           ? (row as any).last_notified_checkpoint_index
           : -1,
+      sharingEnabled: (row as any).sharing_enabled === 1,
+      sharingDisplayName: (row as any).sharing_display_name ?? null,
+      sharingAffinity:
+        ((row as any).sharing_affinity_selection as FriendAffinity) ?? null,
+      sharingDeletionPending: (row as any).sharing_deletion_pending === 1,
+      lastPublishedMiles: (row as any).last_published_miles ?? null,
+      lastSharedProgressSyncAt:
+        (row as any).last_shared_progress_sync_at ?? null,
     };
   }
 
@@ -362,6 +393,30 @@ class Database {
     if (updates.lastNotifiedCheckpointIndex !== undefined) {
       fields.push('last_notified_checkpoint_index = ?');
       values.push(updates.lastNotifiedCheckpointIndex);
+    }
+    if (updates.sharingEnabled !== undefined) {
+      fields.push('sharing_enabled = ?');
+      values.push(updates.sharingEnabled ? 1 : 0);
+    }
+    if (updates.sharingDisplayName !== undefined) {
+      fields.push('sharing_display_name = ?');
+      values.push(updates.sharingDisplayName);
+    }
+    if (updates.sharingAffinity !== undefined) {
+      fields.push('sharing_affinity_selection = ?');
+      values.push(updates.sharingAffinity);
+    }
+    if (updates.sharingDeletionPending !== undefined) {
+      fields.push('sharing_deletion_pending = ?');
+      values.push(updates.sharingDeletionPending ? 1 : 0);
+    }
+    if (updates.lastPublishedMiles !== undefined) {
+      fields.push('last_published_miles = ?');
+      values.push(updates.lastPublishedMiles);
+    }
+    if (updates.lastSharedProgressSyncAt !== undefined) {
+      fields.push('last_shared_progress_sync_at = ?');
+      values.push(updates.lastSharedProgressSyncAt);
     }
 
     if (fields.length === 0) return;

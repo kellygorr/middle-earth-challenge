@@ -606,7 +606,10 @@ async function ingestRecords(
     // Known id AND it's our one amendable record → diff and maybe update.
     const existing = existingEntriesMap.get(entryId)!;
     const miles = record.distanceMeters * METERS_TO_MILES;
-    if (Math.abs(existing.miles - miles) > 0.001) {
+    if (
+      Math.abs(existing.miles - miles) > 0.001 ||
+      existing.steps !== record.steps
+    ) {
       toUpdate.push({ ...existing, miles, steps: record.steps });
       milesChanged += miles - existing.miles;
     }

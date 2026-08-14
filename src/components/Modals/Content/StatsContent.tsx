@@ -26,15 +26,18 @@ export default function StatsContent() {
   const useMiles = useSettingsStore(state => state.useMiles);
   const distanceEntries = useProgressStore(state => state.distanceEntries);
   const realMiles = useProgressStore(state => state.miles);
+  const realSteps = useProgressStore(state => state.steps);
   const testOverrideMiles = useProgressStore(state => state.testOverrideMiles);
   const miles = testOverrideMiles ?? realMiles;
+  const steps =
+    testOverrideMiles === null ? realSteps : milesToSteps(testOverrideMiles);
   const hasEnoughData = useStatsStore(state => state.hasEnoughDataForStats)(
     distanceEntries,
   );
   const getStats = useStatsStore(state => state.getStats);
 
   const stats: Stats | null = hasEnoughData
-    ? getStats(distanceEntries, miles)
+    ? getStats(distanceEntries, miles, steps)
     : null;
 
   if (!stats) {
@@ -70,7 +73,7 @@ export default function StatsContent() {
         <TwoColumnRow
           labels={['Steps', 'Remaining']}
           values={[
-            formatSteps(milesToSteps(stats.journey.milesCompleted)),
+            formatSteps(stats.journey.stepsCompleted),
             formatSteps(milesToSteps(stats.journey.milesRemaining)),
           ]}
         />
@@ -113,9 +116,7 @@ export default function StatsContent() {
               ? `${formatDistance(stats.activity.bestDayMiles, {
                   includeUnits: true,
                   useMiles,
-                })} · ${formatSteps(
-                  milesToSteps(stats.activity.bestDayMiles),
-                )} steps`
+                })} · ${formatSteps(stats.activity.bestDaySteps)} steps`
               : undefined
           }
         />
@@ -148,14 +149,10 @@ export default function StatsContent() {
           ]}
           subValues={[
             stats.activity.milesThisWeek > 0
-              ? `${formatSteps(
-                  milesToSteps(stats.activity.milesThisWeek),
-                )} steps`
+              ? `${formatSteps(stats.activity.stepsThisWeek)} steps`
               : undefined,
             stats.activity.milesLastWeek > 0
-              ? `${formatSteps(
-                  milesToSteps(stats.activity.milesLastWeek),
-                )} steps`
+              ? `${formatSteps(stats.activity.stepsLastWeek)} steps`
               : undefined,
           ]}
           isLast
@@ -170,9 +167,7 @@ export default function StatsContent() {
             includeUnits: true,
             useMiles,
           })}
-          subValue={`${formatSteps(
-            milesToSteps(stats.pace.averageMilesPerDay),
-          )} steps`}
+          subValue={`${formatSteps(stats.pace.averageStepsPerDay)} steps`}
         />
         <StatRow
           label={`Daily average\n(excluding missed days)`}
@@ -180,9 +175,7 @@ export default function StatsContent() {
             includeUnits: true,
             useMiles,
           })}
-          subValue={`${formatSteps(
-            milesToSteps(stats.pace.averageMilesPerActiveDay),
-          )} steps`}
+          subValue={`${formatSteps(stats.pace.averageStepsPerActiveDay)} steps`}
           isLast={
             !stats.pace.estimatedDaysRemaining &&
             !stats.pace.estimatedCompletionDate

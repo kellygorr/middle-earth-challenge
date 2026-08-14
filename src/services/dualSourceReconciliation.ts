@@ -6,7 +6,7 @@ import {
   getActiveFitnessService,
   type FitnessServiceInterface,
 } from './fitnessService';
-import { METERS_TO_MILES, milesToSteps } from '../utils/stride';
+import { METERS_TO_MILES } from '../utils/stride';
 
 const RECONCILIATION_PREFIX = 'health_reconciliation_';
 
@@ -87,31 +87,42 @@ export async function reconcileCompletedDualTrackingDays(
       (sum, record) => sum + record.distanceMeters * METERS_TO_MILES,
       0,
     );
+    const healthSteps = healthRecords.reduce(
+      (sum, record) => sum + record.steps,
+      0,
+    );
 
     const progress = useProgressStore.getState();
-    const creditedTrackedMiles = progress.distanceEntries
-      .filter(
-        entry =>
-          (entry.source === 'pedometer' ||
-            entry.source === 'health-connect' ||
-            entry.source === 'apple-health') &&
-          entry.date >= cursor &&
-          entry.date < dayEnd,
-      )
-      .reduce((sum, entry) => sum + entry.miles, 0);
+    const creditedTrackedEntries = progress.distanceEntries.filter(
+      entry =>
+        (entry.source === 'pedometer' ||
+          entry.source === 'health-connect' ||
+          entry.source === 'apple-health') &&
+        entry.date >= cursor &&
+        entry.date < dayEnd,
+    );
+    const creditedTrackedMiles = creditedTrackedEntries.reduce(
+      (sum, entry) => sum + entry.miles,
+      0,
+    );
+    const creditedTrackedSteps = creditedTrackedEntries.reduce(
+      (sum, entry) => sum + entry.steps,
+      0,
+    );
     const topUpMiles = calculateHealthTopUp(healthMiles, creditedTrackedMiles);
+    const topUpSteps = calculateHealthTopUp(healthSteps, creditedTrackedSteps);
     const entryId = reconciliationEntryId(cursor);
     const existing = progress.distanceEntries.find(
       entry => entry.id === entryId,
     );
 
-    if (topUpMiles > 0) {
+    if (topUpMiles > 0 || topUpSteps > 0) {
       const entry: DistanceEntry = {
         id: entryId,
         saveId: DEFAULT_SAVE_ID,
         date: cursor + Math.floor((dayEnd - cursor) / 2),
         miles: topUpMiles,
-        steps: milesToSteps(topUpMiles),
+        steps: topUpSteps,
         source: 'health-reconciliation',
       };
       if (existing) {

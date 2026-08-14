@@ -59,6 +59,61 @@ type HealthConnectAggregator = Pick<
   'aggregateRecord'
 >;
 
+interface DailyHealthSample {
+  value: number;
+  startDate: string;
+  endDate: string;
+  id?: string;
+}
+
+export function selectAppleHealthDistanceRecords(
+  distanceSamples: DailyHealthSample[],
+  stepSamples: DailyHealthSample[],
+): HealthDistanceRecord[] {
+  const totalDistanceMiles = distanceSamples.reduce(
+    (sum, sample) => sum + (sample.value || 0),
+    0,
+  );
+  const totalSteps = stepSamples.reduce(
+    (sum, sample) => sum + (sample.value || 0),
+    0,
+  );
+
+  if (stepsToMiles(totalSteps) >= totalDistanceMiles) {
+    return stepSamples
+      .filter(sample => (sample.value || 0) > 0)
+      .map(sample => ({
+        id: sample.id || `ah_steps_${sample.startDate}_${sample.endDate}`,
+        startTime: sample.startDate,
+        endTime: sample.endDate,
+        distanceMeters: sample.value * AVERAGE_STRIDE_METERS,
+        steps: sample.value,
+      }));
+  }
+
+  return distanceSamples
+    .filter(sample => (sample.value || 0) > 0)
+    .map(sample => {
+      const rangeStart = new Date(sample.startDate).getTime();
+      const rangeEnd = new Date(sample.endDate).getTime();
+      const measuredSteps = stepSamples.reduce((sum, stepSample) => {
+        const stepStart = new Date(stepSample.startDate).getTime();
+        const stepEnd = new Date(stepSample.endDate).getTime();
+        return stepStart < rangeEnd && stepEnd > rangeStart
+          ? sum + (stepSample.value || 0)
+          : sum;
+      }, 0);
+
+      return {
+        id: sample.id || `ah_${sample.startDate}_${sample.endDate}`,
+        startTime: sample.startDate,
+        endTime: sample.endDate,
+        distanceMeters: milesToMeters(sample.value),
+        steps: measuredSteps > 0 ? measuredSteps : milesToSteps(sample.value),
+      };
+    });
+}
+
 export async function getAggregatedAndroidDistanceRecords(
   hc: HealthConnectAggregator,
   startDate: Date,
@@ -141,7 +196,7 @@ export async function getAggregatedAndroidDistanceRecords(
           startTime: startDate.toISOString(),
           endTime: endDate.toISOString(),
           distanceMeters,
-          steps: milesToSteps(distanceMiles),
+          steps: steps > 0 ? steps : milesToSteps(distanceMiles),
         },
       ]
     : [];
@@ -726,81 +781,43 @@ class FitnessService implements FitnessServiceInterface {
       unit: appleHealth.default.Constants.Units.mile,
     };
 
-    type Sample = {
-      value: number;
-      startDate: string;
-      endDate: string;
-      id?: string;
-    };
-
     // Pull distance samples (values in miles per options.unit above).
-    let distanceSamples: Sample[] = [];
+    let distanceSamples: DailyHealthSample[] = [];
     try {
-      distanceSamples = await new Promise<Sample[]>((resolve, reject) => {
-        appleHealth.default.getDailyDistanceWalkingRunningSamples(
-          distanceOptions,
-          (err: string, results: Sample[]) => {
-            if (err) reject(err);
-            else resolve(results || []);
-          },
-        );
-      });
+      distanceSamples = await new Promise<DailyHealthSample[]>(
+        (resolve, reject) => {
+          appleHealth.default.getDailyDistanceWalkingRunningSamples(
+            distanceOptions,
+            (err: string, results: DailyHealthSample[]) => {
+              if (err) reject(err);
+              else resolve(results || []);
+            },
+          );
+        },
+      );
     } catch {
       // Distance samples not available
     }
 
     // Pull step samples.
-    let stepSamples: Sample[] = [];
+    let stepSamples: DailyHealthSample[] = [];
     try {
-      stepSamples = await new Promise<Sample[]>((resolve, reject) => {
-        appleHealth.default.getDailyStepCountSamples(
-          options,
-          (err: string, results: Sample[]) => {
-            if (err) reject(err);
-            else resolve(results || []);
-          },
-        );
-      });
+      stepSamples = await new Promise<DailyHealthSample[]>(
+        (resolve, reject) => {
+          appleHealth.default.getDailyStepCountSamples(
+            options,
+            (err: string, results: DailyHealthSample[]) => {
+              if (err) reject(err);
+              else resolve(results || []);
+            },
+          );
+        },
+      );
     } catch {
       // Step samples not available
     }
 
-    // Compare totals and pick the winner. Apple Health returns distance
-    // in miles; steps are unitless counts.
-    const totalDistanceMiles = distanceSamples.reduce(
-      (sum, s) => sum + (s.value || 0),
-      0,
-    );
-    const totalSteps = stepSamples.reduce((sum, s) => sum + (s.value || 0), 0);
-    const stepsMiles = stepsToMiles(totalSteps);
-
-    if (stepsMiles >= totalDistanceMiles) {
-      return stepSamples
-        .filter(s => (s.value || 0) > 0)
-        .map(s => {
-          const steps = s.value || 0;
-          return {
-            id: s.id || `ah_steps_${s.startDate}_${s.endDate}`,
-            startTime: s.startDate,
-            endTime: s.endDate,
-            distanceMeters: steps * AVERAGE_STRIDE_METERS,
-            steps,
-          };
-        });
-    }
-
-    return distanceSamples
-      .filter(s => (s.value || 0) > 0)
-      .map(s => {
-        const miles = s.value || 0;
-        return {
-          id: s.id || `ah_${s.startDate}_${s.endDate}`,
-          startTime: s.startDate,
-          endTime: s.endDate,
-          distanceMeters: milesToMeters(miles),
-          steps: milesToSteps(miles),
-        };
-      });
+    return selectAppleHealthDistanceRecords(distanceSamples, stepSamples);
   }
 
   /**

@@ -129,6 +129,76 @@ describe('dual source reconciliation', () => {
     expect(getRecords).toHaveBeenCalledTimes(2);
   });
 
+  it('reconciles distance and measured steps independently', async () => {
+    const yesterday = new Date(2026, 6, 2).getTime();
+    const today = new Date(2026, 6, 3).getTime();
+    const { progress } = resetState(yesterday, [
+      {
+        id: 'pedo',
+        date: yesterday + 60_000,
+        miles: 2,
+        steps: 4000,
+        source: 'pedometer',
+      },
+    ]);
+    const getRecords = jest.fn().mockResolvedValue([
+      {
+        id: 'aggregate',
+        startTime: new Date(yesterday).toISOString(),
+        endTime: new Date(today).toISOString(),
+        distanceMeters: 5 / 0.000621371,
+        steps: 5000,
+      },
+    ]);
+
+    await reconcileCompletedDualTrackingDays({
+      now: today + 60_000,
+      fitness: mockFitness(getRecords),
+    });
+
+    const topUp = progress.distanceEntries.find(
+      entry => entry.id === reconciliationEntryId(yesterday),
+    );
+    expect(topUp.miles).toBeCloseTo(3);
+    expect(topUp.steps).toBe(1000);
+    expect(progress.steps).toBe(5000);
+  });
+
+  it('does not add steps when pedometer steps already exceed health steps', async () => {
+    const yesterday = new Date(2026, 6, 2).getTime();
+    const today = new Date(2026, 6, 3).getTime();
+    const { progress } = resetState(yesterday, [
+      {
+        id: 'pedo',
+        date: yesterday + 60_000,
+        miles: 2,
+        steps: 4000,
+        source: 'pedometer',
+      },
+    ]);
+    const getRecords = jest.fn().mockResolvedValue([
+      {
+        id: 'aggregate',
+        startTime: new Date(yesterday).toISOString(),
+        endTime: new Date(today).toISOString(),
+        distanceMeters: 5 / 0.000621371,
+        steps: 3000,
+      },
+    ]);
+
+    await reconcileCompletedDualTrackingDays({
+      now: today + 60_000,
+      fitness: mockFitness(getRecords),
+    });
+
+    const topUp = progress.distanceEntries.find(
+      entry => entry.id === reconciliationEntryId(yesterday),
+    );
+    expect(topUp.miles).toBeCloseTo(3);
+    expect(topUp.steps).toBe(0);
+    expect(progress.steps).toBe(4000);
+  });
+
   it('does not advance the cursor when Health Connect fails', async () => {
     const yesterday = new Date(2026, 6, 2).getTime();
     const today = startOfLocalDay(new Date(2026, 6, 3, 12).getTime());

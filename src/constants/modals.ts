@@ -11,6 +11,7 @@ import {
   DistanceContent,
   InfoContent,
   DataContent,
+  FriendProgressContent,
 } from '../components/Modals/Content';
 import { MilesFooter, InfoFooter } from '../components/Modals/Footers';
 
@@ -20,7 +21,8 @@ export type ModalType =
   | 'miles'
   | 'sync'
   | 'info'
-  | 'data';
+  | 'data'
+  | 'friend-progress';
 
 export interface ModalConfig {
   /** Modal title (displayed above card in portrait, left side in landscape) */
@@ -80,6 +82,14 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     content: DataContent,
     smallHeader: true,
     leftButton: 'back',
+    scrollType: 'default',
+  },
+  'friend-progress': {
+    title: 'Connect with friends',
+    content: FriendProgressContent,
+    smallHeader: true,
+    leftButton: 'back',
+    keyboardAvoiding: true,
     scrollType: 'default',
   },
 };

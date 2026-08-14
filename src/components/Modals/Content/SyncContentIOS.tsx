@@ -5,9 +5,9 @@ import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
 import { fitnessService } from '../../../services/fitnessService';
 import Button from '../../Buttons/Button';
-import SectionHeader from '../SectionHeader';
 import SettingsRef from '../../SettingsRef';
 import { SyncNowRow } from '../../SyncNowRow';
+import { StatusBadge } from '../../StatusBadge';
 import { PlusIcon } from '../../../assets/icons';
 
 /**
@@ -114,22 +114,7 @@ export default function SyncContentIOS() {
 
   return (
     <>
-      <SectionHeader title="Sync options" />
-
-      {syncEnabled && (
-        <Text
-          style={[
-            typographyThemed(theme).bodyPrimary,
-            styles.connectedMessage,
-            {
-              backgroundColor: theme.colors.successBg,
-              color: theme.colors.successText,
-            },
-          ]}
-        >
-          ✓ You are connected to Apple Health
-        </Text>
-      )}
+      <StatusBadge label="Syncing enabled" visible={syncEnabled} />
       <View style={styles.buttonRow}>
         <Button
           variant={isHealthAppActive ? 'brand' : 'primary'}
@@ -296,13 +281,5 @@ const styles = StyleSheet.create({
   sectionText: {
     textAlign: 'left',
     marginTop: spacing.xs,
-  },
-  connectedMessage: {
-    textAlign: 'center',
-    marginBottom: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: 8,
-    overflow: 'hidden',
   },
 });

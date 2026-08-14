@@ -76,6 +76,7 @@ export default function PositionedPoint({
         isActive={!!isActive}
         showLabel={showLabel}
         labelPosition={item.labelPosition}
+        labelHeight={labelHeight}
         type={type}
         onPress={onPress}
       />

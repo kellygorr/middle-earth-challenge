@@ -102,9 +102,15 @@ export default function ToggleRow({
       : []),
   ];
 
-  if (onPress) {
+  const rowOnPress =
+    onPress ??
+    (value !== undefined && onValueChange && !disabled
+      ? () => onValueChange(!value)
+      : undefined);
+
+  if (rowOnPress) {
     return (
-      <Pressable style={rowStyle} onPress={onPress}>
+      <Pressable style={rowStyle} onPress={rowOnPress}>
         {content}
       </Pressable>
     );

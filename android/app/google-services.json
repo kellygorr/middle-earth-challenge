@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "648232041356",
+    "project_id": "middle-earth-challenge",
+    "storage_bucket": "middle-earth-challenge.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:648232041356:android:32a1f673de9b912ad734a9",
+        "android_client_info": {
+          "package_name": "com.middleearthchallenge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDVbHYGTolas8qjoVwiMjuV7BLlqRPl1U4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:648232041356:android:93c02e05cadb492fd734a9",
+        "android_client_info": {
+          "package_name": "com.middleearthchallenge.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDVbHYGTolas8qjoVwiMjuV7BLlqRPl1U4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

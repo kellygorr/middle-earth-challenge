@@ -12,6 +12,7 @@ import WelcomeModal from './src/screens/WelcomeModal';
 import SharedModal from './src/screens/SharedModal';
 import { useSettingsStore } from './src/stores/settingsStore';
 import { useSyncInterval } from './src/hooks/useSyncInterval';
+import { useFriendProgressSync } from './src/hooks/useFriendProgressSync';
 
 import { useInitializationStore } from './src/stores/initializationStore';
 import { database } from './src/services/database';
@@ -57,6 +58,7 @@ function App(): React.JSX.Element {
 
   // Set up periodic sync when health sync is enabled
   useSyncInterval();
+  useFriendProgressSync();
 
   const initFromDatabase = useProgressStore(state => state.initFromDatabase);
 
