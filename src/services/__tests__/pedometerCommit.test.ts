@@ -137,6 +137,9 @@ describe('commitPedometerRange', () => {
     expect(inserted.id).toBe('pedo_0');
     expect(inserted.source).toBe('pedometer');
     expect(inserted.saveId).toBe('default');
+    expect(inserted.steps).toBe(2000);
+    expect(inserted.miles).toBe(result.miles);
+    expect(inserted.miles).toBeGreaterThan(0);
     // Date is the window midpoint.
     expect(inserted.date).toBe(30_000);
 

@@ -19,9 +19,9 @@ import {
 } from '../../../services/trackingModeService';
 import { commitPedometerRange } from '../../../services/pedometerCommit';
 import Button from '../../Buttons/Button';
-import SectionHeader from '../SectionHeader';
 import AccessExpander, { AccessItem } from '../AccessExpander';
 import SettingsRef from '../../SettingsRef';
+import { StatusBadge } from '../../StatusBadge';
 import { SyncNowRow } from '../../SyncNowRow';
 import { PlusIcon } from '../../../assets/icons';
 import {
@@ -724,10 +724,16 @@ export default function SyncContentAndroid() {
     Linking.openSettings();
   };
 
+  const handleOpenOemBatterySettings = () => {
+    pedometerService.openOemBatterySettings().catch(error => {
+      console.warn('[SyncContentAndroid] open OEM revoke settings:', error);
+    });
+  };
+
   return (
     <View style={styles.sectionStack}>
+      <StatusBadge label="Syncing enabled" visible={syncEnabled} />
       <View>
-        <SectionHeader title="Sync options" />
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.introText]}
         >
@@ -996,14 +1002,14 @@ export default function SyncContentAndroid() {
                   styles.sectionText,
                 ]}
               >
-                Android has no single "revoke" action for the pedometer. Open
-                the app settings and turn off each grant you no longer want:
+                Android has no single "revoke" action for the pedometer. In app
+                settings, turn off each grant you no longer want:
                 {'\n'}• Permissions → Physical activity → Don't allow
                 {'\n'}• Battery → Optimized (removes background activity access)
-                {oemBatteryAffected
-                  ? "\n• Your device's battery manager (remove auto-start / background allowance)"
-                  : ''}
                 {'\n'}• Permissions → Notifications → Don't allow
+                {oemBatteryAffected && !oemBatteryDevPreview
+                  ? "\nThen remove the app's auto-start or background allowance in your device's battery manager."
+                  : ''}
               </Text>
               <View style={styles.revokeButtonRow}>
                 <Button
@@ -1014,6 +1020,16 @@ export default function SyncContentAndroid() {
                 >
                   Open app settings
                 </Button>
+                {oemBatteryAffected && !oemBatteryDevPreview && (
+                  <Button
+                    variant="outline"
+                    size="default"
+                    onPress={handleOpenOemBatterySettings}
+                    disabled={busy}
+                  >
+                    Open battery settings
+                  </Button>
+                )}
               </View>
             </View>
           )}
@@ -1120,7 +1136,9 @@ export default function SyncContentAndroid() {
 const styles = StyleSheet.create({
   revokeButtonRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-start',
+    gap: spacing.sm,
     marginTop: spacing.sm,
     marginBottom: spacing.xs,
   },

@@ -6,6 +6,8 @@
 
 export const SYNC_INTERVAL_MS = 30 * 1000; // 30 seconds between live syncs while foregrounded
 
+export const FRIEND_PROGRESS_SYNC_INTERVAL_MS = 2 * 60 * 1000;
+
 // Pedometer mode uses a **watermark-based** commit strategy: each
 // commit reads `getStepsBetween(lastSyncTimestamp, now)`, writes a
 // single DistanceEntry (if steps > 0), then advances the watermark to

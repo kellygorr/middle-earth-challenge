@@ -64,7 +64,11 @@ export interface Theme {
     buttonPressedInverted: string;
     // Success state
     successBg: string;
+    successBorder: string;
     successText: string;
+    // Empty state
+    emptyStateBg: string;
+    emptyStateText: string;
 
     // SVG layer colors (for colorized map mode)
     svgLegend: string;
@@ -162,8 +166,12 @@ export const classicTheme: Theme = {
     buttonPressed: 'rgba(107, 89, 67, 1)',
     buttonPressedInverted: '#EBE3D2',
     // Success state
-    successBg: '#F5EFE0',
-    successText: '#A0826D',
+    successBg: '#E8EEE9',
+    successBorder: '#9FADA3',
+    successText: '#3F5947',
+    // Empty state
+    emptyStateBg: '#F5EFE0',
+    emptyStateText: '#A0826D',
 
     // SVG layer colors
     ...svgLayerColors,
@@ -241,8 +249,12 @@ export const minimalistTheme: Theme = {
     buttonPressed: '#757575',
     buttonPressedInverted: '#EDEDED',
     // Success state
-    successBg: '#E0E0E0',
-    successText: '#757575',
+    successBg: '#E8EEE9',
+    successBorder: '#9FADA3',
+    successText: '#3F5947',
+    // Empty state
+    emptyStateBg: '#E0E0E0',
+    emptyStateText: '#757575',
 
     // SVG layer colors
     ...svgLayerColors,

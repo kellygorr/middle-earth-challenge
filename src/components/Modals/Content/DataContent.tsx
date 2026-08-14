@@ -7,6 +7,7 @@ import { spacing, borderRadius } from '../../../styles/global';
 import Button from '../../Buttons/Button';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
+import { friendProgressWorkflow } from '../../../services/friendProgressWorkflow';
 
 /**
  * DataContent - Content component for the Data modal.
@@ -21,6 +22,40 @@ export default function DataContent() {
   const hasSyncedData = distanceEntries.some(e => e.source !== 'manual');
   const hasManualData = distanceEntries.some(e => e.source === 'manual');
   const hasAnyData = distanceEntries.length > 0;
+  const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
+  const sharingDeletionPending = useSettingsStore(
+    state => state.sharingDeletionPending,
+  );
+  const hasSharedData = sharingEnabled || sharingDeletionPending;
+  const hasAllData = hasAnyData || hasSharedData;
+
+  const handleDeleteSharedData = async () => {
+    Alert.alert(
+      'Delete Shared Data',
+      'Delete your shared name and journey distance? Your local journey progress will not be changed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (sharingDeletionPending) {
+                await friendProgressWorkflow.retryPendingDeletion();
+              } else {
+                await friendProgressWorkflow.disableSharing();
+              }
+            } catch {
+              Alert.alert(
+                'Deletion Pending',
+                'Sharing is off. The app will keep only what it needs to retry deleting the cloud row.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
 
   // Delete synced data only
   const handleDeleteSyncedData = async () => {
@@ -79,13 +114,26 @@ export default function DataContent() {
   const handleDeleteAllProgress = async () => {
     Alert.alert(
       'Delete All Data',
-      'Do you want to delete all synced and manual data? This cannot be undone.',
+      'Delete all local journey data and any shared name and distance? This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete All',
           style: 'destructive',
           onPress: async () => {
+            if (hasSharedData) {
+              try {
+                if (sharingDeletionPending) {
+                  await friendProgressWorkflow.retryPendingDeletion();
+                } else {
+                  await friendProgressWorkflow.disableSharing();
+                }
+              } catch {
+                // Local deletion must still complete. The persisted pending
+                // marker keeps cloud cleanup retryable.
+              }
+            }
+
             // resetProgress() does a single setState + one SQL DELETE +
             // one miles snapshot write — no per-entry looping.
             await useProgressStore.getState().resetProgress();
@@ -148,8 +196,8 @@ export default function DataContent() {
               Delete synced data
             </Text>
             <Text style={[typographyThemed(theme).captionSecondary]}>
-              Remove all synced health data. This does not disconnect
-              syncing — future syncs will import data from this point forward.
+              Remove all synced health data. This does not disconnect syncing —
+              future syncs will import data from this point forward.
             </Text>
           </View>
           {hasSyncedData ? (
@@ -164,13 +212,13 @@ export default function DataContent() {
             <View
               style={[
                 styles.badge,
-                { backgroundColor: theme.colors.successBg },
+                { backgroundColor: theme.colors.emptyStateBg },
               ]}
             >
               <Text
                 style={[
                   typographyThemed(theme).captionPrimary,
-                  { color: theme.colors.successText },
+                  { color: theme.colors.emptyStateText },
                 ]}
               >
                 No data
@@ -207,16 +255,59 @@ export default function DataContent() {
             <View
               style={[
                 styles.badge,
-                { backgroundColor: theme.colors.successBg },
+                { backgroundColor: theme.colors.emptyStateBg },
               ]}
             >
               <Text
                 style={[
                   typographyThemed(theme).captionPrimary,
-                  { color: theme.colors.successText },
+                  { color: theme.colors.emptyStateText },
                 ]}
               >
                 No data
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Delete shared cloud data */}
+        <View
+          style={[
+            styles.contentRow,
+            styles.contentRowBorderBottom,
+            { borderBottomColor: theme.colors.divider },
+          ]}
+        >
+          <View style={styles.flex1}>
+            <Text style={typographyThemed(theme).bodyPrimary}>
+              Delete shared data
+            </Text>
+            <Text style={typographyThemed(theme).captionSecondary}>
+              Delete your shared name and distance and turn sharing off
+            </Text>
+          </View>
+          {hasSharedData ? (
+            <Button
+              onPress={handleDeleteSharedData}
+              variant="outline"
+              size="default"
+            >
+              {sharingDeletionPending ? 'Retry' : 'Delete'}
+            </Button>
+          ) : (
+            <View
+              style={[
+                styles.badge,
+                { backgroundColor: theme.colors.emptyStateBg },
+              ]}
+            >
+              <Text
+                style={[
+                  typographyThemed(theme).captionPrimary,
+                  { color: theme.colors.emptyStateText },
+                ]}
+              >
+                No shared data
               </Text>
             </View>
           )}
@@ -233,7 +324,7 @@ export default function DataContent() {
               syncing — future syncs will import data from this point forward.
             </Text>
           </View>
-          {hasAnyData ? (
+          {hasAllData ? (
             <Button
               onPress={handleDeleteAllProgress}
               variant="outline"
@@ -245,13 +336,13 @@ export default function DataContent() {
             <View
               style={[
                 styles.badge,
-                { backgroundColor: theme.colors.successBg },
+                { backgroundColor: theme.colors.emptyStateBg },
               ]}
             >
               <Text
                 style={[
                   typographyThemed(theme).captionPrimary,
-                  { color: theme.colors.successText },
+                  { color: theme.colors.emptyStateText },
                 ]}
               >
                 No data

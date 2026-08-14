@@ -36,6 +36,7 @@ import {
 import EmptyState from '../EmptyState';
 import EditEntryModal from '../EditEntryModal';
 import { TrackingOptions } from '../../TrackingOptions';
+import { StatusBadge } from '../../StatusBadge';
 import { useLivePedometerDelta } from '../../../hooks/useLivePedometerDelta';
 import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
 
@@ -48,12 +49,6 @@ const DAYS_PER_PAGE = 30;
 // in-progress branch so it shares layout with the health-sync
 // in-progress row.
 const LIVE_ENTRY_ID = '__live__';
-
-// Yellow used for the flashing "In progress" pill on live/uneditable
-// rows (pedometer live delta + latest health-sync row of the day).
-// Not theme-mapped: reads acceptably on both light and dark themes and
-// is only used here.
-const LIVE_FLASH_COLOR = '#F5A623';
 
 // Helper to get start of day timestamp
 const getStartOfDay = (timestamp: number): number => {
@@ -291,36 +286,6 @@ export default function DistanceContent() {
   // Animated rotation values for each day's chevron
   const rotationValues = useRef<Map<number, Animated.Value>>(new Map());
 
-  // Pulsing 0↔1 driver used by the "In progress" pill (pedometer live
-  // row + latest today-row of any health source). Loop runs only while
-  // at least one in-progress row is visible.
-  const liveFlash = useRef(new Animated.Value(0)).current;
-  const flashActive = showLiveRow || inProgressHealthIds.size > 0;
-  useEffect(() => {
-    if (!flashActive) {
-      liveFlash.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(liveFlash, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: false,
-        }),
-        Animated.timing(liveFlash, {
-          toValue: 0,
-          duration: 600,
-          useNativeDriver: false,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-    };
-  }, [flashActive, liveFlash]);
-
   // Get or create rotation value for a day
   const getRotationValue = useCallback(
     (dayKey: number, isExpanded: boolean) => {
@@ -517,25 +482,7 @@ export default function DistanceContent() {
           )}
           <View style={styles.listItemLeft}>
             {inProgress ? (
-              <Animated.Text
-                style={[
-                  typographyThemed(theme).bodyPrimary,
-                  styles.liveLabelText,
-                  styles.liveLabelInline,
-                  {
-                    color: liveFlash.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [theme.colors.textPrimary, LIVE_FLASH_COLOR],
-                    }),
-                    borderColor: liveFlash.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [theme.colors.textPrimary, LIVE_FLASH_COLOR],
-                    }),
-                  },
-                ]}
-              >
-                In progress
-              </Animated.Text>
+              <StatusBadge label="In progress" inProgress />
             ) : (
               <Text
                 style={[typographyThemed(theme).bodyPrimary, styles.entryTime]}
@@ -697,18 +644,6 @@ const styles = StyleSheet.create({
   liveIconSpacer: {
     width: iconButtonSizes.small,
     height: iconButtonSizes.small,
-  },
-  liveLabelText: {
-    borderWidth: 1,
-    borderRadius: 4,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 1,
-    textAlign: 'center',
-  },
-  // Constrain the pill so it hugs its content instead of stretching
-  // to the full width of the listItemLeft column.
-  liveLabelInline: {
-    alignSelf: 'flex-start',
   },
   liveCaption: {
     marginTop: spacing.xs,

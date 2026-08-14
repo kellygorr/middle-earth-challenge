@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
 import {
   GestureHandlerRootView,
@@ -33,6 +33,7 @@ import MiddleEarthMapSkia from '../components/MiddleEarthMapSkia';
 import Button, { InfoButton, TooltipButton } from '../components/Buttons';
 import DevView from '../components/DevView';
 import SyncIndicator from '../components/SyncIndicator';
+import FriendProgressMarkerLayer from '../components/FriendProgressMarkerLayer';
 
 import { spacing } from '../styles/global';
 import { formatDistance } from '../utils/date';
@@ -42,6 +43,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useInitializationStore } from '../stores/initializationStore';
 import { useInfoStore } from '../stores/infoStore';
 import { useProgressStore } from '../stores/progressStore';
+import { useFriendProgressStore } from '../stores/friendProgressStore';
 import checkpointsDataRaw from '../constants/checkpoints.json';
 import triviaDataRaw from '../constants/trivia.json';
 import { SVG_WIDTH, SVG_HEIGHT } from '../constants/gameConstants';
@@ -86,6 +88,10 @@ export default function MapScreen() {
   const labelSize = useSettingsStore(state => state.labelSize);
   const useMiles = useSettingsStore(state => state.useMiles);
   const trackingMode = useSettingsStore(state => state.trackingMode);
+  const friendProgressParticipants = useFriendProgressStore(
+    state => state.participants,
+  );
+  const [showFriendProgress, setShowFriendProgress] = useState(true);
 
   // Info store for checkpoint/trivia info
   const {
@@ -474,6 +480,19 @@ export default function MapScreen() {
               openModal();
             }}
           />
+          {showFriendProgress && (
+            <FriendProgressMarkerLayer
+              participants={friendProgressParticipants}
+              uniformScale={uniformScale}
+              mapOffsetX={mapOffsetX}
+              mapOffsetY={mapOffsetY}
+              centerX={width / 2}
+              centerY={height / 2}
+              translateX={translateX}
+              translateY={translateY}
+              scale={scale}
+            />
+          )}
         </View>
       </GestureDetector>
 
@@ -649,6 +668,31 @@ export default function MapScreen() {
                 Labels
               </Button>
             </Animated.View>
+
+            {friendProgressParticipants.length > 0 && (
+              <Animated.View style={labelsEnterStyle}>
+                <Button
+                  onPress={() => {
+                    clearStickyInfo();
+                    setShowFriendProgress(current => !current);
+                  }}
+                  variant="primary"
+                  type="label"
+                  size="small"
+                  textSize={
+                    labelSize === 'small'
+                      ? 'small'
+                      : labelSize === 'large'
+                      ? 'large'
+                      : 'default'
+                  }
+                  hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
+                  isLabelButton
+                >
+                  Friends
+                </Button>
+              </Animated.View>
+            )}
           </View>
         </View>
 

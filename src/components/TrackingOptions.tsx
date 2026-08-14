@@ -111,7 +111,7 @@ export function TrackingOptions({
             ]}
           >
             {devMode
-              ? 'Dev mode is enabled. Tap to disable'
+              ? 'Dev mode is enabled'
               : 'Not ready to commit? Explore the map in dev mode'}
           </Text>
         </Pressable>

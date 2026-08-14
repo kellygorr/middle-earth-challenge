@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Switch,
   Pressable,
-  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
@@ -19,9 +18,10 @@ import {
 import Button, { IconButton } from '../../Buttons';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
+import ToggleRow from '../ToggleRow';
 import SyncErrorBanner from '../../SyncErrorBanner';
 import { SyncNowRow } from '../../SyncNowRow';
-import { SyncIcon, DevModeIcon, DataIcon } from '../../../assets/icons';
+import { SyncIcon, DataIcon, ChatIcon } from '../../../assets/icons';
 import { useUIStore } from '../../../stores/uiStore';
 
 /**
@@ -53,9 +53,20 @@ export default function SettingsContent() {
   const syncProvider = useSettingsStore(state => state.syncProvider);
   const trackingMode = useSettingsStore(state => state.trackingMode);
   const lastSyncTimestamp = useSettingsStore(state => state.lastSyncTimestamp);
+  const lastSyncDate = lastSyncTimestamp ? new Date(lastSyncTimestamp) : null;
+  const today = new Date();
+  const lastSyncWasToday =
+    lastSyncDate !== null &&
+    lastSyncDate.getFullYear() === today.getFullYear() &&
+    lastSyncDate.getMonth() === today.getMonth() &&
+    lastSyncDate.getDate() === today.getDate();
   const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
   const setLiveSyncEnabled = useSettingsStore(
     state => state.setLiveSyncEnabled,
+  );
+  const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
+  const sharingDeletionPending = useSettingsStore(
+    state => state.sharingDeletionPending,
   );
   const pushModal = useUIStore(state => state.pushModal);
   // Mirror SyncNowRow's internal guard so the wrapper's top border does not
@@ -153,7 +164,8 @@ export default function SettingsContent() {
         </View>
 
         {/* Map Colors */}
-        <View
+        <Pressable
+          onPress={() => setColorizeMap(!colorizeMap)}
           style={[
             styles.contentRow,
             styles.contentRowSpaceBetween,
@@ -173,10 +185,11 @@ export default function SettingsContent() {
             }}
             thumbColor={theme.colors.surface}
           />
-        </View>
+        </Pressable>
 
         {/* Subtle map labels */}
-        <View
+        <Pressable
+          onPress={() => setReducedMapTitles(!reducedMapTitles)}
           style={[
             styles.contentRow,
             styles.contentRowSpaceBetween,
@@ -196,10 +209,13 @@ export default function SettingsContent() {
             }}
             thumbColor={theme.colors.surface}
           />
-        </View>
+        </Pressable>
 
         {/* Distance Units */}
-        <View style={[styles.contentRow, styles.contentRowSpaceBetween]}>
+        <Pressable
+          onPress={() => setUseMiles(!useMiles)}
+          style={[styles.contentRow, styles.contentRowSpaceBetween]}
+        >
           <Text style={[typographyThemed(theme).bodyPrimary, styles.flex1]}>
             Kilometers/Miles
           </Text>
@@ -212,7 +228,7 @@ export default function SettingsContent() {
             }}
             thumbColor={theme.colors.surface}
           />
-        </View>
+        </Pressable>
       </Section>
 
       {/* Health Data Sync */}
@@ -240,28 +256,25 @@ export default function SettingsContent() {
             style={styles.flex1}
             onPress={() => pushModal({ type: 'sync' })}
           >
-            {syncEnabled ? (
-              <>
-                <Text style={[typographyThemed(theme).bodyPrimary]}>
-                  Health sync enabled. Tap to manage sync options
-                </Text>
-                {lastSyncTimestamp && (
-                  <Text style={[typographyThemed(theme).captionSecondary]}>
-                    {`Last synced: ${new Date(lastSyncTimestamp).toLocaleString(
-                      undefined,
-                      {
+            <Text style={[typographyThemed(theme).bodyPrimary]}>
+              Manage health syncing
+            </Text>
+            {syncEnabled && lastSyncDate ? (
+              <Text style={[typographyThemed(theme).captionSecondary]}>
+                {`Last synced: ${
+                  lastSyncWasToday
+                    ? `Today, ${lastSyncDate.toLocaleTimeString(undefined, {
+                        timeStyle: 'short',
+                      })}`
+                    : lastSyncDate.toLocaleString(undefined, {
                         dateStyle: 'short',
                         timeStyle: 'short',
-                      },
-                    )}`}
-                  </Text>
-                )}
-              </>
+                      })
+                }`}
+              </Text>
             ) : (
-              <Text style={[typographyThemed(theme).bodyPrimary]}>
-                {Platform.OS === 'android'
-                  ? 'Sync with health app or pedometer'
-                  : 'Sync with health app'}
+              <Text style={[typographyThemed(theme).captionSecondary]}>
+                {syncEnabled ? 'Enabled' : 'Disabled'}
               </Text>
             )}
           </Pressable>
@@ -285,7 +298,8 @@ export default function SettingsContent() {
             there's nothing to "live sync" from, so hiding keeps the UI
             honest and avoids a disabled-toggle dead-end. */}
         {showLiveSync && (
-          <View
+          <Pressable
+            onPress={() => setLiveSyncEnabled(!liveSyncEnabled)}
             style={[
               styles.contentRow,
               styles.contentRowSpaceBetween,
@@ -310,45 +324,50 @@ export default function SettingsContent() {
               }}
               thumbColor={theme.colors.surface}
             />
-          </View>
+          </Pressable>
         )}
+      </Section>
+
+      <Section>
+        <SectionHeader title="Connect with other Hobbits" />
+        <Text
+          style={[
+            typographyThemed(theme).bodyPrimary,
+            styles.sectionDescription,
+          ]}
+        >
+          Share your journey progress with friends and see their progress on
+          your map.
+        </Text>
+        <ToggleRow
+          label="Connect with friends"
+          caption={
+            sharingDeletionPending
+              ? 'Sharing off - deletion pending'
+              : sharingEnabled
+              ? 'Sharing on'
+              : 'Sharing off'
+          }
+          onPress={() => pushModal({ type: 'friend-progress' })}
+          icon={
+            <IconButton
+              icon={<ChatIcon size={iconSizes.medium} />}
+              variant={sharingEnabled ? 'brand' : 'outline'}
+            />
+          }
+        />
       </Section>
 
       {/* Developer Settings */}
       <Section>
         <SectionHeader title="Developer settings" />
 
-        <Pressable
-          style={[
-            styles.contentRow,
-            styles.contentRowSpaceBetween,
-            styles.contentRowWithGap,
-          ]}
-          onPress={() => setDevMode(!devMode)}
-        >
-          <View style={styles.iconButtonContainer}>
-            <IconButton
-              icon={<DevModeIcon size={iconSizes.medium} />}
-              variant={devMode ? 'brand' : 'outline'}
-            />
-          </View>
-          <View style={styles.flex1}>
-            <Text style={[typographyThemed(theme).captionSecondary]}>
-              {devMode
-                ? 'Dev mode is enabled. Tap to disable'
-                : 'Not ready to commit? Take a look at the map in dev mode'}
-            </Text>
-          </View>
-          <Switch
-            value={devMode}
-            onValueChange={setDevMode}
-            trackColor={{
-              false: theme.colors.switchInactive,
-              true: theme.colors.buttonPrimary,
-            }}
-            thumbColor={theme.colors.surface}
-          />
-        </Pressable>
+        <ToggleRow
+          label="Dev mode"
+          caption="Not ready to commit? Take a look at the map in dev mode."
+          value={devMode}
+          onValueChange={setDevMode}
+        />
       </Section>
 
       {/* Data Management */}
@@ -372,8 +391,8 @@ export default function SettingsContent() {
             ]}
           >
             Your distance data is stored locally on your device and is only used
-            to calculate your journey progress. No data is sent to external
-            servers.
+            to calculate your journey progress. Health records and activity
+            details remain on this device.
           </Text>
         </View>
 
@@ -411,6 +430,9 @@ const styles = StyleSheet.create({
   themeButtons: {
     flexDirection: 'row',
     gap: spacing.md,
+  },
+  sectionDescription: {
+    marginBottom: spacing.sm,
   },
   themeButtonWrapper: {
     flex: 1,

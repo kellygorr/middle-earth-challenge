@@ -12,6 +12,7 @@ import { spacing, borderRadius, iconSizes } from '../styles/global';
 import { typographyThemed } from '../styles/typography';
 import { useProgressStore } from '../stores/progressStore';
 import type { SyncError } from '../stores/progressStore';
+import { useFriendProgressStore } from '../stores/friendProgressStore';
 
 import Button, { IconButton } from './Buttons';
 import { DevModeIcon } from '../assets/icons';
@@ -37,6 +38,12 @@ export default function DevView({
   const currentMiles = testOverrideMiles ?? realMiles;
   const setDevMode = useSettingsStore(state => state.setDevMode);
   const useMiles = useSettingsStore(state => state.useMiles);
+  const fakeParticipantsEnabled = useFriendProgressStore(
+    state => state.fakeParticipantsEnabled,
+  );
+  const setFakeParticipantsEnabled = useFriendProgressStore(
+    state => state.setFakeParticipantsEnabled,
+  );
   const [testMiles, setTestMiles] = useState('');
   const inputRef = useRef<TextInput>(null);
 
@@ -147,6 +154,15 @@ export default function DevView({
         />
       </View>
       <View style={[styles.row, styles.rowRight]}>
+        {__DEV__ && (
+          <Button
+            onPress={() => setFakeParticipantsEnabled(!fakeParticipantsEnabled)}
+            variant={fakeParticipantsEnabled ? 'brand' : 'outline'}
+            size="default"
+          >
+            {fakeParticipantsEnabled ? 'Fake sharing on' : 'Fake sharing off'}
+          </Button>
+        )}
         <Button
           onPress={toggleFakeSync}
           variant={fakeSyncActive ? 'primary' : 'outline'}
@@ -335,6 +351,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rowRight: {
+    gap: spacing.sm,
     justifyContent: 'flex-end',
   },
   rowCenter: {

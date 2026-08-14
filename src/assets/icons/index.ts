@@ -1,4 +1,5 @@
 export { default as ChevronIcon } from './ChevronIcon';
+export { default as ChatIcon } from './ChatIcon';
 export { default as CloseIcon } from './CloseIcon';
 export { default as DataIcon } from './DataIcon';
 export { default as DevModeIcon } from './DevModeIcon';
@@ -10,5 +11,6 @@ export { default as RecenterIcon } from './RecenterIcon';
 export { default as ResetIcon } from './ResetIcon';
 export { default as SettingsIcon } from './SettingsIcon';
 export { default as StatsIcon } from './StatsIcon';
+export { default as StarIcon } from './StarIcon';
 export { default as SyncIcon } from './SyncIcon';
 export { default as TrashIcon } from './TrashIcon';

@@ -61,6 +61,26 @@ jest.mock('@op-engineering/op-sqlite', () => ({
   })),
 }));
 
+jest.mock('@react-native-firebase/auth', () => ({
+  getAuth: jest.fn(() => ({ currentUser: null })),
+  signInAnonymously: jest.fn(),
+  signOut: jest.fn(),
+}));
+
+jest.mock('@react-native-firebase/firestore', () => ({
+  collection: jest.fn(),
+  deleteDoc: jest.fn(),
+  doc: jest.fn(),
+  documentId: jest.fn(),
+  getDocs: jest.fn(),
+  getFirestore: jest.fn(),
+  query: jest.fn(),
+  serverTimestamp: jest.fn(),
+  setDoc: jest.fn(),
+  updateDoc: jest.fn(),
+  where: jest.fn(),
+}));
+
 // Mock Skia
 jest.mock('@shopify/react-native-skia', () => ({
   Canvas: 'Canvas',
