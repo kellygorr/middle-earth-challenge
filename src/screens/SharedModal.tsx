@@ -122,53 +122,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
     translateDistance: -spacing.lg,
   });
 
-  // Handle dismiss - closes all modals and commits pending changes
-  const handleDismiss = async (afterCallback?: () => void) => {
-    // Commit pending miles if any
-    const uiState = useUIStore.getState();
-    if (
-      uiState.pendingEntries.length > 0 ||
-      uiState.pendingDeletions.length > 0
-    ) {
-      const progressState = useProgressStore.getState();
-      const baseMiles = progressState.miles ?? 0;
-      const pendingTotal = uiState.pendingEntries.reduce(
-        (sum, e) => sum + (e?.miles ?? 0),
-        0,
-      );
-      const deletionTotal = uiState.pendingDeletions.reduce(
-        (sum, e) => sum + (e?.miles ?? 0),
-        0,
-      );
-
-      // Apply deletions
-      for (const d of uiState.pendingDeletions) {
-        await progressState.removeDistanceEntry(d.id);
-      }
-
-      // Apply additions
-      for (let idx = 0; idx < uiState.pendingEntries.length; idx++) {
-        const e = uiState.pendingEntries[idx];
-        const persisted = { ...e, id: `manual_${Date.now()}_${idx}` };
-        await progressState.addDistanceEntry(persisted);
-      }
-
-      // Update miles
-      if (pendingTotal > 0 || deletionTotal > 0) {
-        const newMiles = baseMiles + pendingTotal - deletionTotal;
-        progressState.setMiles(newMiles);
-        await progressState.persistMilesSnapshot();
-      }
-
-      if (progressState.testOverrideMiles !== null) {
-        progressState.clearTestOverride();
-      }
-    }
-
-    // Reset pending state
-    uiState.resetPendingMiles();
-
-    // Schedule callback and close modal
+  const handleDismiss = (afterCallback?: () => void) => {
     // Note: dismiss() sets callback ref, closeAllModals triggers exit animation
     // The callback will be called after exit animation completes
     dismiss(afterCallback);
@@ -176,7 +130,17 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
   };
 
   // Handle back navigation
+  const backLockRef = useRef(false);
+
+  // Two presses can land before the pop re-renders, which would skip a level.
+  useEffect(() => {
+    backLockRef.current = false;
+  }, [modalStack.length]);
+
   const handleBack = () => {
+    if (backLockRef.current) return;
+    backLockRef.current = true;
+
     // If going back from an info modal to another info modal, sync infoStore
     const stack = useUIStore.getState().modalStack;
     if (stack.length >= 2) {
@@ -380,6 +344,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
                 onPress={() => handleDismiss()}
                 variant="transparent"
                 hitSlop={16}
+                accessibilityLabel="Close"
               />
             </View>
           </View>

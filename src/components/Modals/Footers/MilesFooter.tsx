@@ -13,6 +13,7 @@ import { typographyThemed } from '../../../styles/typography';
 import { spacing, borderRadius } from '../../../styles/global';
 import Button from '../../Buttons';
 import { useUIStore } from '../../../stores/uiStore';
+import { useProgressStore } from '../../../stores/progressStore';
 import { DistanceEntry } from '../../../types';
 import { milesToSteps, stepsToMiles } from '../../../utils/stride';
 import { kmToMiles } from '../../../utils/date';
@@ -43,13 +44,18 @@ export default function MilesFooter() {
 
   // Pending state from uiStore
   const editingEntry = useUIStore(state => state.editingEntry);
-  const addPendingEntry = useUIStore(state => state.addPendingEntry);
+  const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
+  const clearTestOverride = useProgressStore(state => state.clearTestOverride);
+  const addLockRef = useRef(false);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const delta = parseFloat(addInput);
     if (isNaN(delta) || delta <= 0) {
       return;
     }
+    if (addLockRef.current) return;
+    addLockRef.current = true;
+
     const saveId = DEFAULT_SAVE_ID;
     const timestamp = Date.now();
 
@@ -57,9 +63,12 @@ export default function MilesFooter() {
     if (addMode === 'steps') {
       // Steps are discrete; drop any decimal portion the user typed.
       const inputSteps = Math.floor(delta);
-      if (inputSteps <= 0) return;
+      if (inputSteps <= 0) {
+        addLockRef.current = false;
+        return;
+      }
       entry = {
-        id: `pending_${Date.now()}`,
+        id: `manual_${timestamp}`,
         saveId,
         date: timestamp,
         miles: stepsToMiles(inputSteps),
@@ -71,7 +80,7 @@ export default function MilesFooter() {
       // is always miles.
       const inputMiles = useMiles ? delta : kmToMiles(delta);
       entry = {
-        id: `pending_${Date.now()}`,
+        id: `manual_${timestamp}`,
         saveId,
         date: timestamp,
         miles: inputMiles,
@@ -79,10 +88,16 @@ export default function MilesFooter() {
         source: 'manual-distance',
       };
     }
-    addPendingEntry(entry);
-    setAddInput('');
-    inputRef.current?.blur();
-    Keyboard.dismiss();
+
+    try {
+      await addDistanceEntry(entry);
+      clearTestOverride();
+      setAddInput('');
+      inputRef.current?.blur();
+      Keyboard.dismiss();
+    } finally {
+      addLockRef.current = false;
+    }
   };
 
   const switchMode = (mode: AddMode) => {

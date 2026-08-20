@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { DistanceEntry } from '../types';
+import { getStartOfDay, differenceInCalendarDays } from '../utils/date';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 
@@ -54,13 +55,6 @@ export interface Stats {
   };
 }
 
-// Helper: Get start of day for a timestamp
-const getStartOfDay = (timestamp: number): number => {
-  const date = new Date(timestamp);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-};
-
 // Helper: Calculate streaks from sorted entries
 const calculateStreaks = (
   entries: DistanceEntry[],
@@ -82,12 +76,10 @@ const calculateStreaks = (
   let currentStreak = 1;
   let tempStreak = 1;
 
-  const ONE_DAY = 24 * 60 * 60 * 1000;
   const today = getStartOfDay(Date.now());
 
   for (let i = 1; i < sortedDays.length; i++) {
-    const diff = sortedDays[i] - sortedDays[i - 1];
-    if (diff === ONE_DAY) {
+    if (differenceInCalendarDays(sortedDays[i], sortedDays[i - 1]) === 1) {
       tempStreak++;
     } else {
       longestStreak = Math.max(longestStreak, tempStreak);
@@ -98,12 +90,13 @@ const calculateStreaks = (
 
   // Calculate current streak (consecutive days ending today or yesterday)
   const lastDay = sortedDays[sortedDays.length - 1];
-  if (lastDay !== today && lastDay !== today - ONE_DAY) {
+  const daysSinceLast = differenceInCalendarDays(today, lastDay);
+  if (daysSinceLast !== 0 && daysSinceLast !== 1) {
     currentStreak = 0;
   } else {
     currentStreak = 1;
     for (let i = sortedDays.length - 2; i >= 0; i--) {
-      if (sortedDays[i + 1] - sortedDays[i] === ONE_DAY) {
+      if (differenceInCalendarDays(sortedDays[i + 1], sortedDays[i]) === 1) {
         currentStreak++;
       } else {
         break;
@@ -292,7 +285,7 @@ export const useStatsStore = create<StatsStore>(() => ({
     const dayStartNow = getStartOfDay(now.getTime());
     const totalDays = Math.max(
       1,
-      Math.floor((dayStartNow - dayStartFirst) / (24 * 60 * 60 * 1000)) + 1,
+      differenceInCalendarDays(dayStartNow, dayStartFirst) + 1,
     );
     const averageMilesPerDay =
       totalDays > 0 ? Math.round((miles / totalDays) * 10) / 10 : 0;

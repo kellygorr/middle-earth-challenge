@@ -32,6 +32,7 @@ import {
   formatDateLabel,
   formatTime,
   formatDistance,
+  getStartOfDay,
 } from '../../../utils/date';
 import EmptyState from '../EmptyState';
 import EditEntryModal from '../EditEntryModal';
@@ -50,13 +51,6 @@ const DAYS_PER_PAGE = 30;
 // in-progress branch so it shares layout with the health-sync
 // in-progress row.
 const LIVE_ENTRY_ID = '__live__';
-
-// Helper to get start of day timestamp
-const getStartOfDay = (timestamp: number): number => {
-  const date = new Date(timestamp);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-};
 
 /**
  * Convert a stored miles value into the string shown in the edit input,
@@ -127,25 +121,12 @@ export default function DistanceContent() {
   // Store state
   const distanceEntries = useProgressStore(state => state.distanceEntries);
 
-  // Pending state from uiStore
-  const pendingEntries = useUIStore(state => state.pendingEntries);
-  const pendingDeletions = useUIStore(state => state.pendingDeletions);
   const editingEntry = useUIStore(state => state.editingEntry);
   const setEditingEntry = useUIStore(state => state.setEditingEntry);
 
   // Pagination state
   const [visibleDaysCount, setVisibleDaysCount] = useState(DAYS_PER_PAGE);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-
-  // Combine and filter entries
-  const combinedEntries = useMemo(() => {
-    return [
-      ...(distanceEntries || []).filter(
-        d => !pendingDeletions.some(pd => pd.id === d.id),
-      ),
-      ...pendingEntries,
-    ];
-  }, [distanceEntries, pendingEntries, pendingDeletions]);
 
   // Group ALL entries by day (newest first) with total miles / steps
   const allDayGroups = useMemo(() => {
@@ -154,7 +135,7 @@ export default function DistanceContent() {
       { entries: DistanceEntry[]; totalMiles: number; totalSteps: number }
     >();
 
-    for (const entry of combinedEntries) {
+    for (const entry of distanceEntries || []) {
       const dayKey = getStartOfDay(entry.date as number);
       const group = groups.get(dayKey) || {
         entries: [],
@@ -192,7 +173,7 @@ export default function DistanceContent() {
           totalSteps: group.totalSteps,
         }),
       );
-  }, [combinedEntries]);
+  }, [distanceEntries]);
 
   // Paginated day groups (only show visibleDaysCount)
   const dayGroups = useMemo(() => {

@@ -12,8 +12,8 @@
  *   [🗑]                                 [ Save ]
  *
  * All edit state (input text, chosen date, source entry) lives in
- * `useUIStore` so both this modal and the list stay in sync. The mode
- * toggle (miles/km vs steps) is local — nothing commits until Save.
+ * `useUIStore` so both this modal and the list stay in sync. Saving or
+ * deleting writes straight to the database.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -31,6 +31,7 @@ import {
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useProgressStore } from '../../stores/progressStore';
 import { typographyThemed } from '../../styles/typography';
 import { spacing, borderRadius, shadows } from '../../styles/global';
 import Button, { IconButton } from '../Buttons';
@@ -62,18 +63,22 @@ export default function EditEntryModal() {
   const editingEntry = useUIStore(state => state.editingEntry);
   const editDate = useUIStore(state => state.editDate);
   const setEditingEntry = useUIStore(state => state.setEditingEntry);
-  const updatePendingEntry = useUIStore(state => state.updatePendingEntry);
-  const removePendingEntry = useUIStore(state => state.removePendingEntry);
-  const markForDeletion = useUIStore(state => state.markForDeletion);
-  const addPendingEntry = useUIStore(state => state.addPendingEntry);
+  const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
+  const removeDistanceEntry = useProgressStore(
+    state => state.removeDistanceEntry,
+  );
+  const clearTestOverride = useProgressStore(state => state.clearTestOverride);
 
   const [editMode, setEditMode] = useState<EditMode>('distance');
   const [editInput, setEditInput] = useState('');
   const inputRef = useRef<TextInput>(null);
+  // Save and delete stay tappable until the store-driven close renders.
+  const actionLockRef = useRef(false);
 
   // Reset local state whenever a new entry is opened for edit.
   useEffect(() => {
     if (editingEntry) {
+      actionLockRef.current = false;
       // Step-based sources open in steps mode so small increments like
       // 15 ft aren't rounded to 0 in the distance field. This covers
       // native pedometer / platform health data plus manual entries the
@@ -131,7 +136,7 @@ export default function EditEntryModal() {
     setEditingEntry(editingEntry, editingEntry.date as number);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editingEntry || editDate === null) return;
     const inputValue = parseFloat(editInput);
     if (isNaN(inputValue) || inputValue <= 0) return;
@@ -148,39 +153,31 @@ export default function EditEntryModal() {
       newSteps = milesToSteps(newMiles);
     }
 
-    if (String(editingEntry.id).startsWith('pending_')) {
-      updatePendingEntry(editingEntry.id, {
-        miles: newMiles,
-        steps: newSteps,
-        date: editDate,
-      });
-    } else {
-      // Existing entries can't be mutated in place — mark the original
-      // for deletion and add a pending replacement carrying the same
-      // id (and original source) so downstream consumers see it as an
-      // update.
-      markForDeletion(editingEntry);
-      const updatedEntry: DistanceEntry = {
-        id: editingEntry.id,
-        saveId: editingEntry.saveId,
-        date: editDate,
-        miles: newMiles,
-        steps: newSteps,
-        source: editingEntry.source || 'manual',
-      };
-      addPendingEntry(updatedEntry);
-    }
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
 
+    // Same id, so the write is an upsert that replaces the row in place.
+    const updatedEntry: DistanceEntry = {
+      id: editingEntry.id,
+      saveId: editingEntry.saveId,
+      date: editDate,
+      miles: newMiles,
+      steps: newSteps,
+      source: editingEntry.source || 'manual',
+    };
+
+    await addDistanceEntry(updatedEntry);
+    clearTestOverride();
     closeModal();
   };
 
-  const performDelete = () => {
+  const performDelete = async () => {
     if (!editingEntry) return;
-    if (String(editingEntry.id).startsWith('pending_')) {
-      removePendingEntry(editingEntry.id);
-    } else {
-      markForDeletion(editingEntry);
-    }
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
+
+    await removeDistanceEntry(editingEntry.id);
+    clearTestOverride();
     closeModal();
   };
 

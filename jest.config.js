@@ -7,5 +7,6 @@ module.exports = {
     // Mock static assets
     '\\.svg$': '<rootDir>/__mocks__/svgMock.js',
   },
+  globalSetup: '<rootDir>/jest.globalSetup.js',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
 };

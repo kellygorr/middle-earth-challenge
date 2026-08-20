@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -66,6 +66,15 @@ interface ActionError {
 
 let draftAffinity: FriendAffinity | null = null;
 
+const formatAge = (ms: number): string => {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+};
+
 export default function FriendProgressContent() {
   const theme = useTheme();
   const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
@@ -82,6 +91,11 @@ export default function FriendProgressContent() {
   const fetchParticipants = useFriendProgressStore(
     state => state.fetchParticipants,
   );
+  const fetchError = useFriendProgressStore(state => state.fetchError);
+  const lastFetchedAt = useFriendProgressStore(state => state.lastFetchedAt);
+  const participantCount = useFriendProgressStore(
+    state => state.participants.length,
+  );
   const savedNameParts = splitSharedDisplayName(savedDisplayName);
   const [firstName, setFirstName] = useState(savedNameParts.firstName);
   const [fantasySurname, setFantasySurname] = useState(
@@ -97,6 +111,7 @@ export default function FriendProgressContent() {
   );
   const [isWorking, setIsWorking] = useState(false);
   const [isEnablingSharing, setIsEnablingSharing] = useState(false);
+  const actionInFlightRef = useRef(false);
   const [actionError, setActionError] = useState<ActionError | null>(null);
   const displayName = combineSharedDisplayName(firstName, fantasySurname);
   const isNameValid = displayName.length > 0;
@@ -104,6 +119,22 @@ export default function FriendProgressContent() {
   const profileChanged = nameChanged || affinity !== savedAffinity;
   const showSharingStatus =
     sharingEnabled || provisioningPending || isEnablingSharing;
+
+  // Cached markers keep rendering after a failed refresh, so say so rather
+  // than letting old positions read as current.
+  const freshnessLabel = (() => {
+    if (!sharingEnabled || provisioningPending) return null;
+    if (fetchError) {
+      return lastFetchedAt
+        ? `Couldn't refresh — showing positions from ${formatAge(
+            Date.now() - lastFetchedAt,
+          )}`
+        : "Couldn't load friend progress";
+    }
+    if (lastFetchedAt === null) return null;
+    if (participantCount === 0) return null;
+    return `Updated ${formatAge(Date.now() - lastFetchedAt)}`;
+  })();
 
   useEffect(() => {
     if (
@@ -123,6 +154,10 @@ export default function FriendProgressContent() {
     action: () => Promise<void>,
     errorTitle: string,
   ) => {
+    // The disabling state only takes effect on the next render, so a second
+    // tap in the same frame would otherwise publish or delete twice.
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
     setIsWorking(true);
     setActionError(null);
     try {
@@ -134,6 +169,7 @@ export default function FriendProgressContent() {
       });
     } finally {
       setIsWorking(false);
+      actionInFlightRef.current = false;
     }
   };
 
@@ -182,6 +218,16 @@ export default function FriendProgressContent() {
           reserveSpace
           style={styles.sharingStatus}
         />
+        {freshnessLabel && (
+          <Text
+            style={[
+              typographyThemed(theme).captionSecondary,
+              styles.freshnessLabel,
+            ]}
+          >
+            {freshnessLabel}
+          </Text>
+        )}
         <View style={styles.formStack}>
           <View style={styles.fieldStack}>
             <Text style={typographyThemed(theme).captionPrimaryBold}>
@@ -481,6 +527,11 @@ const styles = StyleSheet.create({
   },
   sharingStatusSection: {
     marginTop: spacing.sm,
+  },
+  freshnessLabel: {
+    alignSelf: 'center',
+    marginBottom: spacing.sm,
+    textAlign: 'center',
   },
   affinityOptions: {
     flexDirection: 'row',

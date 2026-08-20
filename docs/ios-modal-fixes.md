@@ -76,7 +76,10 @@ const handleOpenNewModal = () => {
 
 - Settings → Welcome (Home button): `SettingsModal.tsx` `handleHomePress`
 - Welcome → Sync (Reconnect button): `WelcomeModal.tsx` `handleReconnect`
-- InfoModal → Miles (Add miles button): `TrackingOptions.tsx` manual add button
+
+This no longer applies to modals inside the shared stack. `SharedModal` renders
+the top of `modalStack` inside a single native `Modal`, so pushing a screen
+never opens a second one and needs no delay.
 
 ### 4. Modal Overlay Pattern (No Delay Needed)
 

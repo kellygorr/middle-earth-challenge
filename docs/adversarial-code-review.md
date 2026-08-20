@@ -484,14 +484,15 @@ abuse/quota tests, and release-signing CI verification.
 ### Batch 4: Repair user-facing correctness
 
 - [x] Fix manual-source classification in Manage Data.
-- [ ] Add one-shot guards to SharedModal dismiss and EditEntry save/delete. The
+- [x] Add one-shot guards to SharedModal dismiss and EditEntry save/delete. The
       sharing enable path was also observed running twice concurrently on a
       single tap, writing the same document twice a millisecond apart, so this
-      guard is needed beyond the modal surfaces.
-- [ ] Replace the dead checkpoint-to-Distance return path with tested stack
+      guard is needed beyond the modal surfaces. (Dismissal no longer needs a
+      guard — the staging buffer it protected was removed.)
+- [x] Replace the dead checkpoint-to-Distance return path with tested stack
       navigation.
-- [ ] Surface stale/offline Friend Progress state.
-- [ ] Fix DST calendar arithmetic in streaks and averages.
+- [x] Surface stale/offline Friend Progress state.
+- [x] Fix DST calendar arithmetic in streaks and averages.
 
 **Validation:** DataContent source tests, modal interaction tests, friend stale
 state tests, and spring/fall DST tests.
@@ -538,14 +539,18 @@ tests, and CI schema parity checks.
 
 ### Medium: Streaks and calendar-day averages break across daylight saving time
 
-- **File:** `src/stores/statsStore.ts:80-108,288-293`
-- **Impact:** Consecutive local midnights are compared using an exact 24-hour
-  millisecond constant. Across spring-forward they are 23 hours and across
-  fall-back they are 25 hours, so valid streaks can break and inclusive day
-  counts can be off by one. A direct `America/Los_Angeles` check produced a
-  23-hour midnight difference and a two-day range calculated as one day.
-- **Suggested fix:** Compare local calendar date parts or advance dates with
-  `setDate`, rather than dividing or comparing elapsed milliseconds.
+- [x] **Resolved.** Added `differenceInCalendarDays`, which rounds the gap
+  between two local midnights, and used it for streak continuity, the
+  today/yesterday check, and the inclusive `totalDays` count. The 24-hour
+  constant is gone.
+- **Testing note:** the first version of the DST tests passed against the
+  unfixed code. Two reasons — the dates were wrong (the clocks move *during*
+  2026-03-08, so the 23-hour gap is 03-08 → 03-09, not 03-07 → 03-08), and
+  `process.env.TZ` set in `beforeAll` has no effect once the date cache is
+  warm. Fixed by pinning the zone in `jest.globalSetup.js` and adding a
+  precondition test asserting the 23h/25h gaps actually exist, so the suite
+  fails loudly on a UTC machine instead of passing vacuously.
+- **File:** `src/stores/statsStore.ts`, `src/stores/__tests__/statsStore.test.ts`
 
 ### Low: Manual entry inputs accept non-finite values
 
@@ -714,16 +719,16 @@ tests, and CI schema parity checks.
 
 ### Medium: Failed friend fetches leave stale map data with no visible state
 
-- **Files:** `src/stores/friendProgressStore.ts:103-127`,
-  `src/hooks/useFriendProgressSync.ts:20-37`,
-  `src/components/FriendProgressMarkerLayer.tsx:143-216`
-- **Impact:** A failed refresh retains cached participants and sets
-  `fetchError`, but the hook only logs the error and no component consumes
-  `fetchError` or a last-success time. Users continue seeing old positions as
-  if current, despite the design requiring offline/stale handling.
-- **Suggested fix:** Track last successful fetch and expose a small stale/offline
-  state while retaining cached markers. Clear it after a successful cycle and
-  add a component-level recovery test.
+- [x] **Resolved.** `friendProgressStore` now records `lastFetchedAt` on every
+  successful fetch and leaves it untouched on failure, so cached participants
+  can be reported with their real age. `FriendProgressContent` shows "Updated
+  Xm ago" normally and "Couldn't refresh — showing positions from Xm ago" when
+  `fetchError` is set with cached rows present, falling back to "Couldn't load
+  friend progress" when there is nothing cached.
+- **Files:** `src/stores/friendProgressStore.ts`,
+  `src/components/Modals/Content/FriendProgressContent.tsx`
+- **Tests:** `src/stores/__tests__/friendProgressStore.test.ts` covers cache
+  retention plus an unchanged `lastFetchedAt` across a failed refresh.
 
 ### Low: Firestore participant rows are trusted without runtime validation
 
@@ -776,42 +781,45 @@ tests, and CI schema parity checks.
 
 ### High: Modal dismissal is re-entrant and can commit pending entries twice
 
-- **Files:** `src/screens/SharedModal.tsx:126-176,380-421`,
-  `src/stores/uiStore.ts:155-193`
-- **Impact:** Close, backdrop, Android back, and Home all call the same async
-  dismiss function. There is no dismissing guard and the modal remains
-  interactive while pending deletions/additions are awaited. A second tap before
-  `resetPendingMiles()` reads the same pending arrays and can delete twice and
-  insert a second set of replacement rows with new generated IDs.
-- **Suggested fix:** Acquire a synchronous dismiss lock before the first await,
-  disable pointer events/actions during dismissal, snapshot and clear pending
-  work once, then commit that snapshot. Add rapid double-close/back tests.
+- [x] **Resolved at the root.** The `pendingEntries` / `pendingDeletions`
+  staging buffer was removed entirely. Adding, editing, and deleting distance
+  now write straight to SQLite via `applyDistanceEntryChanges`, which is already
+  serialized (`enqueueWrite`), transactional, and returns the recalculated
+  miles/steps. Dismissal no longer commits anything, so there is nothing to
+  commit twice and no dismiss lock is needed.
+- **Note:** the buffer had no cancel path — every exit committed — so it was a
+  batch-write mechanism with no user-visible benefit. It also recomputed the
+  total arithmetically (`baseMiles + pendingTotal - deletionTotal`) and
+  persisted that over the authoritative DB value, which could drift.
+- **Files:** `src/stores/uiStore.ts`, `src/screens/SharedModal.tsx`,
+  `src/components/Modals/Footers/MilesFooter.tsx`,
+  `src/components/Modals/EditEntryModal.tsx`,
+  `src/components/Modals/Content/DistanceContent.tsx`
 
 ### Medium: Checkpoint-to-Distance return navigation is dead code
 
-- **Files:** `src/components/TrackingOptions.tsx:72-83`,
-  `src/components/Modals/Content/InfoContent.tsx:141-147`,
-  `src/stores/uiStore.ts:107-151`
-- **Impact:** TrackingOptions sets `returnTo: info`, then
-  `closeAllModalsWithCallback()` immediately clears `returnTo` before opening
-  Distance. `navigateBack()` has no callers and its `info` case does nothing.
-  Closing Distance therefore returns to the map instead of the checkpoint that
-  launched it.
-- **Suggested fix:** Keep the originating modal on the stack and push Distance,
-  or persist the full return screen/params through dismissal and restore it from
-  one tested navigation action. Remove the unused legacy return path afterward.
+- [x] **Resolved.** TrackingOptions now pushes `{ type: 'miles' }` onto the
+  modal stack instead of dismissing the checkpoint, so `canGoBack` renders the
+  Back chevron and closing Distance returns to the checkpoint that launched it.
+  The unused `returnTo` / `setReturnTo` / `navigateBack` / `ReturnToContext`
+  path was removed, along with the now-orphaned `closeAllModalsWithCallback` /
+  `consumeDismissCallback` machinery and the circular-import `require()` it
+  forced inside `useAnimatedModal`.
+- **Follow-on found while fixing:** `handleBack` popped without committing
+  pending distance rows, which would have stranded them until the whole stack
+  closed. The commit was extracted into `commitPendingDistance()` and is now
+  shared by dismiss and back, both under the same one-shot lock. Covered by
+  `src/screens/__tests__/SharedModal.test.tsx`.
+- **Files:** `src/components/TrackingOptions.tsx`,
+  `src/components/Modals/Content/InfoContent.tsx`, `src/stores/uiStore.ts`,
+  `src/hooks/useAnimatedModal.ts`, `src/screens/SharedModal.tsx`
 
 ### Medium: Edit save/delete actions are not protected from rapid repeat taps
 
-- **Files:** `src/components/Modals/EditEntryModal.tsx:132-190,263-368`,
-  `src/stores/uiStore.ts:159-180`
-- **Impact:** Save and destructive confirmation handlers have no one-shot guard.
-  Before the store-driven modal close renders, repeated events can append the
-  same original entry to `pendingDeletions` and multiple replacements to
-  `pendingEntries`. The later SharedModal commit then applies all of them.
-- **Suggested fix:** Add a synchronous action lock, disable modal actions as soon
-  as save/delete begins, and make pending deletion/replacement operations
-  idempotent by entry ID.
+- [x] **Resolved.** `actionLockRef` guards save and delete, and with the staging
+  buffer gone a repeated save is an idempotent upsert on the same row id rather
+  than an append to two parallel arrays. Covered by
+  `src/components/Modals/__tests__/EditEntryModal.test.tsx`.
 
 ### Low: Exit-animation callbacks have no unmount/orientation ownership guard
 
@@ -922,11 +930,10 @@ tests, and CI schema parity checks.
 
 - **Files:** `src/stores/uiStore.ts:39-75,87-89,132-151,196-198`,
   `src/stores/mapStore.ts:16,25,38,54`
-- **Impact:** `showSettings`, `showStats`, `showSyncModal`, duplicate
-  `showSettings`, and `navigateBack()` have no call sites after stack migration.
-  The dead `info` return case helped conceal the broken return path found in
-  Phase 6 and expands the store API with behavior that appears supported but is
-  not.
+- **Impact:** `showSettings`, `showStats`, `showSyncModal`, and a duplicate
+  `showSettings` have no call sites after the stack migration, expanding the
+  store API with behavior that appears supported but is not. (`navigateBack()`
+  and the `returnTo` path were removed with the Phase 6 navigation fix.)
 - **Suggested fix:** Remove the unused state/actions after adding stack
   navigation tests, and make the modal stack the only navigation API.
 
