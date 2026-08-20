@@ -49,6 +49,12 @@ jest.mock('react-native-reanimated', () => ({
     CLAMP: 'clamp',
   },
   interpolate: jest.fn(),
+  interpolateColor: jest.fn(() => 'rgba(255,255,255,1)'),
+  useAnimatedReaction: jest.fn(),
+  useAnimatedScrollHandler: jest.fn(() => ({})),
+  // Required by react-native-gesture-handler's reanimated wrapper.
+  useEvent: jest.fn(() => ({})),
+  useHandler: jest.fn(() => ({ context: {}, doDependenciesDiffer: false })),
   runOnJS: jest.fn(fn => fn),
   runOnUI: jest.fn(fn => fn),
 }));

@@ -104,3 +104,50 @@ each token was fresh.
 Investigate by checking the merged debug manifest for
 `firebase_app_check_token_auto_refresh`, then confirm token renewal by holding a
 debug session past the TTL and watching for a second token exchange.
+
+---
+
+## `App.test.tsx` "renders correctly" asserts an almost-empty tree
+
+`SafeAreaProvider` renders nothing until it measures a native layout, which
+never happens under Jest. The app tree is mounted inside it, so the smoke test
+has been passing without exercising any screen.
+
+Mocking `react-native-safe-area-context` globally makes the test render the real
+map, which then fails on mocks that were never needed before:
+
+- `react-native-reanimated`: `useAnimatedReaction`, `useEvent`, `useHandler`
+  (the last two are pulled in by `react-native-gesture-handler`)
+- `@shopify/react-native-skia`: `Skia.ContourMeasureIter`, and likely more
+  behind it
+
+The reanimated gaps are already filled in `jest.setup.js`. The safe-area mock is
+deliberately scoped to `src/screens/__tests__/SharedModal.test.tsx` so it does
+not change what other suites render.
+
+To finish: stub the Skia surface the map needs, move the safe-area mock into
+`jest.setup.js`, and give the smoke test a real assertion about what rendered.
+
+---
+
+## Verify direct distance writes on device
+
+The `pendingEntries` / `pendingDeletions` staging buffer was removed; adding,
+editing, and deleting distance now write straight to SQLite through
+`applyDistanceEntryChanges`.
+
+The unit tests mock `useProgressStore`, so they prove the right call is made
+with the right payload — not that SQLite agrees. Nothing currently exercises the
+real database layer.
+
+To verify on a device:
+
+- Add miles and add steps; confirm the total updates immediately
+- Edit an entry's value and its date; confirm the row updates in place rather
+  than duplicating (the write is an upsert on the same id)
+- Delete an entry; confirm the total drops
+- Force-quit after each and confirm the change survived
+- Repeat with the Distance modal opened from the Hobbiton checkpoint, exiting
+  via Back rather than Close
+
+

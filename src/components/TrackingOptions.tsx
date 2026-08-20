@@ -10,8 +10,6 @@ import { typographyThemed } from '../styles/typography';
 import { spacing, iconSizes } from '../styles/global';
 
 interface TrackingOptionsProps {
-  /** Required when `showAddOption` is true (default). */
-  onDismiss?: (afterCallback?: () => void) => void;
   onOpenSyncModal: () => void;
   /** Show the manual "Add or edit miles" row. Default true. */
   showAddOption?: boolean;
@@ -20,7 +18,6 @@ interface TrackingOptionsProps {
 }
 
 export function TrackingOptions({
-  onDismiss,
   onOpenSyncModal,
   showAddOption = true,
   showDevToggle = true,
@@ -66,18 +63,13 @@ export function TrackingOptions({
         )}
       </Pressable>
 
-      {/* Manual add button - dismisses InfoModal first, then opens MilesModal */}
+      {/* Manual add button - pushes Distance on top so back returns here */}
       {showAddOption && (
         <Pressable
           style={[styles.option, isSyncing && styles.optionDisabled]}
           disabled={isSyncing}
           onPress={() => {
-            // Set returnTo so MilesModal returns to info when closed
-            useUIStore.getState().setReturnTo({ modal: 'info' });
-            // Dismiss InfoModal, then open Miles modal after exit animation completes
-            onDismiss?.(() => {
-              useUIStore.getState().pushModal({ type: 'miles' });
-            });
+            useUIStore.getState().pushModal({ type: 'miles' });
           }}
         >
           <IconButton

@@ -82,6 +82,8 @@ export interface FriendProgressStore {
   kellyVisible: boolean;
   isFetching: boolean;
   fetchError: string | null;
+  /** Epoch ms of the last fetch that actually returned data. */
+  lastFetchedAt: number | null;
   fetchParticipants: () => Promise<void>;
   clearParticipants: () => void;
   showKelly: () => void;
@@ -99,6 +101,7 @@ export const createFriendProgressStore = (
     kellyVisible: false,
     isFetching: false,
     fetchError: null,
+    lastFetchedAt: null,
     fetchParticipants: async () => {
       if (get().isFetching) return;
 
@@ -114,6 +117,7 @@ export const createFriendProgressStore = (
             state.kellyVisible,
           ),
           isFetching: false,
+          lastFetchedAt: Date.now(),
         }));
       } catch (error) {
         set({
@@ -132,6 +136,7 @@ export const createFriendProgressStore = (
         participants: state.fakeParticipantsEnabled ? FAKE_PARTICIPANTS : [],
         kellyVisible: false,
         fetchError: null,
+        lastFetchedAt: null,
       })),
     showKelly: () =>
       set(state => ({

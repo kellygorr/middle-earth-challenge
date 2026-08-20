@@ -26,6 +26,7 @@ describe('friendProgressStore', () => {
       fakeParticipantsEnabled: false,
       isFetching: false,
       fetchError: null,
+      lastFetchedAt: null,
     });
   });
 
@@ -38,6 +39,24 @@ describe('friendProgressStore', () => {
       REAL_PARTICIPANTS,
     );
     expect(useFriendProgressStore.getState().fetchError).toBeNull();
+  });
+
+  it('keeps cached participants and the last success time when a refresh fails', async () => {
+    mockFetchFriendProgress.mockResolvedValue(REAL_PARTICIPANTS);
+    await useFriendProgressStore.getState().fetchParticipants();
+    const firstFetchAt = useFriendProgressStore.getState().lastFetchedAt;
+    expect(firstFetchAt).toEqual(expect.any(Number));
+
+    mockFetchFriendProgress.mockRejectedValue(new Error('offline'));
+    await expect(
+      useFriendProgressStore.getState().fetchParticipants(),
+    ).rejects.toThrow('offline');
+
+    const state = useFriendProgressStore.getState();
+    expect(state.participants).toEqual(REAL_PARTICIPANTS);
+    expect(state.fetchError).toBe('offline');
+    // Unchanged, so the UI can report how old the cached rows are.
+    expect(state.lastFetchedAt).toBe(firstFetchAt);
   });
 
   it('uses all five affinities in fake mode and restores fetched rows', async () => {

@@ -62,7 +62,6 @@ export default function InfoContent() {
   );
   const getPreviousTrivia = useProgressStore(state => state.getPreviousTrivia);
   const pushModal = useUIStore(state => state.pushModal);
-  const closeAllModals = useUIStore(state => state.closeAllModals);
 
   // Celebration timer ref
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -137,16 +136,6 @@ export default function InfoContent() {
     return trivia && trivia.length > 0 ? trivia : null;
   })();
 
-  // Handle dismiss for TrackingOptions callback
-  // Uses closeAllModalsWithCallback to run callback after animation completes
-  const handleDismiss = (afterCallback?: () => void) => {
-    if (afterCallback) {
-      useUIStore.getState().closeAllModalsWithCallback(afterCallback);
-    } else {
-      closeAllModals();
-    }
-  };
-
   if (!currentItem || !itemType) {
     return null;
   }
@@ -217,10 +206,7 @@ export default function InfoContent() {
 
         {/* Tracking options for first checkpoint */}
         {showTrackingOptions && (
-          <TrackingOptions
-            onDismiss={handleDismiss}
-            onOpenSyncModal={() => pushModal({ type: 'sync' })}
-          />
+          <TrackingOptions onOpenSyncModal={() => pushModal({ type: 'sync' })} />
         )}
 
         {/* Miles display */}
