@@ -22,6 +22,8 @@ import androidx.core.content.ContextCompat
 import com.middleearthchallenge.R
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Foreground service that keeps the phone's [Sensor.TYPE_STEP_COUNTER]
@@ -53,11 +55,8 @@ class StepCounterService : Service(), SensorEventListener {
   /** Stable boot correlator; regenerated on boot detection. */
   private var bootId: String = ""
 
-  /** Timestamp of most recent DB write, for throttling. */
-  private var lastWriteMs: Long = 0L
-
-  /** Most recently observed cumulative step count for delta shortcut. */
-  private var lastCount: Long = -1L
+  private val samplePersistence =
+      StepSamplePersistence(MIN_STEP_DELTA.toLong(), MIN_WRITE_INTERVAL_MS)
 
   companion object {
     private const val TAG = "StepCounterService"
@@ -90,6 +89,9 @@ class StepCounterService : Service(), SensorEventListener {
      * kill us?" UI in JS.
      */
     val isRunning = AtomicBoolean(false)
+
+    val samplePersistenceError = AtomicReference<String?>(null)
+    val samplePersistenceErrorAtMs = AtomicLong(0L)
   }
 
   override fun onCreate() {
@@ -184,7 +186,7 @@ class StepCounterService : Service(), SensorEventListener {
           .putString(PREF_BOOT_ID, bootId)
           .putLong(PREF_BOOT_INSTANT_MS, currentBootInstant)
           .apply()
-      lastCount = -1L
+      samplePersistence.reset()
       Log.i(TAG, "Boot change detected; new bootId=$bootId")
     }
 
@@ -192,14 +194,19 @@ class StepCounterService : Service(), SensorEventListener {
     // hundreds of DB rows during heavy walking bursts while still capturing
     // the shape of the walk (roughly one row every 10s of continuous
     // movement).
-    val delta = if (lastCount < 0) MIN_STEP_DELTA.toLong() else count - lastCount
-    if (delta < MIN_STEP_DELTA && now - lastWriteMs < MIN_WRITE_INTERVAL_MS) {
-      return
+    try {
+      val persisted = samplePersistence.persistIfDue(count, now) {
+        dbHelper.insertSample(now, count, bootId)
+      }
+      if (persisted) {
+        samplePersistenceError.set(null)
+        samplePersistenceErrorAtMs.set(0L)
+      }
+    } catch (t: Throwable) {
+      samplePersistenceError.set(t.message ?: t.javaClass.simpleName)
+      samplePersistenceErrorAtMs.set(now)
+      Log.e(TAG, "Failed to persist step-counter sample; next event will retry", t)
     }
-
-    dbHelper.insertSample(now, count, bootId)
-    lastCount = count
-    lastWriteMs = now
   }
 
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit

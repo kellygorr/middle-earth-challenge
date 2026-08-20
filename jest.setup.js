@@ -67,6 +67,17 @@ jest.mock('@react-native-firebase/auth', () => ({
   signOut: jest.fn(),
 }));
 
+jest.mock('@react-native-firebase/app', () => ({
+  getApp: jest.fn(() => ({})),
+}));
+
+jest.mock('@react-native-firebase/app-check', () => ({
+  initializeAppCheck: jest.fn(),
+  ReactNativeFirebaseAppCheckProvider: jest.fn(() => ({
+    configure: jest.fn(),
+  })),
+}));
+
 jest.mock('@react-native-firebase/firestore', () => ({
   collection: jest.fn(),
   deleteDoc: jest.fn(),
@@ -74,9 +85,12 @@ jest.mock('@react-native-firebase/firestore', () => ({
   documentId: jest.fn(),
   getDocs: jest.fn(),
   getFirestore: jest.fn(),
+  limit: jest.fn(),
+  orderBy: jest.fn(),
   query: jest.fn(),
   serverTimestamp: jest.fn(),
   setDoc: jest.fn(),
+  startAfter: jest.fn(),
   updateDoc: jest.fn(),
   where: jest.fn(),
 }));

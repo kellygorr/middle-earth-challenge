@@ -24,6 +24,10 @@ export interface FitnessServiceInterface {
     startDate: Date,
     endDate: Date,
   ): Promise<HealthDistanceRecord[]>;
+  getLegacyDistanceRecordsBetween(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<HealthDistanceRecord[]>;
   startRealTimeUpdates(callback: (distance: number) => void): void;
   stopRealTimeUpdates(): void;
   isAvailable(): Promise<boolean>;
@@ -59,11 +63,31 @@ type HealthConnectAggregator = Pick<
   'aggregateRecord'
 >;
 
+type HealthConnectRecordReader = Pick<
+  typeof import('react-native-health-connect'),
+  'readRecords'
+>;
+
 interface DailyHealthSample {
   value: number;
   startDate: string;
   endDate: string;
   id?: string;
+}
+
+export class HealthProviderReadError extends Error {
+  constructor(
+    public readonly provider: 'health-connect' | 'apple-health',
+    public readonly signal: 'distance' | 'steps' | 'module',
+    cause: unknown,
+  ) {
+    super(
+      `${provider} ${signal} read failed: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`,
+    );
+    this.name = 'HealthProviderReadError';
+  }
 }
 
 export function selectAppleHealthDistanceRecords(
@@ -112,6 +136,27 @@ export function selectAppleHealthDistanceRecords(
         steps: measuredSteps > 0 ? measuredSteps : milesToSteps(sample.value),
       };
     });
+}
+
+export async function getAppleHealthDistanceRecords(
+  readDistanceSamples: () => Promise<DailyHealthSample[]>,
+  readStepSamples: () => Promise<DailyHealthSample[]>,
+): Promise<HealthDistanceRecord[]> {
+  let distanceSamples: DailyHealthSample[];
+  try {
+    distanceSamples = await readDistanceSamples();
+  } catch (error) {
+    throw new HealthProviderReadError('apple-health', 'distance', error);
+  }
+
+  let stepSamples: DailyHealthSample[];
+  try {
+    stepSamples = await readStepSamples();
+  } catch (error) {
+    throw new HealthProviderReadError('apple-health', 'steps', error);
+  }
+
+  return selectAppleHealthDistanceRecords(distanceSamples, stepSamples);
 }
 
 export async function getAggregatedAndroidDistanceRecords(
@@ -167,19 +212,26 @@ export async function getAggregatedAndroidDistanceRecords(
     }
   }
 
-  if (distanceError && stepsError) {
-    throw stepsError;
+  if (distanceError) {
+    throw new HealthProviderReadError(
+      'health-connect',
+      'distance',
+      distanceError,
+    );
+  }
+  if (stepsError) {
+    throw new HealthProviderReadError('health-connect', 'steps', stepsError);
   }
 
   const distanceMiles = metersToMiles(distanceMeters);
   const stepsMiles = stepsToMiles(steps);
-  const rangeId = `${startDate.getTime()}_${endDate.getTime()}`;
+  const rangeId = startDate.getTime();
 
   if (stepsMiles >= distanceMiles) {
     return steps > 0
       ? [
           {
-            id: `hc_steps_aggregate_${rangeId}`,
+            id: `hc_aggregate_${rangeId}`,
             startTime: startDate.toISOString(),
             endTime: endDate.toISOString(),
             distanceMeters: steps * AVERAGE_STRIDE_METERS,
@@ -192,7 +244,7 @@ export async function getAggregatedAndroidDistanceRecords(
   return distanceMeters > 0
     ? [
         {
-          id: `hc_distance_aggregate_${rangeId}`,
+          id: `hc_aggregate_${rangeId}`,
           startTime: startDate.toISOString(),
           endTime: endDate.toISOString(),
           distanceMeters,
@@ -200,6 +252,95 @@ export async function getAggregatedAndroidDistanceRecords(
         },
       ]
     : [];
+}
+
+export async function getLegacyAndroidDistanceRecords(
+  hc: HealthConnectRecordReader,
+  startDate: Date,
+  endDate: Date,
+): Promise<HealthDistanceRecord[]> {
+  const timeRangeFilter = {
+    operator: 'between' as const,
+    startTime: startDate.toISOString(),
+    endTime: endDate.toISOString(),
+  };
+  let distanceRecords: Array<{
+    metadata?: { id?: string };
+    startTime: string;
+    endTime: string;
+    distance?: { inMeters?: number };
+  }> = [];
+  let stepRecords: Array<{
+    metadata?: { id?: string };
+    startTime: string;
+    endTime: string;
+    count?: number;
+  }> = [];
+
+  try {
+    const result = await hc.readRecords('Distance', { timeRangeFilter });
+    distanceRecords = result.records as typeof distanceRecords;
+  } catch (error) {
+    const message = String(error);
+    if (
+      message.includes('SecurityException') ||
+      message.includes('permission')
+    ) {
+      throw error;
+    }
+    throw new HealthProviderReadError('health-connect', 'distance', error);
+  }
+
+  try {
+    const result = await hc.readRecords('Steps', { timeRangeFilter });
+    stepRecords = result.records as typeof stepRecords;
+  } catch (error) {
+    const message = String(error);
+    if (
+      message.includes('SecurityException') ||
+      message.includes('permission')
+    ) {
+      throw error;
+    }
+    throw new HealthProviderReadError('health-connect', 'steps', error);
+  }
+
+  const totalDistanceMiles = distanceRecords.reduce(
+    (sum, record) => sum + metersToMiles(record.distance?.inMeters ?? 0),
+    0,
+  );
+  const totalSteps = stepRecords.reduce(
+    (sum, record) => sum + (record.count ?? 0),
+    0,
+  );
+
+  if (stepsToMiles(totalSteps) >= totalDistanceMiles) {
+    return stepRecords
+      .filter(record => (record.count ?? 0) > 0)
+      .map(record => {
+        const steps = record.count ?? 0;
+        return {
+          id: record.metadata?.id ?? `hc_steps_${record.startTime}`,
+          startTime: record.startTime,
+          endTime: record.endTime,
+          distanceMeters: steps * AVERAGE_STRIDE_METERS,
+          steps,
+        };
+      });
+  }
+
+  return distanceRecords
+    .filter(record => (record.distance?.inMeters ?? 0) > 0)
+    .map(record => {
+      const distanceMeters = record.distance?.inMeters ?? 0;
+      return {
+        id: record.metadata?.id ?? `hc_${record.startTime}`,
+        startTime: record.startTime,
+        endTime: record.endTime,
+        distanceMeters,
+        steps: milesToSteps(metersToMiles(distanceMeters)),
+      };
+    });
 }
 
 class FitnessService implements FitnessServiceInterface {
@@ -730,26 +871,28 @@ class FitnessService implements FitnessServiceInterface {
       throw new Error('Fitness service not initialized');
     }
 
-    try {
-      if (Platform.OS === 'ios') {
-        return await this.getDistanceRecordsBetweenIOS(startDate, endDate);
-      } else if (Platform.OS === 'android') {
-        return await this.getDistanceRecordsBetweenAndroid(startDate, endDate);
-      }
-
-      return [];
-    } catch (error) {
-      console.error('[FitnessService] Get distance records error:', error);
-      // Re-throw permission errors so they can be handled by the caller
-      const errorMessage = String(error);
-      if (
-        errorMessage.includes('SecurityException') ||
-        errorMessage.includes('permission')
-      ) {
-        throw error;
-      }
-      return [];
+    if (Platform.OS === 'ios') {
+      return this.getDistanceRecordsBetweenIOS(startDate, endDate);
+    } else if (Platform.OS === 'android') {
+      return this.getDistanceRecordsBetweenAndroid(startDate, endDate);
     }
+
+    return [];
+  }
+
+  async getLegacyDistanceRecordsBetween(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<HealthDistanceRecord[]> {
+    if (!this.isInitialized) {
+      throw new Error('Fitness service not initialized');
+    }
+    if (Platform.OS !== 'android') {
+      return this.getDistanceRecordsBetween(startDate, endDate);
+    }
+    const hc = await getHealthConnectModule();
+    if (!hc) return [];
+    return getLegacyAndroidDistanceRecords(hc, startDate, endDate);
   }
 
   /**
@@ -764,8 +907,11 @@ class FitnessService implements FitnessServiceInterface {
   ): Promise<HealthDistanceRecord[]> {
     const appleHealth = await getAppleHealthModule();
     if (!appleHealth) {
-      console.error('[FitnessService] iOS: Apple Health module not available');
-      return [];
+      throw new HealthProviderReadError(
+        'apple-health',
+        'module',
+        new Error('Apple Health module not available'),
+      );
     }
 
     const options = {
@@ -781,11 +927,9 @@ class FitnessService implements FitnessServiceInterface {
       unit: appleHealth.default.Constants.Units.mile,
     };
 
-    // Pull distance samples (values in miles per options.unit above).
-    let distanceSamples: DailyHealthSample[] = [];
-    try {
-      distanceSamples = await new Promise<DailyHealthSample[]>(
-        (resolve, reject) => {
+    return getAppleHealthDistanceRecords(
+      () =>
+        new Promise<DailyHealthSample[]>((resolve, reject) => {
           appleHealth.default.getDailyDistanceWalkingRunningSamples(
             distanceOptions,
             (err: string, results: DailyHealthSample[]) => {
@@ -793,17 +937,9 @@ class FitnessService implements FitnessServiceInterface {
               else resolve(results || []);
             },
           );
-        },
-      );
-    } catch {
-      // Distance samples not available
-    }
-
-    // Pull step samples.
-    let stepSamples: DailyHealthSample[] = [];
-    try {
-      stepSamples = await new Promise<DailyHealthSample[]>(
-        (resolve, reject) => {
+        }),
+      () =>
+        new Promise<DailyHealthSample[]>((resolve, reject) => {
           appleHealth.default.getDailyStepCountSamples(
             options,
             (err: string, results: DailyHealthSample[]) => {
@@ -811,13 +947,8 @@ class FitnessService implements FitnessServiceInterface {
               else resolve(results || []);
             },
           );
-        },
-      );
-    } catch {
-      // Step samples not available
-    }
-
-    return selectAppleHealthDistanceRecords(distanceSamples, stepSamples);
+        }),
+    );
   }
 
   /**
@@ -828,7 +959,13 @@ class FitnessService implements FitnessServiceInterface {
     endDate: Date,
   ): Promise<HealthDistanceRecord[]> {
     const hc = await getHealthConnectModule();
-    if (!hc) return [];
+    if (!hc) {
+      throw new HealthProviderReadError(
+        'health-connect',
+        'module',
+        new Error('Health Connect module not available'),
+      );
+    }
     return getAggregatedAndroidDistanceRecords(hc, startDate, endDate);
   }
 
@@ -1078,6 +1215,13 @@ export class MockFitnessService implements FitnessServiceInterface {
         steps: milesToSteps(this.mockDistance),
       },
     ];
+  }
+
+  async getLegacyDistanceRecordsBetween(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<HealthDistanceRecord[]> {
+    return this.getDistanceRecordsBetween(startDate, endDate);
   }
 
   startRealTimeUpdates(callback: (distance: number) => void): void {

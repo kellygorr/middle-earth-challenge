@@ -22,11 +22,8 @@ export default function SyncContentIOS() {
   const theme = useTheme();
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
-  const setSyncEnabled = useSettingsStore(state => state.setSyncEnabled);
-  const setSyncProvider = useSettingsStore(state => state.setSyncProvider);
-  const setSyncStartDate = useSettingsStore(state => state.setSyncStartDate);
-  const setLastSyncTimestamp = useSettingsStore(
-    state => state.setLastSyncTimestamp,
+  const updateSyncSettings = useSettingsStore(
+    state => state.updateSyncSettings,
   );
   const showSyncNow = syncEnabled && syncProvider !== 'none';
 
@@ -52,9 +49,11 @@ export default function SyncContentIOS() {
       }
 
       if (granted) {
-        setSyncProvider('apple-health');
-        setSyncStartDate(Date.now());
-        setSyncEnabled(true);
+        await updateSyncSettings({
+          syncProvider: 'apple-health',
+          syncStartDate: Date.now(),
+          syncEnabled: true,
+        });
         return;
       }
 
@@ -92,9 +91,11 @@ export default function SyncContentIOS() {
           console.warn('[SyncContentIOS] stop-syncing disconnect:', error);
         }
       }
-      setSyncEnabled(false);
-      setSyncProvider('none');
-      setLastSyncTimestamp(null);
+      await updateSyncSettings({
+        syncEnabled: false,
+        syncProvider: 'none',
+        lastSyncTimestamp: null,
+      });
     } finally {
       setBusy(false);
     }
@@ -114,7 +115,11 @@ export default function SyncContentIOS() {
 
   return (
     <>
-      <StatusBadge label="Syncing enabled" visible={syncEnabled} />
+      <StatusBadge
+        label="Syncing enabled"
+        visible={syncEnabled}
+        style={styles.statusBadge}
+      />
       <View style={styles.buttonRow}>
         <Button
           variant={isHealthAppActive ? 'brand' : 'primary'}
@@ -234,6 +239,9 @@ export default function SyncContentIOS() {
 }
 
 const styles = StyleSheet.create({
+  statusBadge: {
+    alignSelf: 'center',
+  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'center',

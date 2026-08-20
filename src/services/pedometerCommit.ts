@@ -7,13 +7,13 @@
  * sweep, mode-switch flush, Sync-Now button. See docs/pedometer-mode.md
  * § "Row model & commit strategy" for the model.
  *
- * This helper does NOT manage the watermark or sync status — that's the
- * caller's job. It only:
+ * This helper owns the watermark but not sync status. It:
  *
  *   1. reads `getStepsBetween(fromMs, toMs)` from the native service,
  *   2. converts steps → miles,
- *   3. writes one `DistanceEntry` (source: `'pedometer'`) if steps > 0,
- *   4. recomputes `progressStore.miles` and persists the snapshot.
+ *   3. atomically writes any `DistanceEntry` rows, refreshes the snapshot,
+ *      and advances `lastSyncTimestamp`,
+ *   4. publishes progress and watermark state only after commit.
  *
  * Isolating it from the hook so it can also be called from the
  * headless JS task WorkManager fires — where React hooks don't exist.
@@ -25,6 +25,7 @@ import type { DistanceEntry } from '../types';
 import { stepsToMiles } from '../utils/stride';
 import { checkAndFireMilestones } from './milestoneNotifier';
 import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
+import { useSettingsStore } from '../stores/settingsStore';
 
 export interface PedometerCommitResult {
   /** Steps read from the native service in [fromMs, toMs). */
@@ -38,9 +39,9 @@ export interface PedometerCommitResult {
 /**
  * Materialize a single pedometer `DistanceEntry` for [fromMs, toMs).
  *
- * Returns `{ steps: 0, miles: 0, entryWritten: false }` if the native
- * read fails or returns zero — the caller decides whether to surface an
- * error or advance the watermark anyway.
+ * Returns `{ steps: 0, miles: 0, entryWritten: false }` if the native read
+ * returns zero. Read or persistence failures reject without advancing the
+ * watermark.
  */
 export async function commitPedometerRange(
   fromMs: number,
@@ -97,26 +98,20 @@ export async function commitPedometerRange(
 
   const miles = stepsToMiles(steps);
 
-  if (entries.length === 0) {
-    return { steps: 0, miles: 0, entryWritten: false };
-  }
-
   const progress = useProgressStore.getState();
   // Snapshot before-total so we can compare with the after-total below
   // and fire a system notification if the user crossed a checkpoint
   // in this window. Must be read before `addDistanceEntries` mutates
   // the store.
   const milesBefore = progress.miles ?? 0;
-  await progress.addDistanceEntries(entries);
+  await progress.applyPedometerSyncChunk(entries, toMs);
+  useSettingsStore.setState({ lastSyncTimestamp: toMs });
 
-  // Recompute total from the store — cheaper and less race-prone than
-  // tracking a running total across ticks.
-  const store = useProgressStore.getState();
-  const totalMiles = store.getTotalMiles();
-  const totalSteps = store.getTotalSteps();
-  progress.setMiles(totalMiles);
-  progress.setSteps(totalSteps);
-  await progress.persistMilesSnapshot();
+  if (entries.length === 0) {
+    return { steps: 0, miles: 0, entryWritten: false };
+  }
+
+  const totalMiles = useProgressStore.getState().miles;
 
   // Milestone notifications (Phase 3c). Best-effort; never rejects.
   // Only fires on pedometer commits — health-app sync users don't get

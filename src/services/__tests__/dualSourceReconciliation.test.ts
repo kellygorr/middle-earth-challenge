@@ -4,7 +4,11 @@ const mockSettingsState: { ref: any } = { ref: null };
 const mockProgressState: { ref: any } = { ref: null };
 
 jest.mock('../../stores/settingsStore', () => ({
-  useSettingsStore: { getState: () => mockSettingsState.ref },
+  useSettingsStore: {
+    getState: () => mockSettingsState.ref,
+    setState: (updates: Record<string, unknown>) =>
+      Object.assign(mockSettingsState.ref, updates),
+  },
 }));
 
 jest.mock('../../stores/progressStore', () => ({
@@ -54,6 +58,29 @@ function resetState(cursor: number, entries: any[] = []) {
       progress.steps = value;
     }),
     persistMilesSnapshot: jest.fn(async () => {}),
+    applyHealthReconciliationDay: jest.fn(
+      async (
+        changes: { upsert?: any[]; removeIds?: string[] },
+        committedCursor: number,
+      ) => {
+        for (const entry of changes.upsert ?? []) {
+          progress.distanceEntries = [
+            entry,
+            ...progress.distanceEntries.filter(
+              existing => existing.id !== entry.id,
+            ),
+          ];
+        }
+        if (changes.removeIds) {
+          progress.distanceEntries = progress.distanceEntries.filter(
+            entry => !changes.removeIds!.includes(entry.id),
+          );
+        }
+        progress.miles = progress.getTotalMiles();
+        progress.steps = progress.getTotalSteps();
+        settings.lastHealthReconciledThrough = committedCursor;
+      },
+    ),
   };
   mockSettingsState.ref = settings;
   mockProgressState.ref = progress;
@@ -119,7 +146,7 @@ describe('dual source reconciliation', () => {
         entry => entry.id === reconciliationEntryId(dayTwo),
       ),
     ).toBeUndefined();
-    expect(progress.persistMilesSnapshot).toHaveBeenCalledTimes(2);
+    expect(progress.applyHealthReconciliationDay).toHaveBeenCalledTimes(2);
 
     const rerun = await reconcileCompletedDualTrackingDays({
       now: today + 12 * 60 * 60 * 1000,
@@ -213,7 +240,7 @@ describe('dual source reconciliation', () => {
     ).rejects.toThrow('permission revoked');
 
     expect(settings.lastHealthReconciledThrough).toBe(yesterday);
-    expect(progress.persistMilesSnapshot).not.toHaveBeenCalled();
+    expect(progress.applyHealthReconciliationDay).not.toHaveBeenCalled();
   });
 
   it('retains progress through the last successful day when a later day fails', async () => {
@@ -274,7 +301,10 @@ describe('dual source reconciliation', () => {
       fitness: mockFitness(getRecords),
     });
 
-    expect(progress.removeDistanceEntry).toHaveBeenCalledWith(topUpId);
+    expect(progress.applyHealthReconciliationDay).toHaveBeenCalledWith(
+      { removeIds: [topUpId] },
+      today,
+    );
     expect(
       progress.distanceEntries.find(entry => entry.id === topUpId),
     ).toBeUndefined();
@@ -358,5 +388,23 @@ describe('dual source reconciliation', () => {
       entry => entry.id === reconciliationEntryId(yesterday),
     );
     expect(topUp.miles).toBeCloseTo(1);
+  });
+
+  it('does not publish the cursor when the atomic day commit fails', async () => {
+    const yesterday = new Date(2026, 6, 2).getTime();
+    const today = new Date(2026, 6, 3).getTime();
+    const { settings, progress } = resetState(yesterday);
+    progress.applyHealthReconciliationDay.mockRejectedValueOnce(
+      new Error('cursor write failed'),
+    );
+
+    await expect(
+      reconcileCompletedDualTrackingDays({
+        now: today + 60_000,
+        fitness: mockFitness(jest.fn().mockResolvedValue([])),
+      }),
+    ).rejects.toThrow('cursor write failed');
+
+    expect(settings.lastHealthReconciledThrough).toBe(yesterday);
   });
 });

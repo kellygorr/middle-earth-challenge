@@ -101,11 +101,6 @@ export async function pedometerBackgroundTask(): Promise<void> {
       return;
     }
 
-    // 6. Advance the watermark unconditionally on success (matches the
-    //    live-path semantics — empty windows still advance so we don't
-    //    re-scan the same range every tick).
-    useSettingsStore.getState().setLastSyncTimestamp(now);
-
     // Note: milestone notifications (Phase 3c) are fired from inside
     // `commitPedometerRange` when miles crosses a checkpoint boundary.
     // No extra plumbing needed here.

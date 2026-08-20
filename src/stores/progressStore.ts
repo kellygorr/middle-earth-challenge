@@ -61,6 +61,12 @@ export type SyncError =
       chunksTotal: number;
     }
   | { kind: 'unavailable'; message: string }
+  | {
+      kind: 'provider';
+      provider: 'health-connect' | 'apple-health';
+      message: string;
+    }
+  | { kind: 'pedometerStorage'; message: string }
   // iOS-only: HealthKit permission is granted but the OS won't let us
   // refresh in the background (Settings → General → Background App Refresh
   // is off, either globally or for this app). Detection requires a native
@@ -127,6 +133,24 @@ interface ProgressStore {
   addTriviaUnlock: (unlock: TriviaUnlock) => void;
   addDistanceEntry: (entry: DistanceEntry) => Promise<void>;
   addDistanceEntries: (entries: DistanceEntry[]) => Promise<void>;
+  applyDistanceEntryChanges: (changes: {
+    upsert?: DistanceEntry[];
+    removeIds?: string[];
+  }) => Promise<void>;
+  applyHealthSyncChunk: (
+    entries: DistanceEntry[],
+    cursor: number,
+    healthSyncFormatVersion: number,
+    healthLookbackStartTimestamp: number | null,
+  ) => Promise<void>;
+  applyPedometerSyncChunk: (
+    entries: DistanceEntry[],
+    cursor: number,
+  ) => Promise<void>;
+  applyHealthReconciliationDay: (
+    changes: { upsert?: DistanceEntry[]; removeIds?: string[] },
+    cursor: number,
+  ) => Promise<void>;
   updateDistanceEntry: (entry: DistanceEntry) => Promise<void>;
   removeDistanceEntry: (id: string) => Promise<void>;
   removeDistanceEntriesBySource: (sources: DistanceSource[]) => Promise<void>;
@@ -184,36 +208,12 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
 
   // Initialize from database on app start
   initFromDatabase: async () => {
-    try {
-      const snapshot = await database.getProgressSnapshot(SAVE_ID);
-      const entries = await database.getDistanceEntries(SAVE_ID);
-
-      if (snapshot !== null) {
-        set({
-          miles: snapshot.miles,
-          steps: snapshot.steps,
-          distanceEntries: entries,
-        });
-      } else {
-        // No snapshot, calculate from entries
-        const totalMiles = (entries || []).reduce(
-          (sum, e) => sum + (e?.miles ?? 0),
-          0,
-        );
-        const totalSteps = (entries || []).reduce(
-          (sum, e) => sum + (e?.steps ?? 0),
-          0,
-        );
-        set({
-          miles: totalMiles,
-          steps: totalSteps,
-          distanceEntries: entries,
-        });
-        await database.setProgressSnapshot(SAVE_ID, totalMiles, totalSteps);
-      }
-    } catch (error) {
-      console.error('Failed to init progress from database:', error);
-    }
+    const progress = await database.hydrateProgress(SAVE_ID);
+    set({
+      miles: progress.miles,
+      steps: progress.steps,
+      distanceEntries: progress.entries,
+    });
   },
 
   // Actions
@@ -230,32 +230,14 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     })),
 
   addDistanceEntry: async entry => {
-    const state = get();
-    // Check for duplicate
-    if (state.distanceEntries.some(e => e.id === entry.id)) {
-      return; // Already exists
-    }
-
-    // Update store with new entry AND increment miles/steps snapshot
-    set({
-      distanceEntries: [entry, ...state.distanceEntries],
-      miles: state.miles + entry.miles,
-      steps: state.steps + (entry.steps ?? 0),
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      upsert: [entry],
     });
-
-    // Persist to database
-    try {
-      await database.addDistanceEntry({
-        id: entry.id,
-        saveId: entry.saveId || SAVE_ID,
-        date: entry.date as number,
-        miles: entry.miles,
-        steps: entry.steps,
-        source: entry.source,
-      });
-    } catch (error) {
-      console.error('Failed to persist distance entry:', error);
-    }
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
   },
 
   /**
@@ -265,86 +247,91 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
    */
   addDistanceEntries: async entries => {
     if (entries.length === 0) return;
-    const state = get();
-    const existingIds = new Set(state.distanceEntries.map(e => e.id));
-    const fresh = entries.filter(e => !existingIds.has(e.id));
-    if (fresh.length === 0) return;
-
-    const addedMiles = fresh.reduce((sum, e) => sum + e.miles, 0);
-    const addedSteps = fresh.reduce((sum, e) => sum + (e.steps ?? 0), 0);
-    set({
-      distanceEntries: [...fresh, ...state.distanceEntries],
-      miles: state.miles + addedMiles,
-      steps: state.steps + addedSteps,
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      upsert: entries,
     });
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
+  },
 
-    try {
-      await database.addDistanceEntriesBulk(
-        fresh.map(e => ({
-          id: e.id,
-          saveId: e.saveId || SAVE_ID,
-          date: e.date as number,
-          miles: e.miles,
-          steps: e.steps,
-          source: e.source,
-        })),
-      );
-    } catch (error) {
-      console.error('Failed to persist distance entries (bulk):', error);
-    }
+  applyDistanceEntryChanges: async changes => {
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, changes);
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
+  },
+
+  applyHealthSyncChunk: async (
+    entries,
+    cursor,
+    healthSyncFormatVersion,
+    healthLookbackStartTimestamp,
+  ) => {
+    const progress = await database.applyHealthSyncChunk(
+      SAVE_ID,
+      entries,
+      cursor,
+      healthSyncFormatVersion,
+      healthLookbackStartTimestamp,
+    );
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
+  },
+
+  applyPedometerSyncChunk: async (entries, cursor) => {
+    const progress = await database.applyPedometerSyncChunk(
+      SAVE_ID,
+      entries,
+      cursor,
+    );
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
+  },
+
+  applyHealthReconciliationDay: async (changes, cursor) => {
+    const progress = await database.applyHealthReconciliationDay(
+      SAVE_ID,
+      changes,
+      cursor,
+    );
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
   },
 
   updateDistanceEntry: async entry => {
-    const state = get();
-    const oldEntry = state.distanceEntries.find(e => e.id === entry.id);
-    const milesDelta = oldEntry ? entry.miles - oldEntry.miles : 0;
-    const stepsDelta = oldEntry
-      ? (entry.steps ?? 0) - (oldEntry.steps ?? 0)
-      : 0;
-
-    // Update store with entry change AND adjust miles/steps snapshot
-    set({
-      distanceEntries: state.distanceEntries.map(e =>
-        e.id === entry.id ? entry : e,
-      ),
-      miles: state.miles + milesDelta,
-      steps: Math.max(0, state.steps + stepsDelta),
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      upsert: [entry],
     });
-
-    // Persist to database
-    try {
-      await database.addDistanceEntry({
-        id: entry.id,
-        saveId: entry.saveId || SAVE_ID,
-        date: entry.date as number,
-        miles: entry.miles,
-        steps: entry.steps,
-        source: entry.source,
-      });
-    } catch (error) {
-      console.error('Failed to update distance entry:', error);
-    }
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
   },
 
   removeDistanceEntry: async id => {
-    const state = get();
-    const entryToRemove = state.distanceEntries.find(e => e.id === id);
-    const milesToRemove = entryToRemove?.miles ?? 0;
-    const stepsToRemove = entryToRemove?.steps ?? 0;
-
-    // Update store with entry removed AND decrement miles/steps snapshot
-    set({
-      distanceEntries: state.distanceEntries.filter(d => d.id !== id),
-      miles: Math.max(0, state.miles - milesToRemove),
-      steps: Math.max(0, state.steps - stepsToRemove),
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      removeIds: [id],
     });
-
-    // Persist to database
-    try {
-      await database.removeDistanceEntry(id);
-    } catch (error) {
-      console.error('Failed to remove distance entry:', error);
-    }
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
   },
 
   /**
@@ -355,27 +342,14 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
    */
   removeDistanceEntriesBySource: async sources => {
     if (sources.length === 0) return;
-    const sourceSet = new Set<DistanceSource>(sources);
-    const state = get();
-    const toRemove = state.distanceEntries.filter(e => sourceSet.has(e.source));
-    if (toRemove.length === 0) return;
-
-    const remaining = state.distanceEntries.filter(
-      e => !sourceSet.has(e.source),
-    );
-    const milesToRemove = toRemove.reduce((sum, e) => sum + (e?.miles ?? 0), 0);
-    const stepsToRemove = toRemove.reduce((sum, e) => sum + (e?.steps ?? 0), 0);
-    const newMiles = Math.max(0, state.miles - milesToRemove);
-    const newSteps = Math.max(0, state.steps - stepsToRemove);
-
-    set({ distanceEntries: remaining, miles: newMiles, steps: newSteps });
-
-    try {
-      await database.clearDistanceEntriesBySource(SAVE_ID, sources);
-      await database.setProgressSnapshot(SAVE_ID, newMiles, newSteps);
-    } catch (error) {
-      console.error('Failed to bulk-remove distance entries:', error);
-    }
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      removeSources: sources,
+    });
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
   },
 
   setDistanceEntries: entries => set({ distanceEntries: entries }),
@@ -431,34 +405,29 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     })),
 
   persistMilesSnapshot: async () => {
-    const { miles, steps } = get();
-    try {
-      await database.setProgressSnapshot(SAVE_ID, miles, steps);
-    } catch (error) {
-      console.error('Failed to persist progress snapshot:', error);
-    }
+    const progress = await database.reconcileProgress(SAVE_ID);
+    set({
+      distanceEntries: progress.entries,
+      miles: progress.miles,
+      steps: progress.steps,
+    });
   },
 
   resetProgress: async () => {
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      clearAll: true,
+    });
     set({
-      miles: 0,
-      steps: 0,
+      miles: progress.miles,
+      steps: progress.steps,
       triviaUnlocks: [],
-      distanceEntries: [],
+      distanceEntries: progress.entries,
       lastSyncDate: null,
       syncStatus: initialSyncStatus,
       lastSyncError: null,
       lastSyncErrorAt: null,
       testOverrideMiles: null,
     });
-
-    // Clear database
-    try {
-      await database.clearDistanceEntries(SAVE_ID);
-      await database.setProgressSnapshot(SAVE_ID, 0, 0);
-    } catch (error) {
-      console.error('Failed to reset database:', error);
-    }
   },
 
   // Selectors / derived values
@@ -472,21 +441,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     return Math.round((progressMiles / TOTAL_JOURNEY_MILES) * 100);
   },
 
-  // Sum helpers. Callers used to reduce `distanceEntries` inline in two
-  // hot paths (health-app chunk commit, pedometer commit) — centralised
-  // here so the summation formula only lives in one place.
-  getTotalMiles: () => {
-    const entries = get().distanceEntries;
-    let sum = 0;
-    for (const e of entries) sum += e?.miles ?? 0;
-    return sum;
-  },
-  getTotalSteps: () => {
-    const entries = get().distanceEntries;
-    let sum = 0;
-    for (const e of entries) sum += e?.steps ?? 0;
-    return sum;
-  },
+  // These return the committed snapshot totals. The snapshot is a cache of
+  // the authoritative distance-entry sums and is updated in the same
+  // transaction as every entry mutation.
+  getTotalMiles: () => get().miles,
+  getTotalSteps: () => get().steps,
 
   // Removed unused selectors: getCheckpointIndexForCumulativeMiles, getIndexForPoint
 

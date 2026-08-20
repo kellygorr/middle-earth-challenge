@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -26,14 +26,43 @@ import {
   splitSharedDisplayName,
 } from '../../../utils/fantasyNameGenerator';
 import Button from '../../Buttons/Button';
+import ErrorMessageBanner from '../../ErrorMessageBanner';
 import SettingsRef from '../../SettingsRef';
 import { StatusBadge } from '../../StatusBadge';
 import Section from '../Section';
 
-const getErrorMessage = (error: unknown): string =>
-  error instanceof Error
+const getErrorMessage = (error: unknown): string => {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String(error.code)
+      : '';
+
+  if (code.includes('permission-denied')) {
+    return 'Please try again.';
+  }
+
+  return error instanceof Error && !error.message.startsWith('[')
     ? error.message
-    : 'Shared Progress could not be updated. Please try again.';
+    : 'Please try again.';
+};
+
+const PendingActionPlaceholder = () => (
+  <View
+    accessibilityElementsHidden
+    importantForAccessibility="no-hide-descendants"
+    pointerEvents="none"
+    style={styles.pendingActionPlaceholder}
+  >
+    <Button onPress={() => {}} variant="brand" disabled>
+      Start sharing
+    </Button>
+  </View>
+);
+
+interface ActionError {
+  message: string;
+  title: string;
+}
 
 let draftAffinity: FriendAffinity | null = null;
 
@@ -42,11 +71,17 @@ export default function FriendProgressContent() {
   const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
   const savedDisplayName = useSettingsStore(state => state.sharingDisplayName);
   const savedAffinity = useSettingsStore(state => state.sharingAffinity);
+  const provisioningPending = useSettingsStore(
+    state => state.sharingProvisioningPending,
+  );
   const deletionPending = useSettingsStore(
     state => state.sharingDeletionPending,
   );
   const totalMiles = useProgressStore(state => state.getTotalMiles());
   const showKelly = useFriendProgressStore(state => state.showKelly);
+  const fetchParticipants = useFriendProgressStore(
+    state => state.fetchParticipants,
+  );
   const savedNameParts = splitSharedDisplayName(savedDisplayName);
   const [firstName, setFirstName] = useState(savedNameParts.firstName);
   const [fantasySurname, setFantasySurname] = useState(
@@ -62,25 +97,41 @@ export default function FriendProgressContent() {
   );
   const [isWorking, setIsWorking] = useState(false);
   const [isEnablingSharing, setIsEnablingSharing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<ActionError | null>(null);
   const displayName = combineSharedDisplayName(firstName, fantasySurname);
   const isNameValid = displayName.length > 0;
   const nameChanged = displayName !== (savedDisplayName ?? '');
   const profileChanged = nameChanged || affinity !== savedAffinity;
-  const showSharingStatus = sharingEnabled || isEnablingSharing;
+  const showSharingStatus =
+    sharingEnabled || provisioningPending || isEnablingSharing;
+
+  useEffect(() => {
+    if (
+      (sharingEnabled && !provisioningPending) ||
+      (!sharingEnabled && !deletionPending)
+    ) {
+      setActionError(null);
+    }
+  }, [sharingEnabled, provisioningPending, deletionPending]);
 
   const selectAffinity = (selectedAffinity: FriendAffinity) => {
     draftAffinity = selectedAffinity;
     setAffinity(selectedAffinity);
   };
 
-  const runAction = async (action: () => Promise<void>) => {
+  const runAction = async (
+    action: () => Promise<void>,
+    errorTitle: string,
+  ) => {
     setIsWorking(true);
-    setErrorMessage(null);
+    setActionError(null);
     try {
       await action();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setActionError({
+        title: errorTitle,
+        message: getErrorMessage(error),
+      });
     } finally {
       setIsWorking(false);
     }
@@ -92,21 +143,28 @@ export default function FriendProgressContent() {
       {
         text: 'Stop Sharing',
         style: 'destructive',
-        onPress: () => runAction(friendProgressWorkflow.disableSharing),
+        onPress: () =>
+          runAction(
+            friendProgressWorkflow.disableSharing,
+            'Sharing could not be stopped',
+          ),
       },
     ]);
   };
 
   const handleStartSharing = async () => {
     setIsEnablingSharing(true);
-    await runAction(async () => {
-      await friendProgressWorkflow.enableSharing(
-        displayName,
-        totalMiles,
-        affinity,
-      );
-      showKelly();
-    });
+    await runAction(
+      async () => {
+        await friendProgressWorkflow.enableSharing(
+          displayName,
+          totalMiles,
+          affinity,
+        );
+        showKelly();
+      },
+      'Sharing could not be started',
+    );
     setIsEnablingSharing(false);
   };
 
@@ -114,8 +172,12 @@ export default function FriendProgressContent() {
     <>
       <Section style={styles.sharingStatusSection}>
         <StatusBadge
-          label={isEnablingSharing ? 'Enabling sharing…' : 'Sharing enabled'}
-          inProgress={isEnablingSharing}
+          label={
+            isEnablingSharing || provisioningPending
+              ? 'Enabling sharing…'
+              : 'Sharing enabled'
+          }
+          inProgress={isEnablingSharing || provisioningPending}
           visible={showSharingStatus}
           reserveSpace
           style={styles.sharingStatus}
@@ -128,7 +190,7 @@ export default function FriendProgressContent() {
             <TextInput
               value={firstName}
               onChangeText={setFirstName}
-              editable={!isWorking && !deletionPending}
+              editable={!isWorking && !provisioningPending && !deletionPending}
               autoCapitalize="words"
               autoCorrect={false}
               maxLength={24}
@@ -161,7 +223,7 @@ export default function FriendProgressContent() {
             <TextInput
               value={fantasySurname}
               onChangeText={setFantasySurname}
-              editable={!isWorking && !deletionPending}
+              editable={!isWorking && !provisioningPending && !deletionPending}
               autoCapitalize="words"
               autoCorrect={false}
               maxLength={24}
@@ -202,7 +264,9 @@ export default function FriendProgressContent() {
                     key={option}
                     accessibilityRole="radio"
                     accessibilityState={{ checked: selected }}
-                    disabled={isWorking || deletionPending}
+                    disabled={
+                      isWorking || provisioningPending || deletionPending
+                    }
                     onPress={() => selectAffinity(option)}
                     style={[
                       styles.affinityOption,
@@ -234,16 +298,11 @@ export default function FriendProgressContent() {
             </View>
           </View>
 
-          {errorMessage && (
-            <Text
-              accessibilityRole="alert"
-              style={[
-                typographyThemed(theme).captionPrimary,
-                { color: theme.colors.buttonBrandBackground },
-              ]}
-            >
-              {errorMessage}
-            </Text>
+          {actionError && (
+            <ErrorMessageBanner
+              title={actionError.title}
+              message={actionError.message}
+            />
           )}
 
           {deletionPending && !isWorking ? (
@@ -253,7 +312,10 @@ export default function FriendProgressContent() {
               </Text>
               <Button
                 onPress={() =>
-                  runAction(friendProgressWorkflow.retryPendingDeletion)
+                  runAction(
+                    friendProgressWorkflow.retryPendingDeletion,
+                    'Sharing could not be stopped',
+                  )
                 }
                 variant="outline"
                 disabled={isWorking}
@@ -261,7 +323,33 @@ export default function FriendProgressContent() {
                 Retry deletion
               </Button>
             </>
-          ) : deletionPending ? null : sharingEnabled ? (
+          ) : deletionPending ? (
+            <PendingActionPlaceholder />
+          ) : provisioningPending && !isWorking ? (
+            <View style={styles.actionStack}>
+              <Text style={typographyThemed(theme).captionSecondary}>
+                Sharing setup is pending. No progress is being shared yet.
+              </Text>
+              <Button
+                onPress={() =>
+                  runAction(
+                    () =>
+                      friendProgressWorkflow.synchronize(
+                        totalMiles,
+                        fetchParticipants,
+                      ),
+                    'Sharing setup could not be completed',
+                  )
+                }
+                variant="outline"
+                disabled={isWorking}
+              >
+                Retry setup
+              </Button>
+            </View>
+          ) : provisioningPending ? (
+            <PendingActionPlaceholder />
+          ) : sharingEnabled ? (
             <View style={styles.actionStack}>
               <Button
                 onPress={handleStopSharing}
@@ -273,11 +361,13 @@ export default function FriendProgressContent() {
               {profileChanged && isNameValid && (
                 <Button
                   onPress={() =>
-                    runAction(() =>
-                      friendProgressWorkflow.updateProfile(
-                        displayName,
-                        affinity,
-                      ),
+                    runAction(
+                      () =>
+                        friendProgressWorkflow.updateProfile(
+                          displayName,
+                          affinity,
+                        ),
+                      'Profile could not be updated',
                     )
                   }
                   variant="brand"
@@ -379,10 +469,14 @@ const styles = StyleSheet.create({
   previewBlock: {
     gap: spacing.xs,
   },
+  pendingActionPlaceholder: {
+    opacity: 0,
+  },
   actionStack: {
     gap: spacing.sm,
   },
   sharingStatus: {
+    alignSelf: 'center',
     marginBottom: spacing.sm,
   },
   sharingStatusSection: {

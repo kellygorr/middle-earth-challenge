@@ -165,6 +165,9 @@ class PedometerModule(private val reactContext: ReactApplicationContext) :
    *     postNotifications:   boolean,   // on <33, always true
    *     hasSensor:           boolean,
    *     ignoresBatteryOptimizations: boolean,
+  *     samplePersistenceHealthy: boolean,
+  *     samplePersistenceError: string | null,
+  *     samplePersistenceErrorAtMs: number,
    *     manufacturer:        string,
    *     sdkInt:              number }
    */
@@ -177,6 +180,14 @@ class PedometerModule(private val reactContext: ReactApplicationContext) :
             putBoolean("postNotifications", hasPostNotifications())
             putBoolean("hasSensor", hasStepCounterSensor())
             putBoolean("ignoresBatteryOptimizations", ignoresBatteryOptimizations())
+            putBoolean(
+              "samplePersistenceHealthy",
+              StepCounterService.samplePersistenceError.get() == null)
+            putString(
+              "samplePersistenceError", StepCounterService.samplePersistenceError.get())
+            putDouble(
+              "samplePersistenceErrorAtMs",
+              StepCounterService.samplePersistenceErrorAtMs.get().toDouble())
             putString("manufacturer", Build.MANUFACTURER ?: "")
             putInt("sdkInt", Build.VERSION.SDK_INT)
           }

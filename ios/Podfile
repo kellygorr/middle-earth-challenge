@@ -8,14 +8,19 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
-linkage = ENV['USE_FRAMEWORKS']
-if linkage != nil
-  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
-  use_frameworks! :linkage => linkage.to_sym
-end
+$RNFirebaseDisableSPM = true
+$RNFirebaseAsStaticFramework = true
+
+use_frameworks! :linkage => :static
 
 target 'MiddleEarthChallenge' do
   config = use_native_modules!
+
+  pod 'FirebaseAppCheckInterop', :modular_headers => true
+  pod 'FirebaseAuthInterop', :modular_headers => true
+  pod 'FirebaseFirestoreInternal', :modular_headers => true
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'RecaptchaInterop', :modular_headers => true
 
   use_react_native!(
     :path => config[:reactNativePath],

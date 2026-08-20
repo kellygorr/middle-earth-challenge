@@ -58,14 +58,17 @@ export async function setupDevMockLongSyncIfEnabled(): Promise<void> {
   await useProgressStore.getState().resetProgress();
 
   const settings = useSettingsStore.getState();
-  settings.setLastSyncTimestamp(null);
-  settings.setSyncStartDate(Date.now() - DAYS * 24 * 60 * 60 * 1000);
-  if (settings.syncProvider === 'none') {
-    settings.setSyncProvider(
-      Platform.OS === 'ios' ? 'apple-health' : 'health-connect',
-    );
-  }
-  if (!settings.syncEnabled) settings.setSyncEnabled(true);
+  await settings.updateSyncSettings({
+    lastSyncTimestamp: null,
+    syncStartDate: Date.now() - DAYS * 24 * 60 * 60 * 1000,
+    ...(settings.syncProvider === 'none'
+      ? {
+          syncProvider:
+            Platform.OS === 'ios' ? 'apple-health' : 'health-connect',
+        }
+      : {}),
+    ...(!settings.syncEnabled ? { syncEnabled: true } : {}),
+  });
 
   // Install mock data source. Android-shaped (many small samples per day).
   setMockFitnessService(true);

@@ -3,8 +3,10 @@
 ## Status
 
 The Friend Progress UI, workflow, sync cadence, participant caching, and map
-presentation are implemented. The backend is migrating to Firebase Anonymous
-Authentication and Cloud Firestore on the Spark plan.
+presentation are implemented. The current collection-wide participant query is
+not approved for broader release. The required backend target is private,
+invite-only groups using Firebase Anonymous Authentication and Cloud Firestore
+on the Spark plan.
 
 This feature lets users opt in to sharing their total journey distance and see
 other participating users' progress. It is independent of activity tracking:
@@ -13,7 +15,7 @@ journey total before anything is published.
 
 ## Goals
 
-- Let a small group see one another's journey progress.
+- Let a private, invite-only group see one another's journey progress.
 - Keep sharing optional and off by default.
 - Share only the minimum data needed for the experience.
 - Continue treating local progress as the app's source of truth.
@@ -48,24 +50,88 @@ Use Firebase for:
 - Firestore Security Rules;
 - optional account linking later if cross-device recovery is added.
 
-Each installation silently creates an anonymous account when the user opts in.
-The Firebase user UID is private and determines which document that installation
-may update. It is never displayed or used as a share code. The initial version has
-no groups, invitations, friendships, or public traveler identifiers.
+Each installation signs in anonymously when the user opts in. There is no login
+screen, email address, password, or other user credential. The Firebase UID is
+private and determines which documents that installation may update; it is
+never displayed or used as an invite code.
 
-Each user owns one document in the `friend_progress` collection:
+The globally readable `friend_progress` and `friend_progress_debug`
+collections are legacy pre-release schemas. Deny their reads before enabling
+private groups and delete their rows rather than migrating them into a group.
+
+The first private-group release allows each anonymous UID to belong to at most
+one group:
 
 ```text
-friend_progress/{uid}
+groups/{groupId}
+- ownerId: uid
+- memberCount: number
+- createdAt: server timestamp
+
+groups/{groupId}/members/{uid}
+- role: "owner" | "member"
+- joinedAt: server timestamp
+- joinedViaInviteId: string | null
+
+groups/{groupId}/participants/{uid}
 - displayName: string
 - affinity: string
 - distanceMiles: number
 - updatedAt: server timestamp
+
+groups/{groupId}/invites/{inviteId}
+- createdBy: uid
+- createdAt: server timestamp
+- expiresAt: timestamp
+- maxUses: number
+- useCount: number
+- revokedAt: timestamp | null
+
+userGroups/{uid}
+- groupId: groupId
 ```
 
 Security Rules reject invalid fields, blank names, invalid affinities, and
-negative distances. They allow authenticated reads and owner-only create,
-update, and delete operations. `updatedAt` is assigned with a server timestamp.
+negative distances. Group membership, not authentication alone, authorizes
+participant reads. Participant writes remain owner-only and `updatedAt` is
+assigned with a server timestamp.
+
+## Groups and invites
+
+Creating a group, its owner membership, and the owner's `userGroups/{uid}`
+lookup is one atomic Firestore transaction. The group ID is random and
+unguessable. The owner may create and revoke invites for that group. The
+per-UID lookup is readable only by that UID and lets the client restore its
+group without a collection-group query; Rules use it to enforce the one-group
+limit.
+
+An invite is a client-generated bearer value containing the group ID and at
+least 128 bits of random secret material. Store a SHA-256 hash of the secret as
+`inviteId`; never store the raw secret. Firestore permits an authenticated
+anonymous user to `get` that exact invite path but denies invite collection
+listing. Knowing only a group ID must not reveal its invites.
+
+Joining is an atomic Firestore transaction that increments `useCount` and the
+group's bounded `memberCount` by one, then creates both
+`members/{request.auth.uid}` and `userGroups/{request.auth.uid}`. The membership
+uses `role: "member"` and the same `joinedViaInviteId`. Rules require that both
+UID documents did not exist before the transaction, the invite is not expired
+or revoked, `useCount < maxUses`, and both post-transaction counts are exactly
+one greater. The related writes require one another through `getAfter()` so no
+partial redemption can commit.
+
+This first release needs no email/password login, account-linking flow, or
+trusted Cloud Function. The invite secret is a capability: anyone who receives it can join until it
+expires, is revoked, or reaches its usage limit. The UI must call this out when
+an owner creates an invite. A short human-entered code is not sufficient unless
+it retains at least 128 bits of entropy; sharing should normally use the system
+share sheet or a deep link.
+
+Anonymous credentials are retained by Firebase on the installation, so normal
+app restarts do not require any action. Reinstalling the app or clearing its
+data can create a new UID and lose group access. Cross-device or reinstall
+recovery remains out of scope unless optional account linking is designed
+later.
 
 ## Identity and display names
 
@@ -73,9 +139,9 @@ update, and delete operations. `updatedAt` is assigned with a server timestamp.
 - Provide a locally generated, editable trail surname such as `Greycloak`.
 - The generator changes only the surname and uses original pastoral-fantasy
   name parts rather than names from existing works.
-- Show the combined public display name, such as `Penny Greycloak`, before the
+- Show the combined group-visible display name, such as `Penny Greycloak`, before the
   user confirms opt-in.
-- The display name is public and editable after opt-in.
+- The display name is visible to group members and editable after opt-in.
 - Duplicate display names are allowed.
 - Do not add traveler codes for the initial family-focused version.
 - Always update rows by the private UUID, never by display name.
@@ -84,8 +150,9 @@ update, and delete operations. `updatedAt` is assigned with a server timestamp.
   Clear it when the user opts out. Participant names shown on the map still come
   from fetched Firestore documents.
 
-A reinstall may create a new anonymous identity and leave an abandoned row.
-Account recovery and stale-row cleanup are deferred decisions.
+A reinstall may create a new anonymous identity and leave abandoned membership
+and participant rows. Credential recovery and stale-row cleanup are deferred
+decisions.
 
 ## Published distance
 
@@ -131,7 +198,7 @@ While opted out, perform no cloud requests.
 
 ## Retrieval and presentation
 
-Fetch each opted-in user's latest:
+Fetch each participant in the current user's group:
 
 - display name;
 - aggregate distance;
@@ -160,7 +227,7 @@ row opens a dedicated Shared Progress modal.
 
 The modal includes:
 
-- a privacy section listing exactly what is shared: public display name,
+- a privacy section listing exactly what is shared: group-visible display name,
   aggregate journey distance, and last-updated time;
 - a privacy section listing what is never shared: health records, step history,
   routes, locations, and individual manual or automatic activity entries;
@@ -169,11 +236,11 @@ The modal includes:
 - a required first-name field;
 - an editable generated trail-surname field;
 - a **Generate name** action that changes only the surname;
-- a preview of the combined public display name;
+- a preview of the combined group-visible display name;
 - a **Start sharing** action that remains disabled until the name is valid.
 
-Generate names locally. Do not create an anonymous account or upload any value
-until the user selects **Start sharing**. After opt-in, the same modal provides
+Generate names locally. Do not start an anonymous Firebase session or upload
+any value until the user selects **Start sharing**. After opt-in, the same modal provides
 sharing status, display-name editing, the privacy details, and a **Stop sharing**
 action.
 
@@ -181,16 +248,38 @@ action.
 
 Firestore Security Rules must ensure:
 
-- an authenticated anonymous user may insert and update only their own row;
-- a user may delete only their own row;
-- clients cannot write another user's distance or display name;
-- authenticated app users may read every existing shared-progress row;
-- unauthenticated clients cannot read shared-progress rows.
+- unauthenticated clients cannot read or write sharing data;
+- a user may read a group and its participants only when
+  `groups/{groupId}/members/{request.auth.uid}` exists;
+- a user may create, update, or delete only their own participant row;
+- participant documents retain the existing exact-field and value validation;
+- participant identity comes from the document path, never a client-supplied
+  UID or group field;
+- membership documents are readable only by their subject and the group owner;
+- each `userGroups/{uid}` document is readable only by that UID and may name
+  only the group whose membership is created or removed in the same atomic
+  operation;
+- only the owner may create or revoke an invite, and invite fields other than
+  the transactionally incremented `useCount` are immutable;
+- invite `get` is allowed only by exact unguessable path and invite `list` is
+  denied;
+- a caller may create only their own member document, with role `member`, as
+  part of a valid invite-redemption transaction;
+- no client may grant itself the owner role or change `ownerId`;
+- collection-group participant queries and all reads of legacy
+  `friend_progress` collections are denied.
 
-Row existence represents opt-in. There is no group or invitation layer in the
-initial version: authenticated participants see all users who currently have a
-shared-progress row. The private UUID distinguishes users with duplicate display
-names but is not included in the participant data presented by the app.
+Leaving atomically deletes the caller's participant, membership, and
+`userGroups` documents and decrements `memberCount`. Removing a member is
+restricted to the owner and applies the same operation. The first release must
+cap group size so these operations and group cleanup fit in one Firestore batch.
+Owner departure explicitly deletes the group and every subordinate document;
+it must not silently transfer ownership. A UID may delete its own stale
+`userGroups` lookup if its referenced group no longer exists, allowing recovery
+from an interrupted or incomplete cleanup. Rules emulator tests must cover
+non-member and cross-group reads, forged roles, direct membership creation,
+partial invite redemption, exhausted/expired/revoked invites, member removal,
+leaving, and owner deletion.
 
 Keep the Firebase project on the Spark plan without a billing account. Firebase
 client configuration is public metadata; access is protected by Authentication
@@ -200,20 +289,23 @@ and Firestore Security Rules.
 
 1. Explain that only display name and total journey distance are shared.
 2. Require a first name, generate or accept an editable trail surname, and show
-   the combined public display name.
+   the combined group-visible display name.
 3. Require the user to explicitly select **Start sharing**.
-4. Create or restore the anonymous Firebase session.
-5. Insert the display name and current absolute journey distance.
-6. Persist the confirmed display name and enable sharing locally only after the
+4. Create or restore the anonymous Firebase session without showing a login.
+5. Create a private group or redeem an invite if this installation is not
+   already a member of one.
+6. Insert the display name and current absolute journey distance in that group.
+7. Persist the confirmed display name and enable sharing locally only after the
    cloud insert succeeds.
-7. Fetch all current participants.
+8. Fetch the current group's participants.
 
 If setup fails, keep sharing disabled and preserve all local progress.
 
 ## Opt-out flow
 
 1. Stop the foreground publish/fetch timer.
-2. Delete the user's cloud row.
+2. Atomically delete the user's participant and membership rows. If the user is
+   the owner, explicitly delete the group and its subordinate data instead.
 3. Clear the locally saved display name, cached shared participants, and
    publication metadata.
 4. Keep the anonymous session only while needed to retry a failed deletion.

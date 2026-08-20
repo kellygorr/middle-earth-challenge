@@ -15,23 +15,104 @@ describe('settingsStore dual reconciliation cursor', () => {
     });
   });
 
-  it('clears the cursor when dual tracking is disabled', () => {
-    useSettingsStore.getState().setSyncEnabled(false);
-
-    expect(useSettingsStore.getState().lastHealthReconciledThrough).toBeNull();
-    expect(updateUserSettings).toHaveBeenCalledWith({
+  it('does not hide a cursor write inside an operational update', async () => {
+    await useSettingsStore.getState().updateSyncSettings({
       syncEnabled: false,
+    });
+
+    expect(useSettingsStore.getState().lastHealthReconciledThrough).toBe(1234);
+    expect(updateUserSettings).toHaveBeenCalledWith({ syncEnabled: false });
+  });
+
+  it('does not change the cursor when a single source is disabled', async () => {
+    useSettingsStore.setState({ trackingMode: 'health-app' });
+
+    await useSettingsStore.getState().updateSyncSettings({
+      syncEnabled: false,
+    });
+
+    expect(useSettingsStore.getState().lastHealthReconciledThrough).toBe(1234);
+    expect(updateUserSettings).toHaveBeenCalledWith({ syncEnabled: false });
+  });
+
+  it('publishes batched bookmarks after persistence succeeds', async () => {
+    useSettingsStore.setState({
+      syncStartDate: 100,
+      lastSyncTimestamp: 200,
+      lastHealthReconciledThrough: 300,
+    });
+
+    await useSettingsStore.getState().updateSyncBookmarks({
+      syncStartDate: 400,
+      lastSyncTimestamp: null,
+      lastHealthReconciledThrough: null,
+    });
+
+    expect(updateUserSettings).toHaveBeenCalledWith({
+      syncStartDate: 400,
+      lastSyncTimestamp: null,
+      lastHealthReconciledThrough: null,
+    });
+    expect(useSettingsStore.getState()).toMatchObject({
+      syncStartDate: 400,
+      lastSyncTimestamp: null,
       lastHealthReconciledThrough: null,
     });
   });
 
-  it('does not change the cursor when a single source is disabled', () => {
-    useSettingsStore.setState({ trackingMode: 'health-app' });
+  it('does not publish bookmarks when persistence fails', async () => {
+    useSettingsStore.setState({
+      syncStartDate: 100,
+      lastSyncTimestamp: 200,
+      lastHealthReconciledThrough: 300,
+    });
+    updateUserSettings.mockRejectedValueOnce(new Error('database unavailable'));
 
-    useSettingsStore.getState().setSyncEnabled(false);
+    await expect(
+      useSettingsStore.getState().updateSyncBookmarks({
+        syncStartDate: 400,
+        lastSyncTimestamp: null,
+        lastHealthReconciledThrough: null,
+      }),
+    ).rejects.toThrow('database unavailable');
 
-    expect(useSettingsStore.getState().lastHealthReconciledThrough).toBe(1234);
-    expect(updateUserSettings).toHaveBeenCalledWith({ syncEnabled: false });
+    expect(useSettingsStore.getState()).toMatchObject({
+      syncStartDate: 100,
+      lastSyncTimestamp: 200,
+      lastHealthReconciledThrough: 300,
+    });
+  });
+
+  it('persists native cleanup state before publishing it', async () => {
+    useSettingsStore.setState({ pedometerCleanupPending: false });
+    let finishWrite: (() => void) | undefined;
+    updateUserSettings.mockImplementationOnce(
+      () =>
+        new Promise<void>(resolve => {
+          finishWrite = resolve;
+        }),
+    );
+
+    const update = useSettingsStore.getState().updateSyncSettings({
+      syncEnabled: false,
+      pedometerCleanupPending: true,
+    });
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      syncEnabled: true,
+      pedometerCleanupPending: false,
+    });
+    finishWrite?.();
+    await update;
+
+    expect(updateUserSettings).toHaveBeenCalledWith({
+      syncEnabled: false,
+      pedometerCleanupPending: true,
+    });
+    expect(useSettingsStore.getState()).toMatchObject({
+      syncEnabled: false,
+      pedometerCleanupPending: true,
+    });
   });
 });
 
@@ -46,67 +127,70 @@ describe('settingsStore shared progress', () => {
       sharingEnabled: false,
       sharingDisplayName: null,
       sharingAffinity: null,
+      sharingProvisioningPending: false,
       sharingDeletionPending: false,
       lastPublishedMiles: null,
       lastSharedProgressSyncAt: null,
     });
   });
 
-  it('persists sharing state and publication metadata', () => {
+  it('persists sharing state in one batch before publishing it', async () => {
     const settings = useSettingsStore.getState();
+    let finishWrite: (() => void) | undefined;
+    updateUserSettings.mockImplementationOnce(
+      () =>
+        new Promise<void>(resolve => {
+          finishWrite = resolve;
+        }),
+    );
 
-    settings.setSharingEnabled(true);
-    settings.setSharingDisplayName('Kelly');
-    settings.setSharingAffinity('river');
-    settings.setSharingDeletionPending(true);
-    settings.setLastPublishedMiles(12.5);
-    settings.setLastSharedProgressSyncAt(1234);
+    const update = settings.updateSharingSettings({
+      sharingEnabled: true,
+      sharingDisplayName: 'Kelly',
+      sharingAffinity: 'river',
+      sharingProvisioningPending: false,
+      sharingDeletionPending: false,
+      lastPublishedMiles: 12.5,
+      lastSharedProgressSyncAt: 1234,
+    });
+
+    expect(useSettingsStore.getState().sharingEnabled).toBe(false);
+    finishWrite?.();
+    await update;
 
     expect(useSettingsStore.getState()).toMatchObject({
       sharingEnabled: true,
       sharingDisplayName: 'Kelly',
       sharingAffinity: 'river',
-      sharingDeletionPending: true,
+      sharingProvisioningPending: false,
+      sharingDeletionPending: false,
       lastPublishedMiles: 12.5,
       lastSharedProgressSyncAt: 1234,
     });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(1, {
+    expect(updateUserSettings).toHaveBeenCalledWith({
       sharingEnabled: true,
-    });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(2, {
       sharingDisplayName: 'Kelly',
-    });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(3, {
       sharingAffinity: 'river',
-    });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(4, {
-      sharingDeletionPending: true,
-    });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(5, {
+      sharingProvisioningPending: false,
+      sharingDeletionPending: false,
       lastPublishedMiles: 12.5,
-    });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(6, {
       lastSharedProgressSyncAt: 1234,
     });
   });
 
-  it('persists cleared optional sharing values as null', () => {
-    useSettingsStore.getState().setSharingDisplayName(null);
-    useSettingsStore.getState().setSharingAffinity(null);
-    useSettingsStore.getState().setLastPublishedMiles(null);
-    useSettingsStore.getState().setLastSharedProgressSyncAt(null);
+  it('does not publish sharing state when persistence fails', async () => {
+    updateUserSettings.mockRejectedValueOnce(new Error('disk'));
 
-    expect(updateUserSettings).toHaveBeenNthCalledWith(1, {
-      sharingDisplayName: null,
-    });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(2, {
-      sharingAffinity: null,
-    });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(3, {
-      lastPublishedMiles: null,
-    });
-    expect(updateUserSettings).toHaveBeenNthCalledWith(4, {
-      lastSharedProgressSyncAt: null,
+    await expect(
+      useSettingsStore.getState().updateSharingSettings({
+        sharingEnabled: true,
+        sharingProvisioningPending: true,
+      }),
+    ).rejects.toThrow('disk');
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      sharingEnabled: false,
+      sharingProvisioningPending: false,
     });
   });
 });

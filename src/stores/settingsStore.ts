@@ -1,12 +1,5 @@
 import { create } from 'zustand';
-import {
-  UserSettings,
-  LabelSize,
-  TextSize,
-  SyncProvider,
-  TrackingMode,
-  FriendAffinity,
-} from '../types';
+import { UserSettings, LabelSize, TextSize } from '../types';
 import { ThemeName, themes } from '../styles/themes';
 import { database } from '../services/database';
 import { useProgressStore } from './progressStore';
@@ -26,22 +19,49 @@ interface SettingsStore extends UserSettings {
   setDevMode: (enabled: boolean) => void;
   setUseMiles: (useMiles: boolean) => void;
   // Sync actions
-  setSyncEnabled: (enabled: boolean) => void;
-  setSyncProvider: (provider: SyncProvider) => void;
-  setSyncStartDate: (date: number | null) => void;
-  setLastSyncTimestamp: (timestamp: number | null) => void;
-  setLastHealthReconciledThrough: (timestamp: number | null) => void;
+  updateSyncBookmarks: (
+    updates: Partial<
+      Pick<
+        UserSettings,
+        'syncStartDate' | 'lastSyncTimestamp' | 'lastHealthReconciledThrough'
+      >
+    >,
+  ) => Promise<void>;
+  updateSyncSettings: (
+    updates: Partial<
+      Pick<
+        UserSettings,
+        | 'syncEnabled'
+        | 'syncProvider'
+        | 'syncStartDate'
+        | 'lastSyncTimestamp'
+        | 'healthSyncFormatVersion'
+        | 'healthLookbackStartTimestamp'
+        | 'lastHealthReconciledThrough'
+        | 'liveSyncEnabled'
+        | 'trackingMode'
+        | 'hasSeenOemBatteryPrompt'
+        | 'hcRevokePendingRestart'
+        | 'pedometerCleanupPending'
+        | 'lastNotifiedCheckpointIndex'
+      >
+    >,
+  ) => Promise<void>;
   setLiveSyncEnabled: (enabled: boolean) => void;
-  setTrackingMode: (mode: TrackingMode) => void;
-  setHasSeenOemBatteryPrompt: (seen: boolean) => void;
-  setHcRevokePendingRestart: (pending: boolean) => void;
-  setLastNotifiedCheckpointIndex: (index: number) => void;
-  setSharingEnabled: (enabled: boolean) => void;
-  setSharingDisplayName: (displayName: string | null) => void;
-  setSharingAffinity: (affinity: FriendAffinity | null) => void;
-  setSharingDeletionPending: (pending: boolean) => void;
-  setLastPublishedMiles: (miles: number | null) => void;
-  setLastSharedProgressSyncAt: (timestamp: number | null) => void;
+  updateSharingSettings: (
+    updates: Partial<
+      Pick<
+        UserSettings,
+        | 'sharingEnabled'
+        | 'sharingDisplayName'
+        | 'sharingAffinity'
+        | 'sharingProvisioningPending'
+        | 'sharingDeletionPending'
+        | 'lastPublishedMiles'
+        | 'lastSharedProgressSyncAt'
+      >
+    >,
+  ) => Promise<void>;
   loadSettings: () => Promise<void>;
 }
 
@@ -63,15 +83,19 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   syncProvider: 'none',
   syncStartDate: null,
   lastSyncTimestamp: null,
+  healthSyncFormatVersion: 0,
+  healthLookbackStartTimestamp: null,
   lastHealthReconciledThrough: null,
   liveSyncEnabled: false,
   trackingMode: 'health-app',
   hasSeenOemBatteryPrompt: false,
   hcRevokePendingRestart: false,
+  pedometerCleanupPending: false,
   lastNotifiedCheckpointIndex: -1,
   sharingEnabled: false,
   sharingDisplayName: null,
   sharingAffinity: null,
+  sharingProvisioningPending: false,
   sharingDeletionPending: false,
   lastPublishedMiles: null,
   lastSharedProgressSyncAt: null,
@@ -126,37 +150,14 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   },
 
   // Sync actions
-  setSyncEnabled: enabled => {
-    const resetDualReconciliation =
-      !enabled && useSettingsStore.getState().trackingMode === 'dual';
-    set({
-      syncEnabled: enabled,
-      ...(resetDualReconciliation ? { lastHealthReconciledThrough: null } : {}),
-    });
-    database.updateUserSettings({
-      syncEnabled: enabled,
-      ...(resetDualReconciliation ? { lastHealthReconciledThrough: null } : {}),
-    });
+  updateSyncBookmarks: async updates => {
+    await database.updateUserSettings(updates);
+    set(updates);
   },
 
-  setSyncProvider: provider => {
-    set({ syncProvider: provider });
-    database.updateUserSettings({ syncProvider: provider });
-  },
-
-  setSyncStartDate: date => {
-    set({ syncStartDate: date });
-    database.updateUserSettings({ syncStartDate: date });
-  },
-
-  setLastSyncTimestamp: timestamp => {
-    set({ lastSyncTimestamp: timestamp });
-    database.updateUserSettings({ lastSyncTimestamp: timestamp });
-  },
-
-  setLastHealthReconciledThrough: timestamp => {
-    set({ lastHealthReconciledThrough: timestamp });
-    database.updateUserSettings({ lastHealthReconciledThrough: timestamp });
+  updateSyncSettings: async updates => {
+    await database.updateUserSettings(updates);
+    set(updates);
   },
 
   setLiveSyncEnabled: enabled => {
@@ -164,95 +165,49 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     database.updateUserSettings({ liveSyncEnabled: enabled });
   },
 
-  setTrackingMode: mode => {
-    set({ trackingMode: mode });
-    database.updateUserSettings({ trackingMode: mode });
-  },
-
-  setHasSeenOemBatteryPrompt: seen => {
-    set({ hasSeenOemBatteryPrompt: seen });
-    database.updateUserSettings({ hasSeenOemBatteryPrompt: seen });
-  },
-
-  setHcRevokePendingRestart: pending => {
-    set({ hcRevokePendingRestart: pending });
-    database.updateUserSettings({ hcRevokePendingRestart: pending });
-  },
-
-  setLastNotifiedCheckpointIndex: index => {
-    set({ lastNotifiedCheckpointIndex: index });
-    database.updateUserSettings({ lastNotifiedCheckpointIndex: index });
-  },
-
-  setSharingEnabled: enabled => {
-    set({ sharingEnabled: enabled });
-    database.updateUserSettings({ sharingEnabled: enabled });
-  },
-
-  setSharingDisplayName: displayName => {
-    set({ sharingDisplayName: displayName });
-    database.updateUserSettings({ sharingDisplayName: displayName });
-  },
-
-  setSharingAffinity: affinity => {
-    set({ sharingAffinity: affinity });
-    database.updateUserSettings({ sharingAffinity: affinity });
-  },
-
-  setSharingDeletionPending: pending => {
-    set({ sharingDeletionPending: pending });
-    database.updateUserSettings({ sharingDeletionPending: pending });
-  },
-
-  setLastPublishedMiles: miles => {
-    set({ lastPublishedMiles: miles });
-    database.updateUserSettings({ lastPublishedMiles: miles });
-  },
-
-  setLastSharedProgressSyncAt: timestamp => {
-    set({ lastSharedProgressSyncAt: timestamp });
-    database.updateUserSettings({ lastSharedProgressSyncAt: timestamp });
+  updateSharingSettings: async updates => {
+    await database.updateUserSettings(updates);
+    set(updates);
   },
 
   loadSettings: async () => {
-    try {
-      const settings = await database.getUserSettings();
-      set({
-        id: settings.id,
-        labelSize: settings.labelSize,
-        textSize: settings.textSize,
-        currentTheme: settings.currentTheme,
-        showPointLabels: settings.showPointLabels,
-        colorizeMap: settings.colorizeMap,
-        reducedMapTitles: settings.reducedMapTitles,
-        devMode:
-          settings.devMode === undefined || settings.devMode === null
-            ? true
-            : settings.devMode,
-        useMiles: settings.useMiles ?? true,
-        syncEnabled: settings.syncEnabled ?? false,
-        syncProvider: settings.syncProvider ?? 'none',
-        syncStartDate: settings.syncStartDate ?? null,
-        lastSyncTimestamp: settings.lastSyncTimestamp ?? null,
-        lastHealthReconciledThrough:
-          settings.lastHealthReconciledThrough ?? null,
-        liveSyncEnabled: settings.liveSyncEnabled ?? false,
-        trackingMode: settings.trackingMode ?? 'health-app',
-        hasSeenOemBatteryPrompt: settings.hasSeenOemBatteryPrompt ?? false,
-        hcRevokePendingRestart: settings.hcRevokePendingRestart ?? false,
-        lastNotifiedCheckpointIndex: settings.lastNotifiedCheckpointIndex ?? -1,
-        sharingEnabled: settings.sharingEnabled ?? false,
-        sharingDisplayName: settings.sharingDisplayName ?? null,
-        sharingAffinity: settings.sharingAffinity ?? null,
-        sharingDeletionPending: settings.sharingDeletionPending ?? false,
-        lastPublishedMiles: settings.lastPublishedMiles ?? null,
-        lastSharedProgressSyncAt: settings.lastSharedProgressSyncAt ?? null,
-        isLoaded: true,
-      });
-    } catch (error) {
-      console.error('Failed to load settings:', error);
-      set({ isLoaded: true }); // Still mark as loaded to unblock app
-    }
+    const settings = await database.getUserSettings();
+    set({
+      id: settings.id,
+      labelSize: settings.labelSize,
+      textSize: settings.textSize,
+      currentTheme: settings.currentTheme,
+      showPointLabels: settings.showPointLabels,
+      colorizeMap: settings.colorizeMap,
+      reducedMapTitles: settings.reducedMapTitles,
+      devMode:
+        settings.devMode === undefined || settings.devMode === null
+          ? true
+          : settings.devMode,
+      useMiles: settings.useMiles ?? true,
+      syncEnabled: settings.syncEnabled ?? false,
+      syncProvider: settings.syncProvider ?? 'none',
+      syncStartDate: settings.syncStartDate ?? null,
+      lastSyncTimestamp: settings.lastSyncTimestamp ?? null,
+      healthSyncFormatVersion: settings.healthSyncFormatVersion ?? 0,
+      healthLookbackStartTimestamp:
+        settings.healthLookbackStartTimestamp ?? null,
+      lastHealthReconciledThrough: settings.lastHealthReconciledThrough ?? null,
+      liveSyncEnabled: settings.liveSyncEnabled ?? false,
+      trackingMode: settings.trackingMode ?? 'health-app',
+      hasSeenOemBatteryPrompt: settings.hasSeenOemBatteryPrompt ?? false,
+      hcRevokePendingRestart: settings.hcRevokePendingRestart ?? false,
+      pedometerCleanupPending: settings.pedometerCleanupPending ?? false,
+      lastNotifiedCheckpointIndex: settings.lastNotifiedCheckpointIndex ?? -1,
+      sharingEnabled: settings.sharingEnabled ?? false,
+      sharingDisplayName: settings.sharingDisplayName ?? null,
+      sharingAffinity: settings.sharingAffinity ?? null,
+      sharingProvisioningPending: settings.sharingProvisioningPending ?? false,
+      sharingDeletionPending: settings.sharingDeletionPending ?? false,
+      lastPublishedMiles: settings.lastPublishedMiles ?? null,
+      lastSharedProgressSyncAt: settings.lastSharedProgressSyncAt ?? null,
+      isLoaded: true,
+    });
   },
 }));
 

@@ -19,14 +19,12 @@ interface FriendProgressServiceActions {
 type SharingSettings = Pick<
   ReturnType<typeof useSettingsStore.getState>,
   | 'sharingEnabled'
+  | 'sharingDisplayName'
+  | 'sharingAffinity'
+  | 'sharingProvisioningPending'
   | 'sharingDeletionPending'
   | 'lastPublishedMiles'
-  | 'setSharingEnabled'
-  | 'setSharingDisplayName'
-  | 'setSharingAffinity'
-  | 'setSharingDeletionPending'
-  | 'setLastPublishedMiles'
-  | 'setLastSharedProgressSyncAt'
+  | 'updateSharingSettings'
 >;
 
 interface FriendProgressWorkflowOptions {
@@ -41,6 +39,21 @@ export const createFriendProgressWorkflow = ({
   now = Date.now,
 }: FriendProgressWorkflowOptions = {}) => {
   let syncInFlight: Promise<void> | null = null;
+  let deletionInFlight: Promise<void> | null = null;
+
+  const finishProvisioning = async (
+    displayName: string,
+    distanceMiles: number,
+    affinity: FriendAffinity,
+  ): Promise<void> => {
+    await service.enableFriendProgress(displayName, distanceMiles, affinity);
+    await getSettings().updateSharingSettings({
+      sharingEnabled: true,
+      sharingProvisioningPending: false,
+      lastPublishedMiles: distanceMiles,
+      lastSharedProgressSyncAt: now(),
+    });
+  };
 
   const enableSharing = async (
     displayName: string,
@@ -53,14 +66,16 @@ export const createFriendProgressWorkflow = ({
     }
 
     const normalizedName = displayName.trim();
-    await service.enableFriendProgress(normalizedName, distanceMiles, affinity);
-
-    settings.setSharingDisplayName(normalizedName);
-    settings.setSharingAffinity(affinity);
-    settings.setLastPublishedMiles(distanceMiles);
-    settings.setLastSharedProgressSyncAt(now());
-    settings.setSharingDeletionPending(false);
-    settings.setSharingEnabled(true);
+    await settings.updateSharingSettings({
+      sharingEnabled: false,
+      sharingDisplayName: normalizedName,
+      sharingAffinity: affinity,
+      sharingProvisioningPending: true,
+      sharingDeletionPending: false,
+      lastPublishedMiles: distanceMiles,
+      lastSharedProgressSyncAt: null,
+    });
+    await finishProvisioning(normalizedName, distanceMiles, affinity);
   };
 
   const updateProfile = async (
@@ -73,26 +88,47 @@ export const createFriendProgressWorkflow = ({
     }
 
     const normalizedName = displayName.trim();
-    await service.updateFriendProfile(normalizedName, affinity);
-    settings.setSharingDisplayName(normalizedName);
-    settings.setSharingAffinity(affinity);
-    settings.setLastSharedProgressSyncAt(now());
+    if (settings.lastPublishedMiles === null) {
+      throw new Error('Shared progress profile is incomplete');
+    }
+    await settings.updateSharingSettings({
+      sharingDisplayName: normalizedName,
+      sharingAffinity: affinity,
+      sharingProvisioningPending: true,
+    });
+    await finishProvisioning(
+      normalizedName,
+      settings.lastPublishedMiles,
+      affinity,
+    );
   };
 
-  const finishDeletion = async (): Promise<void> => {
-    const settings = getSettings();
-    await service.deleteFriendProgress();
-    settings.setSharingDeletionPending(false);
+  const finishDeletion = (): Promise<void> => {
+    if (deletionInFlight) return deletionInFlight;
+
+    deletionInFlight = (async () => {
+      await service.deleteFriendProgress();
+      await getSettings().updateSharingSettings({
+        sharingDeletionPending: false,
+      });
+    })().finally(() => {
+      deletionInFlight = null;
+    });
+
+    return deletionInFlight;
   };
 
   const disableSharing = async (): Promise<void> => {
     const settings = getSettings();
-    settings.setSharingEnabled(false);
-    settings.setSharingDeletionPending(true);
-    settings.setSharingDisplayName(null);
-    settings.setSharingAffinity(null);
-    settings.setLastPublishedMiles(null);
-    settings.setLastSharedProgressSyncAt(null);
+    await settings.updateSharingSettings({
+      sharingEnabled: false,
+      sharingDisplayName: null,
+      sharingAffinity: null,
+      sharingProvisioningPending: false,
+      sharingDeletionPending: true,
+      lastPublishedMiles: null,
+      lastSharedProgressSyncAt: null,
+    });
     await finishDeletion();
   };
 
@@ -116,15 +152,40 @@ export const createFriendProgressWorkflow = ({
         await finishDeletion();
         return;
       }
+      if (settings.sharingProvisioningPending) {
+        if (!settings.sharingDisplayName || !settings.sharingAffinity) {
+          throw new Error('Pending shared progress profile is incomplete');
+        }
+        await settings.updateSharingSettings({
+          lastPublishedMiles: distanceMiles,
+        });
+        await finishProvisioning(
+          settings.sharingDisplayName,
+          distanceMiles,
+          settings.sharingAffinity,
+        );
+      }
       if (!settings.sharingEnabled) return;
 
       if (settings.lastPublishedMiles !== distanceMiles) {
-        await service.updateFriendDistance(distanceMiles);
-        settings.setLastPublishedMiles(distanceMiles);
+        if (!settings.sharingDisplayName || !settings.sharingAffinity) {
+          throw new Error('Shared progress profile is incomplete');
+        }
+        await settings.updateSharingSettings({
+          sharingProvisioningPending: true,
+          lastPublishedMiles: distanceMiles,
+        });
+        await finishProvisioning(
+          settings.sharingDisplayName,
+          distanceMiles,
+          settings.sharingAffinity,
+        );
       }
 
       await fetchParticipants();
-      settings.setLastSharedProgressSyncAt(now());
+      await getSettings().updateSharingSettings({
+        lastSharedProgressSyncAt: now(),
+      });
     })().finally(() => {
       syncInFlight = null;
     });

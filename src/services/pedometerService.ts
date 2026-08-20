@@ -25,6 +25,12 @@ export interface PedometerEnvironment {
   hasSensor: boolean;
   /** Stock Android battery-optimization allowlist state. */
   ignoresBatteryOptimizations: boolean;
+  /** Whether the most recent due native sensor sample persisted successfully. */
+  samplePersistenceHealthy: boolean;
+  /** Latest native SQLite failure, cleared after a successful retry. */
+  samplePersistenceError: string | null;
+  /** Wall-clock time of the latest native SQLite failure, or 0 when healthy. */
+  samplePersistenceErrorAtMs: number;
   /** e.g. "samsung", "google", "xiaomi" (lowercase caller-normalized). */
   manufacturer: string;
   /** Build.VERSION.SDK_INT. */
@@ -191,6 +197,9 @@ const IosPedometer: PedometerService = {
       postNotifications: false,
       hasSensor: false,
       ignoresBatteryOptimizations: false,
+      samplePersistenceHealthy: true,
+      samplePersistenceError: null,
+      samplePersistenceErrorAtMs: 0,
       manufacturer: 'apple',
       sdkInt: 0,
     }),

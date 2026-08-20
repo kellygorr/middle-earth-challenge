@@ -65,6 +65,9 @@ export default function SettingsContent() {
     state => state.setLiveSyncEnabled,
   );
   const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
+  const sharingProvisioningPending = useSettingsStore(
+    state => state.sharingProvisioningPending,
+  );
   const sharingDeletionPending = useSettingsStore(
     state => state.sharingDeletionPending,
   );
@@ -344,6 +347,8 @@ export default function SettingsContent() {
           caption={
             sharingDeletionPending
               ? 'Sharing off - deletion pending'
+              : sharingProvisioningPending
+              ? 'Finishing sharing setup'
               : sharingEnabled
               ? 'Sharing on'
               : 'Sharing off'
@@ -352,7 +357,11 @@ export default function SettingsContent() {
           icon={
             <IconButton
               icon={<ChatIcon size={iconSizes.medium} />}
-              variant={sharingEnabled ? 'brand' : 'outline'}
+              variant={
+                sharingEnabled || sharingProvisioningPending
+                  ? 'brand'
+                  : 'outline'
+              }
             />
           }
         />

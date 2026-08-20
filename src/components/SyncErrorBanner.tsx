@@ -98,6 +98,22 @@ function getCopy(
             : 'Your health app isn’t available right now. We’ll keep trying.',
         showAddHint: false,
       };
+    case 'provider':
+      return {
+        headline: 'Health sync failed',
+        body:
+          'Your health app could not return a complete activity update. ' +
+          'Nothing from that date range was skipped; try syncing again.',
+        showAddHint: false,
+      };
+    case 'pedometerStorage':
+      return {
+        headline: 'Pedometer storage failed',
+        body:
+          'A step sample could not be saved. Tracking is still running and ' +
+          'will retry on the next sensor update.',
+        showAddHint: false,
+      };
     case 'backgroundDisabled':
       return {
         headline: 'Background updates are off',
@@ -253,6 +269,11 @@ export default function SyncErrorBanner() {
       </View>
       {/* Per-error action row */}
       {lastSyncError.kind === 'timeout' && (
+        <View style={styles.retry}>
+          <SyncNowRow />
+        </View>
+      )}
+      {lastSyncError.kind === 'provider' && (
         <View style={styles.retry}>
           <SyncNowRow />
         </View>

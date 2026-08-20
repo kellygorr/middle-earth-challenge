@@ -8,6 +8,11 @@ import Button from '../../Buttons/Button';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
 import { friendProgressWorkflow } from '../../../services/friendProgressWorkflow';
+import {
+  isManualDistanceSource,
+  isSyncedDistanceSource,
+  MANUAL_DISTANCE_SOURCES,
+} from '../../../constants/distanceSources';
 
 /**
  * DataContent - Content component for the Data modal.
@@ -19,14 +24,22 @@ export default function DataContent() {
 
   // Distance entries
   const distanceEntries = useProgressStore(state => state.distanceEntries);
-  const hasSyncedData = distanceEntries.some(e => e.source !== 'manual');
-  const hasManualData = distanceEntries.some(e => e.source === 'manual');
+  const hasSyncedData = distanceEntries.some(e =>
+    isSyncedDistanceSource(e.source),
+  );
+  const hasManualData = distanceEntries.some(e =>
+    isManualDistanceSource(e.source),
+  );
   const hasAnyData = distanceEntries.length > 0;
   const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
+  const sharingProvisioningPending = useSettingsStore(
+    state => state.sharingProvisioningPending,
+  );
   const sharingDeletionPending = useSettingsStore(
     state => state.sharingDeletionPending,
   );
-  const hasSharedData = sharingEnabled || sharingDeletionPending;
+  const hasSharedData =
+    sharingEnabled || sharingProvisioningPending || sharingDeletionPending;
   const hasAllData = hasAnyData || hasSharedData;
 
   const handleDeleteSharedData = async () => {
@@ -68,22 +81,27 @@ export default function DataContent() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            const syncedSources = [
+              ...new Set(
+                distanceEntries
+                  .filter(entry => isSyncedDistanceSource(entry.source))
+                  .map(entry => entry.source),
+              ),
+            ];
             // Bulk-remove in a single store/DB write so the UI doesn't
             // freeze when there are hundreds of chunked-sync entries.
             await useProgressStore
               .getState()
-              .removeDistanceEntriesBySource([
-                'health-connect',
-                'apple-health',
-                'pedometer',
-              ]);
+              .removeDistanceEntriesBySource(syncedSources);
 
             // Reset sync bookmarks so the next sync's fromDate falls back
             // to syncStartDate (now) instead of the pre-reset lastSync-
             // Timestamp, which would silently re-import the deleted data.
             const settings = useSettingsStore.getState();
-            settings.setSyncStartDate(Date.now());
-            settings.setLastSyncTimestamp(null);
+            await settings.updateSyncBookmarks({
+              syncStartDate: Date.now(),
+              lastSyncTimestamp: null,
+            });
           },
         },
       ],
@@ -103,7 +121,7 @@ export default function DataContent() {
           onPress: async () => {
             await useProgressStore
               .getState()
-              .removeDistanceEntriesBySource(['manual']);
+              .removeDistanceEntriesBySource(MANUAL_DISTANCE_SOURCES);
           },
         },
       ],
@@ -142,8 +160,10 @@ export default function DataContent() {
             // to syncStartDate (now) instead of the pre-reset lastSync-
             // Timestamp, which would silently re-import the deleted data.
             const settings = useSettingsStore.getState();
-            settings.setSyncStartDate(Date.now());
-            settings.setLastSyncTimestamp(null);
+            await settings.updateSyncBookmarks({
+              syncStartDate: Date.now(),
+              lastSyncTimestamp: null,
+            });
           },
         },
       ],
