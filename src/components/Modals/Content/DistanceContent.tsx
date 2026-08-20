@@ -38,6 +38,7 @@ import EditEntryModal from '../EditEntryModal';
 import { TrackingOptions } from '../../TrackingOptions';
 import { StatusBadge } from '../../StatusBadge';
 import { useLivePedometerDelta } from '../../../hooks/useLivePedometerDelta';
+import { getDistanceSourceLabel } from '../../../constants/distanceSources';
 import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
 
 // Number of days to load at a time
@@ -445,14 +446,7 @@ export default function DistanceContent() {
   const renderEntry = (item: DistanceEntry) => {
     const isLivePedometer = item.id === LIVE_ENTRY_ID;
     const inProgress = isLivePedometer || inProgressHealthIds.has(item.id);
-    const sourceLabel =
-      item.source === 'health-connect'
-        ? 'Health Connect'
-        : item.source === 'apple-health'
-        ? 'Apple Health'
-        : item.source === 'pedometer'
-        ? 'Pedometer'
-        : 'Manual';
+    const sourceLabel = getDistanceSourceLabel(item.source);
     return (
       <View key={item.id}>
         <View style={styles.listItem}>
@@ -482,7 +476,11 @@ export default function DistanceContent() {
           )}
           <View style={styles.listItemLeft}>
             {inProgress ? (
-              <StatusBadge label="In progress" inProgress />
+              <StatusBadge
+                label="In progress"
+                inProgress
+                style={styles.entryStatusBadge}
+              />
             ) : (
               <Text
                 style={[typographyThemed(theme).bodyPrimary, styles.entryTime]}
@@ -640,6 +638,9 @@ const styles = StyleSheet.create({
   listItemLeft: {
     flexDirection: 'column',
     flex: 1,
+  },
+  entryStatusBadge: {
+    alignSelf: 'flex-start',
   },
   liveIconSpacer: {
     width: iconButtonSizes.small,

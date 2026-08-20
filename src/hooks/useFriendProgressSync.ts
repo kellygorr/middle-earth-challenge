@@ -11,6 +11,9 @@ import { useSettingsStore } from '../stores/settingsStore';
 export function useFriendProgressSync() {
   const initReady = useInitializationStore(state => state.phase !== 'loading');
   const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
+  const provisioningPending = useSettingsStore(
+    state => state.sharingProvisioningPending,
+  );
   const deletionPending = useSettingsStore(
     state => state.sharingDeletionPending,
   );
@@ -20,7 +23,9 @@ export function useFriendProgressSync() {
     const settings = useSettingsStore.getState();
     if (
       !initReady ||
-      (!settings.sharingEnabled && !settings.sharingDeletionPending)
+      (!settings.sharingEnabled &&
+        !settings.sharingProvisioningPending &&
+        !settings.sharingDeletionPending)
     ) {
       return;
     }
@@ -37,7 +42,7 @@ export function useFriendProgressSync() {
 
   useEffect(() => {
     if (!initReady) return;
-    if (!sharingEnabled && !deletionPending) {
+    if (!sharingEnabled && !provisioningPending && !deletionPending) {
       useFriendProgressStore.getState().clearParticipants();
       return;
     }
@@ -48,7 +53,13 @@ export function useFriendProgressSync() {
     }, FRIEND_PROGRESS_SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [initReady, sharingEnabled, deletionPending, performSync]);
+  }, [
+    initReady,
+    sharingEnabled,
+    provisioningPending,
+    deletionPending,
+    performSync,
+  ]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {

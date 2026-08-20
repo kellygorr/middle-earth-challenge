@@ -134,6 +134,8 @@ dependencies {
     // See docs/pedometer-mode.md § Phase 3b.
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
+    testImplementation("junit:junit:4.13.2")
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

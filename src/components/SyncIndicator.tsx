@@ -74,6 +74,10 @@ function computeMessage(
         return { lineOne: 'Sync is taking a while', lineTwo: null };
       case 'unavailable':
         return { lineOne: 'Can’t connect to health app', lineTwo: null };
+      case 'provider':
+        return { lineOne: 'Health sync failed', lineTwo: null };
+      case 'pedometerStorage':
+        return { lineOne: 'Pedometer storage failed', lineTwo: null };
       // permission / unknown intentionally fall through to null.
       default:
         return null;

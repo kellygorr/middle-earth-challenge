@@ -62,18 +62,10 @@ are sufficient for journey progression, so step-specific gates are not needed.
 
 ---
 
-## Adversarial code review
+## Adversarial code review ✅ done
 
-Do a harsh, "coworker looking for reasons to argue for a raise" pass
-over the whole codebase. Priorities: correctness bugs, silent-fail
-paths, memory leaks, missed cleanup, race conditions, unhandled edge
-cases, footguns in the public API of services, DRY violations
-(duplicated logic across files, copy-pasted blocks, parallel
-constants that should be shared), tests we don't have but should, and
-any place the code is doing something unusual without a comment
-explaining why. Deliverable: a categorized list of issues with
-severity, file references, and suggested fixes — no code changes,
-just a report the maintainers can triage.
+Completed as a nine-phase read-only review. The prioritized findings and
+remediation batches are in `docs/adversarial-code-review.md`.
 
 ---
 
@@ -84,3 +76,31 @@ sweeps, and clears the reboot-resume flag. The revoke section lists Physical
 activity, Notifications, and stock battery optimization, with an App Settings
 action for those OS-managed grants. A separate OEM Battery Settings action is
 shown on affected manufacturers for auto-start/background-manager access.
+
+---
+
+## App Check token auto-refresh resolves differently per build variant
+
+`src/services/firebaseAppCheck.ts` passes `isTokenAutoRefreshEnabled: true` for
+every build, but the native module reports different values on device:
+
+- Release (`com.middleearthchallenge`): `isAppCheckTokenRefreshEnabled final
+  value: true`
+- Debug (`com.middleearthchallenge.debug`): `isAppCheckTokenRefreshEnabled final
+  value: false`
+
+Both lines are logged by `RNFBAppCheck` during native startup, before JS calls
+`initializeAppCheck`, so they reflect a manifest/`RNFBMeta` default rather than
+the JS option. What is not established is whether the JS option later overrides
+the native default, or whether the debug variant genuinely runs without
+background refresh.
+
+This mattered less while App Check was in monitor mode. Now that Firestore
+enforcement is on, a debug session that outlives the 1-hour App Check token TTL
+could start failing mid-session with `PERMISSION_DENIED` if refresh really is
+off. Neither variant hit this during device validation on 2026-08-19, because
+each token was fresh.
+
+Investigate by checking the merged debug manifest for
+`firebase_app_check_token_auto_refresh`, then confirm token renewal by holding a
+debug session past the TTL and watching for a second token exchange.

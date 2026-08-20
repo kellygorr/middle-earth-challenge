@@ -10,16 +10,21 @@ import {
   documentId,
   getDocs,
   getFirestore,
+  limit,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
+  startAfter,
   updateDoc,
+  waitForPendingWrites,
   where,
 } from '@react-native-firebase/firestore';
 
 import type { FriendAffinity } from '../constants/friendAffinities';
 
 const COLLECTION_NAME = __DEV__ ? 'friend_progress_debug' : 'friend_progress';
+export const FRIEND_PROGRESS_PARTICIPANT_LIMIT = 50;
 
 interface FriendProgressDocument {
   affinity: FriendAffinity;
@@ -36,7 +41,13 @@ export interface FriendProgressParticipant {
   updatedAt: string;
 }
 
+export interface FriendProgressPage {
+  participants: FriendProgressParticipant[];
+  nextCursor: string | null;
+}
+
 interface FriendProgressClient {
+  waitForAuthState: () => Promise<void>;
   getCurrentUserId: () => string | null;
   signInAnonymously: () => Promise<string>;
   signOut: () => Promise<void>;
@@ -48,10 +59,13 @@ interface FriendProgressClient {
     userId: string,
     participant: Partial<Omit<FriendProgressDocument, 'updatedAt'>>,
   ) => Promise<void>;
-  fetchParticipants: (
+  fetchParticipantPage: (
     excludedUserId: string,
-  ) => Promise<FriendProgressParticipant[]>;
+    participantLimit: number,
+    cursor: string | null,
+  ) => Promise<FriendProgressPage>;
   deleteParticipant: (userId: string) => Promise<void>;
+  flushPendingWrites: () => Promise<void>;
 }
 
 const timestampToIsoString = (value: unknown): string => {
@@ -68,6 +82,7 @@ const timestampToIsoString = (value: unknown): string => {
 };
 
 const firebaseFriendProgressClient: FriendProgressClient = {
+  waitForAuthState: () => getAuth().authStateReady(),
   getCurrentUserId: () => getAuth().currentUser?.uid ?? null,
   signInAnonymously: async () => {
     const credential = await signInAnonymously(getAuth());
@@ -86,14 +101,19 @@ const firebaseFriendProgressClient: FriendProgressClient = {
       updatedAt: serverTimestamp(),
     });
   },
-  fetchParticipants: async excludedUserId => {
+  fetchParticipantPage: async (excludedUserId, participantLimit, cursor) => {
+    const participantConstraints = [
+      where(documentId(), '!=', excludedUserId),
+      orderBy(documentId()),
+      ...(cursor ? [startAfter(cursor)] : []),
+      limit(participantLimit),
+    ];
     const participantQuery = query(
       collection(getFirestore(), COLLECTION_NAME),
-      where(documentId(), '!=', excludedUserId),
+      ...participantConstraints,
     );
     const snapshot = await getDocs(participantQuery);
-
-    return snapshot.docs
+    const participants = snapshot.docs
       .map(participantSnapshot => {
         const participant =
           participantSnapshot.data() as FriendProgressDocument;
@@ -106,14 +126,25 @@ const firebaseFriendProgressClient: FriendProgressClient = {
         };
       })
       .sort((left, right) => right.distanceMiles - left.distanceMiles);
+
+    return {
+      participants,
+      nextCursor:
+        snapshot.docs.length === participantLimit
+          ? snapshot.docs[snapshot.docs.length - 1].id
+          : null,
+    };
   },
   deleteParticipant: userId =>
     deleteDoc(doc(getFirestore(), COLLECTION_NAME, userId)),
+  flushPendingWrites: () => waitForPendingWrites(getFirestore()),
 };
 
 export const createFriendProgressService = (
   client: FriendProgressClient = firebaseFriendProgressClient,
 ) => {
+  let signInInFlight: Promise<string> | null = null;
+
   const getExistingUserId = (): string => {
     const userId = client.getCurrentUserId();
     if (!userId) {
@@ -123,8 +154,18 @@ export const createFriendProgressService = (
     return userId;
   };
 
-  const ensureAnonymousUserId = async (): Promise<string> =>
-    client.getCurrentUserId() ?? client.signInAnonymously();
+  const ensureAnonymousUserId = async (): Promise<string> => {
+    await client.waitForAuthState();
+    const currentUserId = client.getCurrentUserId();
+    if (currentUserId) return currentUserId;
+
+    if (!signInInFlight) {
+      signInInFlight = client.signInAnonymously().finally(() => {
+        signInInFlight = null;
+      });
+    }
+    return signInInFlight;
+  };
 
   const enableFriendProgress = async (
     displayName: string,
@@ -172,11 +213,30 @@ export const createFriendProgressService = (
     });
   };
 
+  const fetchFriendProgressPage = async (
+    cursor: string | null = null,
+  ): Promise<FriendProgressPage> =>
+    client.fetchParticipantPage(
+      getExistingUserId(),
+      FRIEND_PROGRESS_PARTICIPANT_LIMIT,
+      cursor,
+    );
+
   const fetchFriendProgress = async (): Promise<FriendProgressParticipant[]> =>
-    client.fetchParticipants(getExistingUserId());
+    (await fetchFriendProgressPage()).participants;
 
   const deleteFriendProgress = async (): Promise<void> => {
-    await client.deleteParticipant(getExistingUserId());
+    // Hydration must complete first; a null user here is indistinguishable from
+    // a signed-out one, and skipping the delete strands the row permanently.
+    await client.waitForAuthState();
+    const userId = client.getCurrentUserId();
+    if (!userId) return;
+
+    await client.deleteParticipant(userId);
+    // On Android the delete resolves once queued locally. Signing out before it
+    // reaches the server drops the write and strands the document forever,
+    // because the owner-only rule leaves no session able to retry it.
+    await client.flushPendingWrites();
     await client.signOut();
   };
 
@@ -184,6 +244,7 @@ export const createFriendProgressService = (
     enableFriendProgress,
     updateFriendDistance,
     updateFriendProfile,
+    fetchFriendProgressPage,
     fetchFriendProgress,
     deleteFriendProgress,
   };

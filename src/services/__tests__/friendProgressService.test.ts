@@ -11,42 +11,67 @@ jest.mock('@react-native-firebase/firestore', () => ({
   documentId: jest.fn(),
   getDocs: jest.fn(),
   getFirestore: jest.fn(),
+  limit: jest.fn(),
+  orderBy: jest.fn(),
   query: jest.fn(),
   serverTimestamp: jest.fn(),
   setDoc: jest.fn(),
+  startAfter: jest.fn(),
   updateDoc: jest.fn(),
   where: jest.fn(),
 }));
 
-import { createFriendProgressService } from '../friendProgressService';
+import {
+  createFriendProgressService,
+  FRIEND_PROGRESS_PARTICIPANT_LIMIT,
+  friendProgressService,
+} from '../friendProgressService';
+import { getAuth } from '@react-native-firebase/auth';
+import {
+  documentId,
+  getDocs,
+  limit,
+  orderBy,
+  startAfter,
+  where,
+} from '@react-native-firebase/firestore';
 
 const mockGetCurrentUserId = jest.fn<string | null, []>();
+const mockWaitForAuthState = jest.fn<Promise<void>, []>();
 const mockSignInAnonymously = jest.fn<Promise<string>, []>();
 const mockSignOut = jest.fn<Promise<void>, []>();
 const mockSetParticipant = jest.fn();
 const mockUpdateParticipant = jest.fn();
-const mockFetchParticipants = jest.fn();
+const mockFetchParticipantPage = jest.fn();
 const mockDeleteParticipant = jest.fn();
+const mockFlushPendingWrites = jest.fn<Promise<void>, []>();
 
 const createService = () =>
   createFriendProgressService({
+    waitForAuthState: mockWaitForAuthState,
     getCurrentUserId: mockGetCurrentUserId,
     signInAnonymously: mockSignInAnonymously,
     signOut: mockSignOut,
     setParticipant: mockSetParticipant,
     updateParticipant: mockUpdateParticipant,
-    fetchParticipants: mockFetchParticipants,
+    fetchParticipantPage: mockFetchParticipantPage,
     deleteParticipant: mockDeleteParticipant,
+    flushPendingWrites: mockFlushPendingWrites,
   });
 
 describe('friendProgressService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWaitForAuthState.mockResolvedValue();
     mockGetCurrentUserId.mockReturnValue('user-1');
     mockSignOut.mockResolvedValue();
+    mockFlushPendingWrites.mockResolvedValue();
     mockSetParticipant.mockResolvedValue(undefined);
     mockUpdateParticipant.mockResolvedValue(undefined);
-    mockFetchParticipants.mockResolvedValue([]);
+    mockFetchParticipantPage.mockResolvedValue({
+      participants: [],
+      nextCursor: null,
+    });
     mockDeleteParticipant.mockResolvedValue(undefined);
   });
 
@@ -56,6 +81,7 @@ describe('friendProgressService', () => {
 
     await createService().enableFriendProgress('  Kelly  ', 12.5, 'river');
 
+    expect(mockWaitForAuthState).toHaveBeenCalledTimes(1);
     expect(mockSignInAnonymously).toHaveBeenCalledTimes(1);
     expect(mockSetParticipant).toHaveBeenCalledWith('anonymous-user', {
       displayName: 'Kelly',
@@ -73,6 +99,50 @@ describe('friendProgressService', () => {
       distanceMiles: 15,
       affinity: 'hills',
     });
+  });
+
+  it('waits for persisted auth before choosing the participant owner', async () => {
+    mockGetCurrentUserId.mockReturnValue('restored-user');
+
+    await createService().enableFriendProgress('Kelly', 15, 'hills');
+
+    expect(mockWaitForAuthState).toHaveBeenCalledTimes(1);
+    expect(mockSetParticipant).toHaveBeenCalledWith('restored-user', {
+      displayName: 'Kelly',
+      distanceMiles: 15,
+      affinity: 'hills',
+    });
+  });
+
+  it('shares one anonymous session across concurrent enable attempts', async () => {
+    mockGetCurrentUserId.mockReturnValue(null);
+    mockSignInAnonymously.mockResolvedValue('shared-anonymous-user');
+    const service = createService();
+
+    await Promise.all([
+      service.enableFriendProgress('Kelly', 15, 'hills'),
+      service.enableFriendProgress('Kelly', 15, 'hills'),
+    ]);
+
+    expect(mockSignInAnonymously).toHaveBeenCalledTimes(1);
+    expect(mockSetParticipant).toHaveBeenNthCalledWith(
+      1,
+      'shared-anonymous-user',
+      {
+        displayName: 'Kelly',
+        distanceMiles: 15,
+        affinity: 'hills',
+      },
+    );
+    expect(mockSetParticipant).toHaveBeenNthCalledWith(
+      2,
+      'shared-anonymous-user',
+      {
+        displayName: 'Kelly',
+        distanceMiles: 15,
+        affinity: 'hills',
+      },
+    );
   });
 
   it('rejects invalid values before authentication or publishing', async () => {
@@ -116,12 +186,50 @@ describe('friendProgressService', () => {
         updatedAt: '2026-07-30T12:00:00.000Z',
       },
     ];
-    mockFetchParticipants.mockResolvedValue(participants);
+    mockFetchParticipantPage.mockResolvedValue({
+      participants,
+      nextCursor: null,
+    });
 
     await expect(createService().fetchFriendProgress()).resolves.toEqual(
       participants,
     );
-    expect(mockFetchParticipants).toHaveBeenCalledWith('user-1');
+    expect(mockFetchParticipantPage).toHaveBeenCalledWith(
+      'user-1',
+      FRIEND_PROGRESS_PARTICIPANT_LIMIT,
+      null,
+    );
+  });
+
+  it('returns a continuation cursor for an explicitly requested page', async () => {
+    mockFetchParticipantPage.mockResolvedValue({
+      participants: [],
+      nextCursor: 'user-50',
+    });
+
+    await expect(
+      createService().fetchFriendProgressPage('user-25'),
+    ).resolves.toEqual({ participants: [], nextCursor: 'user-50' });
+    expect(mockFetchParticipantPage).toHaveBeenCalledWith(
+      'user-1',
+      FRIEND_PROGRESS_PARTICIPANT_LIMIT,
+      'user-25',
+    );
+  });
+
+  it('builds a stable bounded Firestore query for a continuation page', async () => {
+    (getAuth as jest.Mock).mockReturnValue({
+      currentUser: { uid: 'user-1' },
+    });
+    (documentId as jest.Mock).mockReturnValue('__name__');
+    (getDocs as jest.Mock).mockResolvedValue({ docs: [] });
+
+    await friendProgressService.fetchFriendProgressPage('user-25');
+
+    expect(where).toHaveBeenCalledWith('__name__', '!=', 'user-1');
+    expect(orderBy).toHaveBeenCalledWith('__name__');
+    expect(startAfter).toHaveBeenCalledWith('user-25');
+    expect(limit).toHaveBeenCalledWith(FRIEND_PROGRESS_PARTICIPANT_LIMIT);
   });
 
   it('deletes only the existing session user document and signs out', async () => {
@@ -131,13 +239,58 @@ describe('friendProgressService', () => {
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
-  it('does not create a new identity while deleting without a session', async () => {
+  it('treats deletion without a session as already complete', async () => {
     mockGetCurrentUserId.mockReturnValue(null);
 
-    await expect(createService().deleteFriendProgress()).rejects.toThrow(
-      'No anonymous sharing session exists',
-    );
+    await expect(
+      createService().deleteFriendProgress(),
+    ).resolves.toBeUndefined();
     expect(mockSignInAnonymously).not.toHaveBeenCalled();
     expect(mockDeleteParticipant).not.toHaveBeenCalled();
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('waits for auth hydration before reading the session user', async () => {
+    let resolveAuthState: (() => void) | undefined;
+    mockWaitForAuthState.mockReturnValue(
+      new Promise<void>(resolve => {
+        resolveAuthState = resolve;
+      }),
+    );
+    mockGetCurrentUserId.mockReturnValue(null);
+
+    const deletion = createService().deleteFriendProgress();
+    mockGetCurrentUserId.mockReturnValue('hydrated-user');
+    resolveAuthState?.();
+    await deletion;
+
+    expect(mockDeleteParticipant).toHaveBeenCalledWith('hydrated-user');
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('flushes the queued delete to the server before signing out', async () => {
+    const callOrder: string[] = [];
+    mockDeleteParticipant.mockImplementation(async () => {
+      callOrder.push('delete');
+    });
+    mockFlushPendingWrites.mockImplementation(async () => {
+      callOrder.push('flush');
+    });
+    mockSignOut.mockImplementation(async () => {
+      callOrder.push('signOut');
+    });
+
+    await createService().deleteFriendProgress();
+
+    expect(callOrder).toEqual(['delete', 'flush', 'signOut']);
+  });
+
+  it('keeps the session when the queued delete cannot reach the server', async () => {
+    mockFlushPendingWrites.mockRejectedValue(new Error('offline'));
+
+    await expect(createService().deleteFriendProgress()).rejects.toThrow(
+      'offline',
+    );
+    expect(mockSignOut).not.toHaveBeenCalled();
   });
 });

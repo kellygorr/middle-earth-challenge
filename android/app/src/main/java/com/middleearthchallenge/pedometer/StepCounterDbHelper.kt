@@ -63,7 +63,7 @@ class StepCounterDbHelper(context: Context) :
             put(COL_STEPS, stepCount)
             put(COL_BOOT_ID, bootId)
           }
-      db.insert(TABLE, null, values)
+      db.insertOrThrow(TABLE, null, values)
     }
   }
 

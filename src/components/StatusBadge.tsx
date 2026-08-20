@@ -69,7 +69,6 @@ export function StatusBadge({
       pointerEvents="none"
       style={[
         styles.badge,
-        inProgress ? styles.inProgressBadge : styles.successBadge,
         inProgress
           ? { borderColor: animatedColor }
           : {
@@ -82,9 +81,7 @@ export function StatusBadge({
     >
       <Animated.Text
         style={[
-          inProgress
-            ? typographyThemed(theme).bodyPrimary
-            : typographyThemed(theme).captionPrimary,
+          typographyThemed(theme).captionPrimary,
           {
             color: inProgress ? animatedColor : theme.colors.successText,
           } as Animated.WithAnimatedObject<TextStyle>,
@@ -98,19 +95,10 @@ export function StatusBadge({
 
 const styles = StyleSheet.create({
   badge: {
-    alignSelf: 'center',
     borderWidth: 1,
-  },
-  successBadge: {
     borderRadius: 6,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-  },
-  inProgressBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: 4,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 1,
   },
   hidden: {
     opacity: 0,

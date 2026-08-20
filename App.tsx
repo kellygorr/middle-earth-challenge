@@ -5,7 +5,16 @@ import {
   SafeAreaProvider,
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
-import { StyleSheet, View, Animated, StatusBar, AppState } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  Animated,
+  StatusBar,
+  AppState,
+  Pressable,
+  Text,
+  ActivityIndicator,
+} from 'react-native';
 
 import MapScreen from './src/screens/MapScreen';
 import WelcomeModal from './src/screens/WelcomeModal';
@@ -19,23 +28,31 @@ import { database } from './src/services/database';
 import { useProgressStore } from './src/stores/progressStore';
 import { setupDevMockLongSyncIfEnabled } from './src/services/devSyncMock';
 import { ensureTrackingModeRunning } from './src/services/trackingModeService';
+import { initializeFirebaseAppCheck } from './src/services/firebaseAppCheck';
 
 const Stack = createStackNavigator();
 
 // Splash overlay - root level, fades out when loading completes
-function SplashOverlay({ loading }: { loading: boolean }) {
+export function SplashOverlay({ loading }: { loading: boolean }) {
   const [visible, setVisible] = useState(true);
+  const [showSpinner, setShowSpinner] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (!loading) {
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 400,
-        delay: 200,
-        useNativeDriver: true,
-      }).start(() => setVisible(false));
+    if (loading) {
+      setVisible(true);
+      setShowSpinner(false);
+      opacity.setValue(1);
+      const spinnerTimer = setTimeout(() => setShowSpinner(true), 200);
+      return () => clearTimeout(spinnerTimer);
     }
+
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: 400,
+      delay: 200,
+      useNativeDriver: true,
+    }).start(() => setVisible(false));
   }, [loading, opacity]);
 
   if (!visible) return null;
@@ -44,12 +61,23 @@ function SplashOverlay({ loading }: { loading: boolean }) {
     <Animated.View
       pointerEvents="none"
       style={[StyleSheet.absoluteFillObject, styles.splashFill, { opacity }]}
-    />
+    >
+      {showSpinner && (
+        <ActivityIndicator
+          accessibilityLabel="Loading saved journey"
+          color="#ffffff"
+          size="large"
+        />
+      )}
+    </Animated.View>
   );
 }
 
 function App(): React.JSX.Element {
-  const [loading, setLoading] = useState(true);
+  const [bootstrapStatus, setBootstrapStatus] = useState<
+    'loading' | 'ready' | 'error'
+  >('loading');
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const setPhase = useInitializationStore(state => state.setPhase);
 
   const showWelcome = useSettingsStore(state => state.showWelcome);
@@ -63,9 +91,15 @@ function App(): React.JSX.Element {
   const initFromDatabase = useProgressStore(state => state.initFromDatabase);
 
   useEffect(() => {
+    let cancelled = false;
+
     const initApp = async () => {
       console.log('[App] initApp: start');
+      setBootstrapStatus('loading');
+      setPhase('loading');
       try {
+        initializeFirebaseAppCheck();
+        console.log('[App] initApp: Firebase App Check ready');
         await database.init();
         console.log('[App] initApp: db ready');
         await loadSettings();
@@ -81,34 +115,39 @@ function App(): React.JSX.Element {
         // Android foreground service is (re)started after cold boot.
         await ensureTrackingModeRunning();
         console.log('[App] initApp: tracking mode ready');
+        if (!cancelled) {
+          setPhase('ready');
+          setBootstrapStatus('ready');
+        }
       } catch (error) {
         console.error('Failed to initialize app:', error);
-      } finally {
-        console.log('[App] initApp: finally -> setLoading(false), phase=ready');
-        // Loading complete
-        setLoading(false);
-        setPhase('ready');
+        if (!cancelled) {
+          setBootstrapStatus('error');
+        }
       }
     };
 
     initApp();
-  }, [loadSettings, initFromDatabase, setPhase]);
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapAttempt, loadSettings, initFromDatabase, setPhase]);
 
   // Re-reconcile tracking-mode state whenever the app returns to the
   // foreground. Catches: user granted/revoked ACTIVITY_RECOGNITION in
   // system Settings, the OS killed our foreground service, or the
-  // persisted `syncEnabled` flag drifted from the actual native state
-  // (see ensureTrackingModeRunning docstring for the recovery cases).
+  // persisted native-cleanup request still needs to finish (see
+  // ensureTrackingModeRunning docstring for the recovery cases).
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') {
+      if (state === 'active' && bootstrapStatus === 'ready') {
         ensureTrackingModeRunning().catch(err =>
           console.warn('[App] tracking-mode reconcile on resume failed:', err),
         );
       }
     });
     return () => sub.remove();
-  }, []);
+  }, [bootstrapStatus]);
 
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
@@ -143,8 +182,25 @@ function App(): React.JSX.Element {
         {/* SharedModal - stack-based modal navigation */}
         <SharedModal />
 
+        {bootstrapStatus === 'error' && (
+          <View style={styles.bootstrapError} accessibilityRole="alert">
+            <Text style={styles.bootstrapErrorTitle}>Unable to load data</Text>
+            <Text style={styles.bootstrapErrorMessage}>
+              Your saved journey has not been changed. Try loading it again.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry initialization"
+              onPress={() => setBootstrapAttempt(attempt => attempt + 1)}
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Splash - rendered LAST, hides everything until loading completes */}
-        <SplashOverlay loading={loading} />
+        <SplashOverlay loading={bootstrapStatus === 'loading'} />
       </View>
     </SafeAreaProvider>
   );
@@ -155,7 +211,41 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   splashFill: {
+    alignItems: 'center',
     backgroundColor: '#000000',
+    justifyContent: 'center',
+  },
+  bootstrapError: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    backgroundColor: '#101010',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  bootstrapErrorTitle: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '600',
+  },
+  bootstrapErrorMessage: {
+    color: '#d0d0d0',
+    fontSize: 16,
+    lineHeight: 23,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  retryButton: {
+    borderColor: '#ffffff',
+    borderRadius: 4,
+    borderWidth: 1,
+    marginTop: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

@@ -21,10 +21,7 @@ interface StoreState {
     miles: number;
     steps: number;
   }>;
-  addDistanceEntries: jest.Mock;
-  setMiles: jest.Mock;
-  setSteps: jest.Mock;
-  persistMilesSnapshot: jest.Mock;
+  applyPedometerSyncChunk: jest.Mock;
   getTotalMiles: () => number;
   getTotalSteps: () => number;
 }
@@ -32,6 +29,9 @@ interface StoreState {
 const mockGetStepsBetween = jest.fn();
 const mockCheckAndFireMilestones = jest.fn();
 const mockStoreState: { ref: StoreState } = { ref: null as any };
+const mockSettingsState: { lastSyncTimestamp: number | null } = {
+  lastSyncTimestamp: null,
+};
 
 jest.mock('../pedometerService', () => ({
   pedometerService: {
@@ -51,6 +51,13 @@ jest.mock('../../stores/progressStore', () => ({
   },
 }));
 
+jest.mock('../../stores/settingsStore', () => ({
+  useSettingsStore: {
+    setState: (updates: Partial<typeof mockSettingsState>) =>
+      Object.assign(mockSettingsState, updates),
+  },
+}));
+
 import { commitPedometerRange } from '../pedometerCommit';
 
 // ---------------------------------------------------------------------------
@@ -63,16 +70,11 @@ function resetStore(initial: Partial<StoreState> = {}) {
     miles: initial.miles ?? 0,
     steps: initial.steps ?? 0,
     distanceEntries: entries,
-    addDistanceEntries: jest.fn(async (newEntries: any[]) => {
+    applyPedometerSyncChunk: jest.fn(async (newEntries: any[]) => {
       state.distanceEntries = [...state.distanceEntries, ...newEntries];
+      state.miles = state.getTotalMiles();
+      state.steps = state.getTotalSteps();
     }),
-    setMiles: jest.fn((m: number) => {
-      state.miles = m;
-    }),
-    setSteps: jest.fn((s: number) => {
-      state.steps = s;
-    }),
-    persistMilesSnapshot: jest.fn(async () => {}),
     getTotalMiles: () =>
       state.distanceEntries.reduce((sum, e) => sum + (e.miles ?? 0), 0),
     getTotalSteps: () =>
@@ -86,6 +88,7 @@ beforeEach(() => {
   mockGetStepsBetween.mockReset();
   mockCheckAndFireMilestones.mockReset();
   mockCheckAndFireMilestones.mockResolvedValue(undefined);
+  mockSettingsState.lastSyncTimestamp = null;
   resetStore();
 });
 
@@ -98,7 +101,7 @@ describe('commitPedometerRange', () => {
     const result = await commitPedometerRange(1000, 1000);
     expect(result).toEqual({ steps: 0, miles: 0, entryWritten: false });
     expect(mockGetStepsBetween).not.toHaveBeenCalled();
-    expect(mockStoreState.ref.addDistanceEntries).not.toHaveBeenCalled();
+    expect(mockStoreState.ref.applyPedometerSyncChunk).not.toHaveBeenCalled();
   });
 
   it('returns a no-op result when the native read reports zero steps', async () => {
@@ -111,8 +114,11 @@ describe('commitPedometerRange', () => {
     const result = await commitPedometerRange(0, 1000);
 
     expect(result).toEqual({ steps: 0, miles: 0, entryWritten: false });
-    expect(mockStoreState.ref.addDistanceEntries).not.toHaveBeenCalled();
-    expect(mockStoreState.ref.persistMilesSnapshot).not.toHaveBeenCalled();
+    expect(mockStoreState.ref.applyPedometerSyncChunk).toHaveBeenCalledWith(
+      [],
+      1000,
+    );
+    expect(mockSettingsState.lastSyncTimestamp).toBe(1000);
     expect(mockCheckAndFireMilestones).not.toHaveBeenCalled();
   });
 
@@ -130,9 +136,9 @@ describe('commitPedometerRange', () => {
     expect(result.miles).toBeGreaterThan(0);
 
     // Entry inserted with the expected shape.
-    expect(mockStoreState.ref.addDistanceEntries).toHaveBeenCalledTimes(1);
+    expect(mockStoreState.ref.applyPedometerSyncChunk).toHaveBeenCalledTimes(1);
     const inserted = (
-      mockStoreState.ref.addDistanceEntries.mock.calls[0][0] as any[]
+      mockStoreState.ref.applyPedometerSyncChunk.mock.calls[0][0] as any[]
     )[0];
     expect(inserted.id).toBe('pedo_0');
     expect(inserted.source).toBe('pedometer');
@@ -143,10 +149,7 @@ describe('commitPedometerRange', () => {
     // Date is the window midpoint.
     expect(inserted.date).toBe(30_000);
 
-    // Store roll-up used the selectors, not a manual reduce.
-    expect(mockStoreState.ref.setMiles).toHaveBeenCalledWith(result.miles);
-    expect(mockStoreState.ref.setSteps).toHaveBeenCalledWith(2000);
-    expect(mockStoreState.ref.persistMilesSnapshot).toHaveBeenCalledTimes(1);
+    expect(mockSettingsState.lastSyncTimestamp).toBe(60_000);
 
     // Milestone check receives miles-before / miles-after.
     expect(mockCheckAndFireMilestones).toHaveBeenCalledWith(0, result.miles);
@@ -161,13 +164,13 @@ describe('commitPedometerRange', () => {
 
     await commitPedometerRange(12345, 12500);
     const first = (
-      mockStoreState.ref.addDistanceEntries.mock.calls[0][0] as any[]
+      mockStoreState.ref.applyPedometerSyncChunk.mock.calls[0][0] as any[]
     )[0].id;
 
     resetStore();
     await commitPedometerRange(12345, 12500);
     const second = (
-      mockStoreState.ref.addDistanceEntries.mock.calls[0][0] as any[]
+      mockStoreState.ref.applyPedometerSyncChunk.mock.calls[0][0] as any[]
     )[0].id;
 
     expect(first).toBe(second);
@@ -186,7 +189,8 @@ describe('commitPedometerRange', () => {
 
     expect(mockGetStepsBetween).toHaveBeenNthCalledWith(1, fromMs, midnight);
     expect(mockGetStepsBetween).toHaveBeenNthCalledWith(2, midnight, toMs);
-    const inserted = mockStoreState.ref.addDistanceEntries.mock.calls[0][0];
+    const inserted =
+      mockStoreState.ref.applyPedometerSyncChunk.mock.calls[0][0];
     expect(inserted).toHaveLength(2);
     expect(inserted.map((entry: any) => entry.id)).toEqual([
       `pedo_${fromMs}`,
@@ -202,7 +206,8 @@ describe('commitPedometerRange', () => {
     await expect(commitPedometerRange(0, 1000)).rejects.toThrow(
       'native read failed',
     );
-    expect(mockStoreState.ref.addDistanceEntries).not.toHaveBeenCalled();
+    expect(mockStoreState.ref.applyPedometerSyncChunk).not.toHaveBeenCalled();
+    expect(mockSettingsState.lastSyncTimestamp).toBeNull();
   });
 
   it('does not derail the commit when the milestone notifier throws', async () => {
@@ -218,7 +223,7 @@ describe('commitPedometerRange', () => {
     // Should resolve, not reject — commit path swallows notifier errors by design.
     const result = await commitPedometerRange(0, 1000);
     expect(result.entryWritten).toBe(true);
-    expect(mockStoreState.ref.persistMilesSnapshot).toHaveBeenCalledTimes(1);
+    expect(mockStoreState.ref.applyPedometerSyncChunk).toHaveBeenCalledTimes(1);
   });
 
   it('feeds `milesBefore` from the pre-commit store state, not the post-commit total', async () => {
@@ -251,6 +256,26 @@ describe('commitPedometerRange', () => {
     const result = await commitPedometerRange(0, 1000);
 
     expect(result).toEqual({ steps: 0, miles: 0, entryWritten: false });
-    expect(mockStoreState.ref.addDistanceEntries).not.toHaveBeenCalled();
+    expect(mockStoreState.ref.applyPedometerSyncChunk).toHaveBeenCalledWith(
+      [],
+      1000,
+    );
+  });
+
+  it('does not publish the watermark when the atomic commit fails', async () => {
+    mockGetStepsBetween.mockResolvedValueOnce({
+      steps: 1000,
+      fromMs: 0,
+      toMs: 1000,
+    });
+    mockStoreState.ref.applyPedometerSyncChunk.mockRejectedValueOnce(
+      new Error('cursor write failed'),
+    );
+
+    await expect(commitPedometerRange(0, 1000)).rejects.toThrow(
+      'cursor write failed',
+    );
+    expect(mockSettingsState.lastSyncTimestamp).toBeNull();
+    expect(mockCheckAndFireMilestones).not.toHaveBeenCalled();
   });
 });

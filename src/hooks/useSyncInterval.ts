@@ -8,21 +8,27 @@ import { getActiveFitnessService } from '../services/fitnessService';
 import { getBackgroundRefreshStatus } from '../services/backgroundRefreshStatus';
 import { pedometerService } from '../services/pedometerService';
 import { commitPedometerRange } from '../services/pedometerCommit';
-import { DistanceEntry, DistanceSource, HealthDistanceRecord } from '../types';
+import { DistanceSource, HealthDistanceRecord } from '../types';
 import {
   SYNC_INTERVAL_MS,
   PEDOMETER_LIVE_COMMIT_INTERVAL_MS,
   CHUNK_DAYS,
+  HEALTH_SYNC_LOOKBACK_MS,
   CHUNK_TIMEOUT_MS,
   CHUNK_RETRY_DELAY_MS,
   CHUNK_YIELD_MS,
   STALL_ERROR_MS,
 } from '../constants/sync';
-import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
-import { METERS_TO_MILES } from '../utils/stride';
-import { buildChunks } from '../utils/chunkRange';
+import { buildAlignedChunks, buildChunks } from '../utils/chunkRange';
 import { reconcileCompletedDualTrackingDays } from '../services/dualSourceReconciliation';
 import { switchTrackingMode } from '../services/trackingModeService';
+import { classifySyncError } from '../services/syncErrorClassification';
+import {
+  getHealthSyncFormatForChunk,
+  getHealthSyncStartTimestamp,
+  getHealthLookbackStartForChunk,
+} from '../services/healthSyncCutover';
+import { buildHealthDistanceEntryChanges } from '../services/healthDistanceEntries';
 
 /**
  * Module-level handle so UI outside the hook (overlay retry button, Settings
@@ -61,31 +67,6 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
- * Map a raw thrown value to a typed `SyncError`. Keeps `unknown` as the
- * intentional last resort: anything that doesn't match a more specific
- * pattern stays `unknown`, which the store deliberately doesn't surface
- * to the UI (log only). Add a new branch here when we observe a real
- * failure mode in the wild that we can give the user useful guidance for.
- */
-function classifySyncError(error: unknown): SyncError {
-  const message = error instanceof Error ? error.message : String(error);
-  // Permission / auth: revoked, never granted, or the health app blocked us.
-  // This classifier only runs inside the health-app sync path
-  // (`performHealthAppSync`), so the source is hard-coded to `'health-app'`.
-  // The pedometer permission-error is produced separately by
-  // `ensureTrackingModeRunning` because it's detected by env polling, not
-  // by a thrown exception.
-  if (/SecurityException|permission|unauthor/i.test(message)) {
-    return { kind: 'permission', source: 'health-app', message };
-  }
-  // Provider not installed or out-of-date (Health Connect SDK statuses).
-  if (/sdk.*unavailable|not installed|update.*required/i.test(message)) {
-    return { kind: 'unavailable', message };
-  }
-  return { kind: 'unknown', message };
-}
-
-/**
  * Hook that manages periodic syncing from health services while the app is foregrounded.
  *
  * Sync runs in CHUNK_DAYS-wide chunks oldest -> newest. Each chunk:
@@ -99,21 +80,16 @@ function classifySyncError(error: unknown): SyncError {
  */
 export function useSyncInterval() {
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
-  const setSyncEnabled = useSettingsStore(state => state.setSyncEnabled);
+  const updateSyncSettings = useSettingsStore(
+    state => state.updateSyncSettings,
+  );
   const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
   const syncStartDate = useSettingsStore(state => state.syncStartDate);
   const trackingMode = useSettingsStore(state => state.trackingMode);
-  const setLastSyncTimestamp = useSettingsStore(
-    state => state.setLastSyncTimestamp,
-  );
-  const setMiles = useProgressStore(state => state.setMiles);
   const setSyncStatus = useProgressStore(state => state.setSyncStatus);
-  const addDistanceEntries = useProgressStore(
-    state => state.addDistanceEntries,
-  );
-  const updateDistanceEntry = useProgressStore(
-    state => state.updateDistanceEntry,
+  const applyHealthSyncChunk = useProgressStore(
+    state => state.applyHealthSyncChunk,
   );
   // Gate all sync work on the app being past the 'loading' phase. Without
   // this, useSyncInterval's mount-time effect fires performSync against the
@@ -145,7 +121,6 @@ export function useSyncInterval() {
         try {
           await performPedometerSync({
             forceSync,
-            setLastSyncTimestamp,
             setSyncStatus,
           });
           if (
@@ -159,7 +134,9 @@ export function useSyncInterval() {
               const classified = classifySyncError(error);
               if (classified.kind === 'permission') {
                 await switchTrackingMode('pedometer');
-                useSettingsStore.getState().setSyncProvider('none');
+                await useSettingsStore.getState().updateSyncSettings({
+                  syncProvider: 'none',
+                });
               }
               throw error;
             }
@@ -210,15 +187,42 @@ export function useSyncInterval() {
       }
 
       const currentLastSync = useSettingsStore.getState().lastSyncTimestamp;
-      const fromDate = currentLastSync
-        ? new Date(currentLastSync)
-        : new Date(syncStartDate);
+      const healthSyncFormatVersion =
+        useSettingsStore.getState().healthSyncFormatVersion;
+      let healthLookbackStartTimestamp =
+        useSettingsStore.getState().healthLookbackStartTimestamp;
+      const chunkWidthMs = CHUNK_DAYS * 24 * 60 * 60 * 1000;
+      const fromDate = new Date(
+        getHealthSyncStartTimestamp(
+          currentLastSync,
+          syncStartDate,
+          healthLookbackStartTimestamp,
+          HEALTH_SYNC_LOOKBACK_MS,
+          chunkWidthMs,
+        ),
+      );
       const toDate = new Date();
-      const chunks = buildChunks(fromDate, toDate, CHUNK_DAYS);
+      const usesAggregateIds =
+        Platform.OS !== 'android' || healthSyncFormatVersion !== 0;
+      const chunks = usesAggregateIds
+        ? buildAlignedChunks(fromDate, toDate, CHUNK_DAYS)
+        : buildChunks(fromDate, toDate, CHUNK_DAYS);
 
       // Nothing to fetch - bump timestamp and exit.
       if (chunks.length === 0) {
-        setLastSyncTimestamp(Date.now());
+        const cursor = Date.now();
+        await applyHealthSyncChunk(
+          [],
+          cursor,
+          Platform.OS === 'android' ? 1 : healthSyncFormatVersion,
+          healthLookbackStartTimestamp ?? cursor,
+        );
+        useSettingsStore.setState({
+          lastSyncTimestamp: cursor,
+          healthSyncFormatVersion:
+            Platform.OS === 'android' ? 1 : healthSyncFormatVersion,
+          healthLookbackStartTimestamp: healthLookbackStartTimestamp ?? cursor,
+        });
         inFlightRef.current = false;
         return;
       }
@@ -247,8 +251,12 @@ export function useSyncInterval() {
           let lastErr: unknown = null;
           for (let attempt = 0; attempt < 2; attempt++) {
             try {
+              const readRecords =
+                Platform.OS === 'android' && healthSyncFormatVersion === 0
+                  ? fitness.getLegacyDistanceRecordsBetween.bind(fitness)
+                  : fitness.getDistanceRecordsBetween.bind(fitness);
               records = await withTimeout(
-                fitness.getDistanceRecordsBetween(chunk.start, chunk.end),
+                readRecords(chunk.start, chunk.end),
                 CHUNK_TIMEOUT_MS,
               );
               break;
@@ -295,24 +303,40 @@ export function useSyncInterval() {
             return;
           }
 
-          const milesAddedThisChunk = await ingestRecords(
-            records,
-            healthSource,
-            idPrefix,
-            addDistanceEntries,
-            updateDistanceEntry,
+          const { entries, milesChanged: milesAddedThisChunk } =
+            buildHealthDistanceEntryChanges(
+              records,
+              healthSource,
+              idPrefix,
+              useProgressStore.getState().distanceEntries,
+            );
+          const cursor = Math.min(chunk.end.getTime(), toDate.getTime());
+          const nextFormatVersion = getHealthSyncFormatForChunk(
+            Platform.OS,
+            healthSyncFormatVersion,
+            i,
+            chunks.length,
           );
+          healthLookbackStartTimestamp = getHealthLookbackStartForChunk(
+            Platform.OS,
+            healthSyncFormatVersion,
+            nextFormatVersion,
+            healthLookbackStartTimestamp,
+            chunk.start.getTime(),
+            cursor,
+          );
+          await applyHealthSyncChunk(
+            entries,
+            cursor,
+            nextFormatVersion,
+            healthLookbackStartTimestamp,
+          );
+          useSettingsStore.setState({
+            lastSyncTimestamp: cursor,
+            healthSyncFormatVersion: nextFormatVersion,
+            healthLookbackStartTimestamp,
+          });
           totalMilesAdded += milesAddedThisChunk;
-
-          // Roll total from entries; cheap, entries already updated.
-          const store = useProgressStore.getState();
-          const totalMiles = store.getTotalMiles();
-          const totalSteps = store.getTotalSteps();
-          setMiles(totalMiles);
-          store.setSteps(totalSteps);
-
-          // Per-chunk timestamp: if we crash/quit, we resume from here.
-          setLastSyncTimestamp(Math.min(chunk.end.getTime(), toDate.getTime()));
 
           setSyncStatus(prev =>
             prev.phase === 'syncing'
@@ -363,7 +387,7 @@ export function useSyncInterval() {
             phase: 'error',
             error: classified,
           }));
-          setSyncEnabled(false);
+          await updateSyncSettings({ syncEnabled: false });
         } else {
           setSyncStatus(prev => ({
             ...prev,
@@ -381,12 +405,9 @@ export function useSyncInterval() {
       syncProvider,
       syncStartDate,
       trackingMode,
-      addDistanceEntries,
-      updateDistanceEntry,
-      setMiles,
-      setLastSyncTimestamp,
+      applyHealthSyncChunk,
       setSyncStatus,
-      setSyncEnabled,
+      updateSyncSettings,
     ],
   );
 
@@ -546,89 +567,6 @@ export function useSyncInterval() {
 }
 
 /**
- * Ingest one chunk's worth of health records into the progress store.
- * Returns net miles added (new + updated diffs) for status reporting.
- */
-async function ingestRecords(
-  records: HealthDistanceRecord[],
-  healthSource: DistanceSource,
-  idPrefix: string,
-  addDistanceEntries: (entries: DistanceEntry[]) => Promise<void>,
-  updateDistanceEntry: (e: DistanceEntry) => Promise<void>,
-): Promise<number> {
-  if (records.length === 0) return 0;
-
-  const existingEntries = useProgressStore
-    .getState()
-    .distanceEntries.filter(e => e.source === healthSource);
-  const existingEntriesMap = new Map(existingEntries.map(e => [e.id, e]));
-
-  // Only one record in our DB can plausibly be amended by the upstream health
-  // app: the most-recent one. Older records are treated as finalized — both
-  // because real Health Connect doesn't go back and mutate old data, and
-  // because the user may have manually edited those rows via the + button.
-  // Capturing this id once lets us skip the miles diff on every other record.
-  const latestExistingId = existingEntries.length
-    ? existingEntries.reduce((latest, e) =>
-        (e.date as number) > (latest.date as number) ? e : latest,
-      ).id
-    : null;
-
-  const saveId = DEFAULT_SAVE_ID;
-  let milesChanged = 0;
-
-  const toAdd: DistanceEntry[] = [];
-  const toUpdate: DistanceEntry[] = [];
-
-  for (const record of records) {
-    const entryId = `${idPrefix}_${record.id}`;
-
-    // Fast path: never seen this id → straight to insert. Backfills hit this
-    // exclusively, so we never pay the miles-diff cost for thousands of rows.
-    if (!existingEntriesMap.has(entryId)) {
-      const miles = record.distanceMeters * METERS_TO_MILES;
-      toAdd.push({
-        id: entryId,
-        saveId,
-        date: new Date(record.startTime).getTime(),
-        miles,
-        steps: record.steps,
-        source: healthSource,
-      });
-      milesChanged += miles;
-      continue;
-    }
-
-    // Known id, but not the one amendable record → ignore. Preserves user
-    // edits to older days and avoids unnecessary diff computation.
-    if (entryId !== latestExistingId) continue;
-
-    // Known id AND it's our one amendable record → diff and maybe update.
-    const existing = existingEntriesMap.get(entryId)!;
-    const miles = record.distanceMeters * METERS_TO_MILES;
-    if (
-      Math.abs(existing.miles - miles) > 0.001 ||
-      existing.steps !== record.steps
-    ) {
-      toUpdate.push({ ...existing, miles, steps: record.steps });
-      milesChanged += miles - existing.miles;
-    }
-  }
-
-  // Single batched store update + single SQLite transaction per chunk.
-  // Replaces hundreds of awaited per-record writes that previously blocked
-  // the JS thread for ~30s on the first chunk under Android sample volume.
-  if (toAdd.length > 0) {
-    await addDistanceEntries(toAdd);
-  }
-  for (const entry of toUpdate) {
-    await updateDistanceEntry(entry);
-  }
-
-  return milesChanged;
-}
-
-/**
  * Pedometer mode's commit: read `getStepsBetween(watermark, now)`, write
  * at most one `DistanceEntry` for that window (via
  * `commitPedometerRange`), then advance the watermark
@@ -650,10 +588,9 @@ async function ingestRecords(
  */
 async function performPedometerSync(args: {
   forceSync: boolean;
-  setLastSyncTimestamp: (t: number | null) => void;
   setSyncStatus: ReturnType<typeof useProgressStore.getState>['setSyncStatus'];
 }): Promise<void> {
-  const { forceSync, setLastSyncTimestamp, setSyncStatus } = args;
+  const { forceSync, setSyncStatus } = args;
 
   const now = Date.now();
   const watermark = useSettingsStore.getState().lastSyncTimestamp;
@@ -663,7 +600,8 @@ async function performPedometerSync(args: {
   // this branch is unreachable in practice. Guard anyway: skip the
   // commit and stamp `now` so subsequent ticks have a starting point.
   if (!watermark) {
-    setLastSyncTimestamp(now);
+    await useProgressStore.getState().applyPedometerSyncChunk([], now);
+    useSettingsStore.setState({ lastSyncTimestamp: now });
     return;
   }
 
@@ -704,10 +642,6 @@ async function performPedometerSync(args: {
     // retry the same window.
     return;
   }
-
-  // Advance the watermark unconditionally on success (even for empty
-  // windows) so we don't re-scan the same range next tick.
-  setLastSyncTimestamp(now);
 
   setSyncStatus({
     phase: 'idle',

@@ -1,5 +1,8 @@
 import {
+  getAppleHealthDistanceRecords,
   getAggregatedAndroidDistanceRecords,
+  getLegacyAndroidDistanceRecords,
+  HealthProviderReadError,
   selectAppleHealthDistanceRecords,
 } from '../fitnessService';
 import { milesToSteps } from '../../utils/stride';
@@ -36,9 +39,43 @@ describe('fitnessService Android aggregation', () => {
     expect(mockAggregateRecord).toHaveBeenCalledTimes(2);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      id: `hc_steps_aggregate_${start.getTime()}_${end.getTime()}`,
+      id: `hc_aggregate_${start.getTime()}`,
       steps: 7000,
     });
+  });
+
+  it('keeps an aggregate ID stable when a late record changes the window total', async () => {
+    mockAggregateRecord.mockImplementation(
+      ({ recordType }: { recordType: string }) =>
+        Promise.resolve(
+          recordType === 'Steps'
+            ? { COUNT_TOTAL: 1000 }
+            : { DISTANCE: { inMeters: 500 } },
+        ),
+    );
+    const start = new Date('2026-07-30T00:00:00.000Z');
+
+    const first = await getAggregatedAndroidDistanceRecords(
+      { aggregateRecord: mockAggregateRecord },
+      start,
+      new Date('2026-07-31T00:00:00.000Z'),
+    );
+    mockAggregateRecord.mockImplementation(
+      ({ recordType }: { recordType: string }) =>
+        Promise.resolve(
+          recordType === 'Steps'
+            ? { COUNT_TOTAL: 1500 }
+            : { DISTANCE: { inMeters: 700 } },
+        ),
+    );
+    const amended = await getAggregatedAndroidDistanceRecords(
+      { aggregateRecord: mockAggregateRecord },
+      start,
+      new Date('2026-07-31T12:00:00.000Z'),
+    );
+
+    expect(amended[0].id).toBe(first[0].id);
+    expect(amended[0].steps).toBeGreaterThan(first[0].steps);
   });
 
   it('preserves measured steps when the distance aggregate wins', async () => {
@@ -60,7 +97,7 @@ describe('fitnessService Android aggregation', () => {
     );
 
     expect(records[0]).toMatchObject({
-      id: `hc_distance_aggregate_${start.getTime()}_${end.getTime()}`,
+      id: `hc_aggregate_${start.getTime()}`,
       distanceMeters: 5000,
       steps: 2000,
     });
@@ -119,6 +156,93 @@ describe('fitnessService Android aggregation', () => {
       ),
     ).rejects.toThrow('Health Connect offline');
   });
+
+  it('rejects an incomplete aggregate instead of treating it as empty', async () => {
+    mockAggregateRecord.mockImplementation(
+      ({ recordType }: { recordType: string }) =>
+        recordType === 'Distance'
+          ? Promise.reject(new Error('distance provider offline'))
+          : Promise.resolve({ COUNT_TOTAL: 0 }),
+    );
+
+    await expect(
+      getAggregatedAndroidDistanceRecords(
+        { aggregateRecord: mockAggregateRecord },
+        new Date('2026-07-30T00:00:00.000Z'),
+        new Date('2026-07-31T00:00:00.000Z'),
+      ),
+    ).rejects.toMatchObject({
+      name: 'HealthProviderReadError',
+      provider: 'health-connect',
+      signal: 'distance',
+    });
+  });
+
+  it('returns an empty list only when both aggregate reads succeed empty', async () => {
+    mockAggregateRecord.mockImplementation(
+      ({ recordType }: { recordType: string }) =>
+        Promise.resolve(
+          recordType === 'Steps'
+            ? { COUNT_TOTAL: 0 }
+            : { DISTANCE: { inMeters: 0 } },
+        ),
+    );
+
+    await expect(
+      getAggregatedAndroidDistanceRecords(
+        { aggregateRecord: mockAggregateRecord },
+        new Date('2026-07-30T00:00:00.000Z'),
+        new Date('2026-07-31T00:00:00.000Z'),
+      ),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe('fitnessService Android legacy cutover', () => {
+  it('preserves LIVE raw record IDs so existing entries deduplicate', async () => {
+    const readRecords = jest.fn(async (recordType: 'Distance' | 'Steps') => ({
+      records:
+        recordType === 'Steps'
+          ? [
+              {
+                metadata: { id: 'live-step-id' },
+                startTime: '2026-07-30T08:00:00.000Z',
+                endTime: '2026-07-30T08:15:00.000Z',
+                count: 3000,
+              },
+            ]
+          : [],
+    }));
+
+    const records = await getLegacyAndroidDistanceRecords(
+      { readRecords } as never,
+      new Date('2026-07-30T00:00:00.000Z'),
+      new Date('2026-07-31T00:00:00.000Z'),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0].id).toBe('live-step-id');
+  });
+
+  it('rejects a failed raw read instead of advancing the cutover as empty', async () => {
+    const readRecords = jest.fn((recordType: 'Distance' | 'Steps') =>
+      recordType === 'Distance'
+        ? Promise.reject(new Error('raw provider failed'))
+        : Promise.resolve({ records: [] }),
+    );
+
+    await expect(
+      getLegacyAndroidDistanceRecords(
+        { readRecords } as never,
+        new Date('2026-07-30T00:00:00.000Z'),
+        new Date('2026-07-31T00:00:00.000Z'),
+      ),
+    ).rejects.toMatchObject({
+      name: 'HealthProviderReadError',
+      provider: 'health-connect',
+      signal: 'distance',
+    });
+  });
 });
 
 describe('fitnessService Apple Health sample selection', () => {
@@ -162,5 +286,27 @@ describe('fitnessService Apple Health sample selection', () => {
 
     expect(records[0].distanceMeters).toBeGreaterThan(0);
     expect(records[0].steps).toBe(milesToSteps(3));
+  });
+
+  it('returns an empty list when both Apple Health reads succeed empty', async () => {
+    await expect(
+      getAppleHealthDistanceRecords(
+        () => Promise.resolve([]),
+        () => Promise.resolve([]),
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it('rejects when either Apple Health signal fails', async () => {
+    const failure = getAppleHealthDistanceRecords(
+      () => Promise.resolve([]),
+      () => Promise.reject(new Error('HealthKit query failed')),
+    );
+
+    await expect(failure).rejects.toBeInstanceOf(HealthProviderReadError);
+    await expect(failure).rejects.toMatchObject({
+      provider: 'apple-health',
+      signal: 'steps',
+    });
   });
 });

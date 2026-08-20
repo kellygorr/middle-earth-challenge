@@ -99,6 +99,9 @@ Both directions (health-app → pedometer, pedometer → health-app):
 - [ ] `progressStore.syncStatus = initialSyncStatus` — clears syncing/error
 - [ ] `progressStore.lastSyncError = null`, `lastSyncErrorAt = null`
 - [ ] Start or stop the pedometer foreground service accordingly
+- [ ] When stopping, persist `pedometerCleanupPending = true` with the source
+      transition, then clear it only after native cleanup succeeds. Cold start
+      and foreground resume retry this idempotent cleanup before mode checks.
 
 health-app → pedometer specifically:
 
@@ -330,7 +333,7 @@ pedometerBackgroundTask)`
       yet been rolled up into a persisted range. Sourced by the shared
       `useLivePedometerDelta()` hook (also used by the map-screen
       total-steps chip) — polls `pedometerService.getStepsBetween(
-    lastSyncTimestamp, now)` every 5 s and on foreground-return.
+lastSyncTimestamp, now)` every 5 s and on foreground-return.
       Row has no edit affordance and its "live" label flashes between
       the theme text color and yellow (`#F5A623`) so it clearly reads
       as in-flight. When the next commit lands the live delta drops to

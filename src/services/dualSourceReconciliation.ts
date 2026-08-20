@@ -62,7 +62,10 @@ export async function reconcileCompletedDualTrackingDays(
 
   const initialCursor = settings.lastHealthReconciledThrough;
   if (initialCursor === null) {
-    settings.setLastHealthReconciledThrough(todayStart);
+    await useProgressStore
+      .getState()
+      .applyHealthReconciliationDay({}, todayStart);
+    useSettingsStore.setState({ lastHealthReconciledThrough: todayStart });
     return { daysReconciled: 0, milesAdded: 0 };
   }
   let cursor = initialCursor;
@@ -116,6 +119,7 @@ export async function reconcileCompletedDualTrackingDays(
       entry => entry.id === entryId,
     );
 
+    const changes: { upsert?: DistanceEntry[]; removeIds?: string[] } = {};
     if (topUpMiles > 0 || topUpSteps > 0) {
       const entry: DistanceEntry = {
         id: entryId,
@@ -125,25 +129,20 @@ export async function reconcileCompletedDualTrackingDays(
         steps: topUpSteps,
         source: 'health-reconciliation',
       };
+      changes.upsert = [entry];
       if (existing) {
-        await progress.updateDistanceEntry(entry);
         milesAdded += topUpMiles - existing.miles;
       } else {
-        await progress.addDistanceEntry(entry);
         milesAdded += topUpMiles;
       }
     } else if (existing) {
-      await progress.removeDistanceEntry(entryId);
+      changes.removeIds = [entryId];
       milesAdded -= existing.miles;
     }
 
-    const updated = useProgressStore.getState();
-    updated.setMiles(updated.getTotalMiles());
-    updated.setSteps(updated.getTotalSteps());
-    await updated.persistMilesSnapshot();
-
     cursor = dayEnd;
-    useSettingsStore.getState().setLastHealthReconciledThrough(cursor);
+    await progress.applyHealthReconciliationDay(changes, cursor);
+    useSettingsStore.setState({ lastHealthReconciledThrough: cursor });
     daysReconciled += 1;
   }
 

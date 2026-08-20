@@ -29,7 +29,11 @@ function setMiles(miles: number) {
 function setEntries(
   entries: Array<{ miles: number; steps: number; date?: number }>,
 ) {
+  const miles = entries.reduce((sum, entry) => sum + entry.miles, 0);
+  const steps = entries.reduce((sum, entry) => sum + entry.steps, 0);
   useProgressStore.setState({
+    miles,
+    steps,
     distanceEntries: entries.map((e, i) => ({
       id: `test-${i}`,
       saveId: 'default',
@@ -105,8 +109,10 @@ describe('getTotalMiles / getTotalSteps', () => {
     expect(useProgressStore.getState().getTotalSteps()).toBe(11_500);
   });
 
-  it('tolerate missing/nullish fields on an entry', () => {
+  it('uses committed totals when legacy entries have missing fields', () => {
     useProgressStore.setState({
+      miles: 2,
+      steps: 0,
       distanceEntries: [
         { id: 'a', saveId: 'default', date: 0, miles: 2 } as any,
         { id: 'b', saveId: 'default', date: 1 } as any,

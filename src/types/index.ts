@@ -42,6 +42,7 @@ export interface Save {
 // in the same mode the user originally typed in.
 export type DistanceSource =
   | 'manual'
+  | 'synced'
   | 'manual-distance'
   | 'manual-steps'
   | 'health-connect'
@@ -97,6 +98,8 @@ export interface UserSettings {
   syncProvider: SyncProvider; // Which fitness service to sync with
   syncStartDate: number | null; // Unix timestamp when sync was enabled
   lastSyncTimestamp: number | null; // Last successful sync timestamp
+  healthSyncFormatVersion: number; // Android HC entry-ID format; 0=LIVE raw, 1=aggregate
+  healthLookbackStartTimestamp: number | null; // Earliest range safe to replay with aggregate IDs
   lastHealthReconciledThrough: number | null; // Exclusive local-midnight boundary for dual mode
   liveSyncEnabled: boolean; // Auto-sync while app is open (health-app mode only)
   trackingMode: TrackingMode; // Source of step / distance data
@@ -118,6 +121,8 @@ export interface UserSettings {
    * reports the grants as revoked (i.e. after a real restart).
    */
   hcRevokePendingRestart: boolean;
+  /** True until a requested native pedometer stop completes successfully. */
+  pedometerCleanupPending: boolean;
   /**
    * Highest checkpoint index (0-based) for which we've already fired a
    * "You reached {checkpoint}!" system notification. `-1` means no
@@ -132,6 +137,7 @@ export interface UserSettings {
   sharingAffinity:
     | import('../constants/friendAffinities').FriendAffinity
     | null;
+  sharingProvisioningPending: boolean;
   sharingDeletionPending: boolean;
   lastPublishedMiles: number | null;
   lastSharedProgressSyncAt: number | null;

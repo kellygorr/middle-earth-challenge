@@ -36,6 +36,9 @@ export const PEDOMETER_DISPLAY_REFRESH_MS = 2 * 1000;
 
 // Chunking
 export const CHUNK_DAYS = 3;
+export const HEALTH_SYNC_LOOKBACK_DAYS = 3;
+export const HEALTH_SYNC_LOOKBACK_MS =
+  HEALTH_SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 export const CHUNK_TIMEOUT_MS = 20_000; // per-chunk native call timeout
 export const CHUNK_RETRY_DELAY_MS = 1_000; // backoff before retry
 export const CHUNK_YIELD_MS = 0; // microtask yield between chunks (UI paint)

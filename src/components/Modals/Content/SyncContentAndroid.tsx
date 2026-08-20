@@ -14,6 +14,7 @@ import { spacing } from '../../../styles/global';
 import { fitnessService } from '../../../services/fitnessService';
 import { pedometerService } from '../../../services/pedometerService';
 import {
+  completePendingPedometerCleanup,
   getTrackingModeForSources,
   switchTrackingMode,
 } from '../../../services/trackingModeService';
@@ -45,17 +46,15 @@ import {
  *   Health Connect active.
  * - syncEnabled=true, trackingMode='pedometer', syncProvider='none': Pedometer.
  * - syncEnabled=true, trackingMode='dual', syncProvider set: both sources.
+ * - pedometerCleanupPending=true: native Pedometer cleanup is still active.
  */
 export default function SyncContentAndroid() {
   const theme = useTheme();
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
   const trackingMode = useSettingsStore(state => state.trackingMode);
-  const setSyncEnabled = useSettingsStore(state => state.setSyncEnabled);
-  const setSyncProvider = useSettingsStore(state => state.setSyncProvider);
-  const setSyncStartDate = useSettingsStore(state => state.setSyncStartDate);
-  const setLastSyncTimestamp = useSettingsStore(
-    state => state.setLastSyncTimestamp,
+  const updateSyncSettings = useSettingsStore(
+    state => state.updateSyncSettings,
   );
   const liveSyncEnabled = useSettingsStore(state => state.liveSyncEnabled);
   const setLiveSyncEnabled = useSettingsStore(
@@ -63,9 +62,6 @@ export default function SyncContentAndroid() {
   );
   const hasSeenOemBatteryPrompt = useSettingsStore(
     state => state.hasSeenOemBatteryPrompt,
-  );
-  const setHasSeenOemBatteryPrompt = useSettingsStore(
-    state => state.setHasSeenOemBatteryPrompt,
   );
   // Persisted so the ↻ indicator + revoked banner survive modal close
   // / JS reload — the underlying HC lie also survives them, so a
@@ -75,8 +71,8 @@ export default function SyncContentAndroid() {
   const hcRevokePendingRestart = useSettingsStore(
     state => state.hcRevokePendingRestart,
   );
-  const setHcRevokePendingRestart = useSettingsStore(
-    state => state.setHcRevokePendingRestart,
+  const pedometerCleanupPending = useSettingsStore(
+    state => state.pedometerCleanupPending,
   );
   const showSyncNow =
     syncEnabled && syncProvider !== 'none' && trackingMode === 'health-app';
@@ -195,12 +191,12 @@ export default function SyncContentAndroid() {
       // grant means the restart hasn't happened yet — leave the flag
       // alone.
       if (hcRevokePendingRestart && !grants.steps && !grants.distance) {
-        setHcRevokePendingRestart(false);
+        await updateSyncSettings({ hcRevokePendingRestart: false });
       }
     } catch (error) {
       console.warn('[SyncContentAndroid] refresh HC permission:', error);
     }
-  }, [hcRevokePendingRestart, setHcRevokePendingRestart]);
+  }, [hcRevokePendingRestart, updateSyncSettings]);
 
   // Initial load + re-check on foreground return (user may have
   // toggled a permission in Settings while we were backgrounded).
@@ -217,7 +213,8 @@ export default function SyncContentAndroid() {
     (trackingMode === 'health-app' || trackingMode === 'dual') &&
     syncProvider !== 'none';
   const isPedometerActive =
-    syncEnabled && (trackingMode === 'pedometer' || trackingMode === 'dual');
+    pedometerCleanupPending ||
+    (syncEnabled && (trackingMode === 'pedometer' || trackingMode === 'dual'));
   const isHealthOnlyActive =
     syncEnabled && trackingMode === 'health-app' && syncProvider !== 'none';
 
@@ -240,11 +237,13 @@ export default function SyncContentAndroid() {
       }
 
       if (granted) {
-        setSyncProvider('health-connect');
-        setSyncStartDate(Date.now());
-        setSyncEnabled(true);
-        // Fresh grant clears any earlier in-session revoke banner.
-        setHcRevokePendingRestart(false);
+        await updateSyncSettings({
+          syncProvider: 'health-connect',
+          syncStartDate: Date.now(),
+          syncEnabled: true,
+          // Fresh grant clears any earlier in-session revoke banner.
+          hcRevokePendingRestart: false,
+        });
         setHcGranted(true);
         return true;
       }
@@ -256,7 +255,7 @@ export default function SyncContentAndroid() {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Open Settings',
-            onPress: () => {
+            onPress: async () => {
               Linking.openURL(
                 'market://details?id=com.google.android.apps.healthdata',
               );
@@ -377,7 +376,7 @@ export default function SyncContentAndroid() {
   //      If any didn't, preserve any active Health Connect source and show a
   //      targeted alert.
   //      pointing the user at Settings for the specific miss. Only
-  //      after all required gates pass do we commit setSyncEnabled.
+  //      after all required gates pass do we commit syncEnabled.
   //
   // OEM battery managers are surfaced as a final blocking dialog
   // because they're unverifiable — we can't detect grant/denial from
@@ -399,9 +398,9 @@ export default function SyncContentAndroid() {
       if (!result.tracking) {
         if (isHealthAppActive) {
           await switchTrackingMode('health-app');
-          setSyncEnabled(true);
+          await updateSyncSettings({ syncEnabled: true });
         } else {
-          setSyncEnabled(false);
+          await updateSyncSettings({ syncEnabled: false });
         }
         showPedometerMissingAlert('Physical activity');
         return;
@@ -417,7 +416,7 @@ export default function SyncContentAndroid() {
         // silently left running. Preserve Health Connect when it was active.
         if (isHealthAppActive) {
           await switchTrackingMode('health-app');
-          setSyncEnabled(true);
+          await updateSyncSettings({ syncEnabled: true });
         } else {
           await stopSyncing();
         }
@@ -437,8 +436,8 @@ export default function SyncContentAndroid() {
         Alert.alert(oemCopy.title, oemCopy.body, [
           {
             text: 'Open settings',
-            onPress: () => {
-              setHasSeenOemBatteryPrompt(true);
+            onPress: async () => {
+              await updateSyncSettings({ hasSeenOemBatteryPrompt: true });
               pedometerService.openOemBatterySettings().catch(err => {
                 console.warn(
                   '[SyncContentAndroid] openOemBatterySettings:',
@@ -449,13 +448,15 @@ export default function SyncContentAndroid() {
           },
           {
             text: "I've done this",
-            onPress: () => setHasSeenOemBatteryPrompt(true),
+            onPress: async () => {
+              await updateSyncSettings({ hasSeenOemBatteryPrompt: true });
+            },
           },
         ]);
       }
 
       // All gates passed — commit the selection.
-      setSyncEnabled(true);
+      await updateSyncSettings({ syncEnabled: true });
       setPedometerGranted(true);
     } finally {
       setBusy(false);
@@ -597,8 +598,10 @@ export default function SyncContentAndroid() {
         } catch (error) {
           console.warn('[SyncContentAndroid] health disconnect:', error);
         }
-        setSyncProvider('none');
-        setSyncEnabled(true);
+        await updateSyncSettings({
+          syncProvider: 'none',
+          syncEnabled: true,
+        });
       } finally {
         setBusy(false);
       }
@@ -614,7 +617,7 @@ export default function SyncContentAndroid() {
         setBusy(true);
         try {
           await switchTrackingMode('health-app');
-          setSyncEnabled(true);
+          await updateSyncSettings({ syncEnabled: true });
         } finally {
           setBusy(false);
         }
@@ -631,6 +634,18 @@ export default function SyncContentAndroid() {
   const stopSyncing = async () => {
     setBusy(true);
     try {
+      const pedometerModeSelected =
+        trackingMode === 'pedometer' || trackingMode === 'dual';
+      const cleanupRequired =
+        pedometerService.isSupported() &&
+        (pedometerModeSelected ||
+          useSettingsStore.getState().pedometerCleanupPending);
+      if (pedometerModeSelected && pedometerService.isSupported()) {
+        const { lastSyncTimestamp } = useSettingsStore.getState();
+        if (lastSyncTimestamp) {
+          await commitPedometerRange(lastSyncTimestamp, Date.now());
+        }
+      }
       if (syncProvider !== 'none') {
         try {
           await fitnessService.disconnect();
@@ -641,33 +656,16 @@ export default function SyncContentAndroid() {
           );
         }
       }
-      if (
-        (trackingMode === 'pedometer' || trackingMode === 'dual') &&
-        pedometerService.isSupported()
-      ) {
-        const { lastSyncTimestamp } = useSettingsStore.getState();
-        if (lastSyncTimestamp) {
-          try {
-            await commitPedometerRange(lastSyncTimestamp, Date.now());
-          } catch (error) {
-            console.warn(
-              '[SyncContentAndroid] stop-syncing pedometer flush:',
-              error,
-            );
-          }
-        }
-        try {
-          await pedometerService.stopTracking();
-        } catch (error) {
-          console.warn(
-            '[SyncContentAndroid] stop-syncing pedometer stop:',
-            error,
-          );
-        }
+      await updateSyncSettings({
+        syncEnabled: false,
+        syncProvider: 'none',
+        lastSyncTimestamp: null,
+        lastHealthReconciledThrough: null,
+        ...(cleanupRequired ? { pedometerCleanupPending: true } : {}),
+      });
+      if (cleanupRequired) {
+        await completePendingPedometerCleanup();
       }
-      setSyncEnabled(false);
-      setSyncProvider('none');
-      setLastSyncTimestamp(null);
     } finally {
       setBusy(false);
     }
@@ -692,13 +690,13 @@ export default function SyncContentAndroid() {
               await fitnessService.revokePermissions();
               if (trackingMode === 'dual') {
                 await switchTrackingMode('pedometer');
-                setSyncProvider('none');
+                await updateSyncSettings({ syncProvider: 'none' });
               }
               // HC will keep reporting the grants until process
               // restart, so we flip a persisted flag that swaps the
               // button for a confirmation banner and repaints the
               // Required Access items with ↻ in the meantime.
-              setHcRevokePendingRestart(true);
+              await updateSyncSettings({ hcRevokePendingRestart: true });
             } catch (error) {
               console.warn(
                 '[SyncContentAndroid] revoke HC permissions:',
@@ -732,7 +730,11 @@ export default function SyncContentAndroid() {
 
   return (
     <View style={styles.sectionStack}>
-      <StatusBadge label="Syncing enabled" visible={syncEnabled} />
+      <StatusBadge
+        label="Syncing enabled"
+        visible={syncEnabled}
+        style={styles.statusBadge}
+      />
       <View>
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.introText]}
@@ -1185,6 +1187,9 @@ const styles = StyleSheet.create({
   },
   sectionStack: {
     gap: spacing.xl,
+  },
+  statusBadge: {
+    alignSelf: 'center',
   },
   // Outer wrapper is the same 14px size as the SettingsIcon in SettingsRef
   // so both inline refs sit at the same spot on the text line. The inner

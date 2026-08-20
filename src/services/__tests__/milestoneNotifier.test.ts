@@ -11,7 +11,7 @@
 // `mock` — anything else fails hoist-time validation.
 
 const mockFire = jest.fn();
-const mockSetLastNotifiedCheckpointIndex = jest.fn();
+const mockUpdateSyncSettings = jest.fn();
 const mockRefs = {
   appState: 'background' as 'active' | 'background' | 'inactive',
   lastNotified: -1 as number,
@@ -28,9 +28,11 @@ jest.mock('../../stores/settingsStore', () => ({
   useSettingsStore: {
     getState: () => ({
       lastNotifiedCheckpointIndex: mockRefs.lastNotified,
-      setLastNotifiedCheckpointIndex: (i: number) => {
-        mockRefs.lastNotified = i;
-        mockSetLastNotifiedCheckpointIndex(i);
+      updateSyncSettings: async (updates: {
+        lastNotifiedCheckpointIndex: number;
+      }) => {
+        mockRefs.lastNotified = updates.lastNotifiedCheckpointIndex;
+        mockUpdateSyncSettings(updates);
       },
     }),
   },
@@ -61,7 +63,7 @@ beforeEach(() => {
   jest.resetModules();
   mockFire.mockReset();
   mockFire.mockResolvedValue(true);
-  mockSetLastNotifiedCheckpointIndex.mockReset();
+  mockUpdateSyncSettings.mockReset();
   mockRefs.appState = 'background';
   mockRefs.lastNotified = -1;
 });
@@ -103,7 +105,7 @@ describe('checkAndFireMilestones', () => {
     await checkAndFireMilestones(100, 50);
 
     expect(mockFire).not.toHaveBeenCalled();
-    expect(mockSetLastNotifiedCheckpointIndex).not.toHaveBeenCalled();
+    expect(mockUpdateSyncSettings).not.toHaveBeenCalled();
   });
 
   it('fires nothing when the window does not cross any checkpoint', async () => {
@@ -113,7 +115,7 @@ describe('checkAndFireMilestones', () => {
     await checkAndFireMilestones(10, 100);
 
     expect(mockFire).not.toHaveBeenCalled();
-    expect(mockSetLastNotifiedCheckpointIndex).not.toHaveBeenCalled();
+    expect(mockUpdateSyncSettings).not.toHaveBeenCalled();
   });
 
   it('fires exactly once when a single checkpoint is crossed in the background', async () => {
@@ -127,7 +129,9 @@ describe('checkAndFireMilestones', () => {
     const [title, , index] = mockFire.mock.calls[0];
     expect(title).toContain('Rivendell');
     expect(index).toBe(1); // fixture index of Rivendell
-    expect(mockSetLastNotifiedCheckpointIndex).toHaveBeenCalledWith(1);
+    expect(mockUpdateSyncSettings).toHaveBeenCalledWith({
+      lastNotifiedCheckpointIndex: 1,
+    });
   });
 
   it('fires each crossed checkpoint in order for a multi-checkpoint window', async () => {
@@ -142,7 +146,9 @@ describe('checkAndFireMilestones', () => {
     expect(mockFire.mock.calls[1][2]).toBe(2); // Moria
     expect(mockFire.mock.calls[2][2]).toBe(3); // Lothlorien
     // Watermark advances to the highest crossed index.
-    expect(mockSetLastNotifiedCheckpointIndex).toHaveBeenCalledWith(3);
+    expect(mockUpdateSyncSettings).toHaveBeenCalledWith({
+      lastNotifiedCheckpointIndex: 3,
+    });
   });
 
   it('skips the isStart checkpoint even when milesBefore is negative', async () => {
@@ -167,7 +173,9 @@ describe('checkAndFireMilestones', () => {
     // Only Moria (index 2) fires — Rivendell is behind the watermark.
     expect(mockFire).toHaveBeenCalledTimes(1);
     expect(mockFire.mock.calls[0][2]).toBe(2);
-    expect(mockSetLastNotifiedCheckpointIndex).toHaveBeenCalledWith(2);
+    expect(mockUpdateSyncSettings).toHaveBeenCalledWith({
+      lastNotifiedCheckpointIndex: 2,
+    });
   });
 
   it('suppresses notifications in the foreground but still advances the watermark', async () => {
@@ -182,7 +190,9 @@ describe('checkAndFireMilestones', () => {
     expect(mockFire).not.toHaveBeenCalled();
     // But the watermark advances so we don't emit stale pings the
     // next time we background.
-    expect(mockSetLastNotifiedCheckpointIndex).toHaveBeenCalledWith(3);
+    expect(mockUpdateSyncSettings).toHaveBeenCalledWith({
+      lastNotifiedCheckpointIndex: 3,
+    });
   });
 
   it('does not throw when the native notification rejects', async () => {
@@ -192,7 +202,9 @@ describe('checkAndFireMilestones', () => {
 
     await expect(checkAndFireMilestones(100, 600)).resolves.toBeUndefined();
     // Watermark still advances so we don't retry forever.
-    expect(mockSetLastNotifiedCheckpointIndex).toHaveBeenCalledWith(3);
+    expect(mockUpdateSyncSettings).toHaveBeenCalledWith({
+      lastNotifiedCheckpointIndex: 3,
+    });
   });
 
   it('ignores checkpoints with non-finite CUMULATIVE_MILES', async () => {

@@ -38,3 +38,25 @@ export function buildChunks(from: Date, to: Date, chunkDays: number): Chunk[] {
   }
   return chunks;
 }
+
+export function buildAlignedChunks(
+  from: Date,
+  to: Date,
+  chunkDays: number,
+): Chunk[] {
+  if (to.getTime() <= from.getTime()) return [];
+
+  const chunks: Chunk[] = [];
+  const end = to.getTime();
+  const width = chunkDays * MS_PER_DAY;
+  let cursor = from.getTime();
+
+  while (cursor < end) {
+    const nextBoundary = (Math.floor(cursor / width) + 1) * width;
+    const next = Math.min(nextBoundary, end);
+    chunks.push({ start: new Date(cursor), end: new Date(next) });
+    cursor = next;
+  }
+
+  return chunks;
+}
