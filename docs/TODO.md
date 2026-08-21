@@ -140,6 +140,34 @@ To review:
 
 ---
 
+## A stalled pedometer watermark is undetectable
+
+If background commits stop — OEM battery manager, a killed foreground service,
+a broken Worker/Headless handoff, a revoked permission — nothing surfaces it.
+The watermark simply stops advancing, which is indistinguishable from a user
+who stopped walking. `Result.success()` is returned deliberately so a missed
+sweep recovers on the next tick via the watermark rather than retrying, and
+that same choice removes the only signal that anything went wrong.
+
+This is separate from whether the handoff ever actually breaks. It is the
+reason a break would go unnoticed for as long as it lasted.
+
+Worth considering:
+
+- Track the last successful commit time and surface it when it falls well
+  outside the expected ~4.8h cadence, similar to the Friend Progress freshness
+  label
+- `pedometerService.isServiceRunning()` already exists and is used for
+  detecting silent OS kills; the same signal could feed a persistent warning
+  rather than only an on-demand check
+- Decide what the app should say. "No steps recorded since Tuesday" is
+  actionable; a generic sync error is not
+- Take care not to alarm users who genuinely did not walk — absence of steps
+  and absence of *commits* are different conditions, and only the second is a
+  fault
+
+---
+
 ## No transactional database failure-recovery tests
 
 The sync and commit suites mock `useProgressStore` and `database`, so they
