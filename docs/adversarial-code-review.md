@@ -889,20 +889,20 @@ tests, and CI schema parity checks.
 
 ### High: Tests stop before the highest-risk integration boundaries
 
-- **Partially resolved.** The suite is now 27 files / 257 tests, up from 16 /
-  170. Added since the review: modal double-action and navigation tests
-  (`SharedModal`, `EditEntryModal`, `FriendProgressContent`), spring/fall DST
-  tests, friend-participant validation tests, pedometer sample-pruning tests,
-  and cross-layer affinity parity tests.
-- **Still open, in the review's own priority order:**
-  1. Transactional progressStore/database failure recovery — the sync and
-     commit suites still mock the store and database, so a real SQLite failure
-     path is untested.
-  2. Initialization failure gating — `App.test.tsx` renders an almost-empty
-     tree and asserts nothing meaningful. Tracked in `docs/TODO.md`.
-  3. Android JVM/instrumentation — there is no `androidTest` target at all, so
-     `pruneSamplesBefore`'s anchor-preservation SQL is unverified. Tracked in
-     `docs/TODO.md`.
+- [x] **Closed; remaining work tracked in `docs/TODO.md`.** The suite is now 27
+  files / 257 tests, up from 16 / 170. Added since the review: modal
+  double-action and navigation tests (`SharedModal`, `EditEntryModal`,
+  `FriendProgressContent`), spring/fall DST tests, friend-participant
+  validation tests, pedometer sample-pruning tests, and cross-layer affinity
+  parity tests.
+- **Three gaps remain, each with its own TODO entry** rather than being carried
+  in this document:
+  1. No transactional database failure-recovery tests — the sync and commit
+     suites still mock the store and database.
+  2. `App.test.tsx` renders an almost-empty tree and asserts nothing
+     meaningful.
+  3. No `androidTest` target, so `pruneSamplesBefore`'s anchor-preservation SQL
+     is unverified.
 - **Note:** the interaction tests added here mock the stores, so they prove the
   right calls happen with the right payloads, not that persistence agrees.
 
