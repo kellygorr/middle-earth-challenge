@@ -107,6 +107,33 @@ debug session past the TTL and watching for a second token exchange.
 
 ---
 
+## No transactional database failure-recovery tests
+
+The sync and commit suites mock `useProgressStore` and `database`, so they
+prove the right calls are made with the right payloads — not that persistence
+agrees. Nothing exercises a real SQLite failure path.
+
+This is the first item in the adversarial review's own test-priority order and
+the largest remaining coverage gap. The findings it would have caught are real
+ones already fixed by inspection rather than by a failing test: swallowed write
+errors, memory/snapshot divergence, and partial commits.
+
+Worth covering:
+
+- `applyDistanceEntryChanges` rejecting mid-transaction leaves entries and the
+  progress snapshot consistent, and the store is not updated
+- A failed `persistMilesSnapshot` does not leave Zustand ahead of the database
+- Hydration repairs a snapshot that disagrees with the entries it was derived
+  from
+- `commitPedometerRange` does not advance the watermark when the write rejects
+  (currently asserted against a mock)
+
+Needs a real `op-sqlite` instance in Jest, or a thin in-memory adapter behind
+the same interface. Decide which before writing the tests — mocking the mock is
+what produced this gap.
+
+---
+
 ## `App.test.tsx` "renders correctly" asserts an almost-empty tree
 
 `SafeAreaProvider` renders nothing until it measures a native layout, which
