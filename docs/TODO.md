@@ -329,4 +329,20 @@ correctly with a `cancelled` flag; whether every other async handler
 re-checks before calling `setState` is unknown. All 14 timer/frame sites were
 checked and are clean.
 
+---
+
+## Node types are enabled for all TypeScript, not just tests
+
+`tsconfig.json` sets `"types": ["jest", "node"]` so
+`src/constants/__tests__/friendAffinities.test.ts` can read `firestore.rules`
+and the seed script to check cross-layer parity.
+
+The side effect is that app code can now `import { readFileSync } from 'fs'`
+and typecheck cleanly, then fail at runtime — React Native has no Node
+built-ins. TypeScript no longer catches that mistake.
+
+Low priority; the parity test is worth more than the footgun. To resolve
+properly, use a separate `tsconfig.test.json` that adds `node` only for test
+files, and keep the app config restricted to `jest`.
+
 
