@@ -50,7 +50,8 @@ export default function MilesFooter() {
 
   const handleAdd = async () => {
     const delta = parseFloat(addInput);
-    if (isNaN(delta) || delta <= 0) {
+    // isNaN alone accepts Infinity, which pasted exponent input can produce.
+    if (!Number.isFinite(delta) || delta <= 0) {
       return;
     }
     if (addLockRef.current) return;

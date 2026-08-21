@@ -3,10 +3,16 @@
 ## Status
 
 The Friend Progress UI, workflow, sync cadence, participant caching, and map
-presentation are implemented. The current collection-wide participant query is
-not approved for broader release. The required backend target is private,
-invite-only groups using Firebase Anonymous Authentication and Cloud Firestore
-on the Spark plan.
+presentation are implemented.
+
+**The invite-only group model described below was not built and is not
+planned.** The app serves a single closed friend group, so every authenticated
+user is a member of the one implicit group and any authenticated user can read
+the participant collection. That is an accepted decision, not a gap — see
+`docs/adversarial-code-review.md`, "Friends data is globally enumerable". The
+group, invite, membership, and `userGroups` sections of this document are
+retained as design notes for a future multi-group release and describe nothing
+that currently exists.
 
 This feature lets users opt in to sharing their total journey distance and see
 other participating users' progress. It is independent of activity tracking:
@@ -16,6 +22,7 @@ journey total before anything is published.
 ## Goals
 
 - Let a private, invite-only group see one another's journey progress.
+  *(Deferred — currently one implicit group.)*
 - Keep sharing optional and off by default.
 - Share only the minimum data needed for the experience.
 - Continue treating local progress as the app's source of truth.
@@ -176,15 +183,21 @@ cycle may run at a time.
 
 ## Publish and fetch cadence
 
-While opted in:
+Implemented in `src/hooks/useFriendProgressSync.ts`. While opted in:
 
 - App launch or foreground resume: publish changed local distance, then fetch
   other users' latest progress.
-- Foreground: repeat the publish/fetch cycle every two minutes.
-- App entering the background: publish once if distance changed.
-- Android pedometer background commit: best-effort publish after the existing
-  approximately four-hour WorkManager commit.
-- Shared-progress view: allow manual pull-to-refresh.
+- Foreground: repeat the publish/fetch cycle every two minutes, skipped while
+  the app is not active.
+
+Designed but **not implemented**:
+
+- App entering the background: publish once if distance changed. The AppState
+  listener only fires a sync on the transition *to* active.
+- Android pedometer background commit: best-effort publish after the
+  WorkManager commit. `pedometerBackgroundTask` does not touch friend progress.
+- Shared-progress view: manual pull-to-refresh. There is no `RefreshControl`;
+  the two-minute cycle and the resume trigger are the only refresh paths.
 
 While backgrounded, do not run a separate cloud polling timer. Mobile platforms
 cannot reliably guarantee five-minute background execution, and other users'
@@ -393,9 +406,9 @@ must never be merged into the current user's local journey progress.
 3. Add persisted sharing settings and publication metadata.
 4. Implement opt-in, display-name editing, and opt-out.
 5. Implement idempotent absolute-distance publishing.
-6. Implement launch/resume, two-minute foreground, background-transition, and
-   Android pedometer-background triggers.
-7. Implement participant fetching, caching, and pull-to-refresh.
+6. Implement launch/resume and two-minute foreground triggers.
+   *(Background-transition and Android pedometer-background triggers deferred.)*
+7. Implement participant fetching and caching. *(Pull-to-refresh deferred.)*
 8. Display participants along the map path.
 9. Add offline/error/privacy states and device tests.
 
@@ -414,8 +427,10 @@ must never be merged into the current user's local journey progress.
 - A reduced local total replaces the larger cloud total.
 - Launch/resume and two-minute foreground cycles publish then fetch.
 - Concurrent cycles do not overlap.
-- Background transition publishes changed distance once.
+- Background transition publishes changed distance once. *(Deferred — trigger
+  not implemented.)*
 - Android background pedometer commit triggers best-effort publishing.
+  *(Deferred — trigger not implemented.)*
 - Opt-out stops publish/fetch requests and deletes the cloud row.
 - A failed opt-out deletion is retried without publishing or fetching progress.
 - Delete shared data from Data Management performs the same confirmed opt-out

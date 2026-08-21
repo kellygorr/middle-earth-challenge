@@ -28,6 +28,13 @@ export const PEDOMETER_BG_COMMIT_INTERVAL_MS = Math.floor(
   (24 * 60 * 60 * 1000) / 5,
 );
 
+// Raw native samples are only needed to recompute a window that has not been
+// committed yet. Everything older than the watermark minus this margin is
+// prunable; the margin leaves room for a clock skew or a failed commit that
+// left the watermark behind. Without pruning the table grows by up to one row
+// per five steps, forever.
+export const PEDOMETER_SAMPLE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
 // Display-only: the map screen refreshes its miles counter every 2s by
 // reading the uncommitted-window step count and folding it into the
 // displayed total. Nothing is written to SQLite on this cadence.

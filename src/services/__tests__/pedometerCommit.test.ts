@@ -27,6 +27,7 @@ interface StoreState {
 }
 
 const mockGetStepsBetween = jest.fn();
+const mockPruneSamplesBefore = jest.fn();
 const mockCheckAndFireMilestones = jest.fn();
 const mockStoreState: { ref: StoreState } = { ref: null as any };
 const mockSettingsState: { lastSyncTimestamp: number | null } = {
@@ -37,6 +38,8 @@ jest.mock('../pedometerService', () => ({
   pedometerService: {
     getStepsBetween: (fromMs: number, toMs: number) =>
       mockGetStepsBetween(fromMs, toMs),
+    pruneSamplesBefore: (cutoffMs: number) =>
+      mockPruneSamplesBefore(cutoffMs),
   },
 }));
 
@@ -59,6 +62,7 @@ jest.mock('../../stores/settingsStore', () => ({
 }));
 
 import { commitPedometerRange } from '../pedometerCommit';
+import { PEDOMETER_SAMPLE_RETENTION_MS } from '../../constants/sync';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -86,6 +90,8 @@ function resetStore(initial: Partial<StoreState> = {}) {
 
 beforeEach(() => {
   mockGetStepsBetween.mockReset();
+  mockPruneSamplesBefore.mockReset();
+  mockPruneSamplesBefore.mockResolvedValue(0);
   mockCheckAndFireMilestones.mockReset();
   mockCheckAndFireMilestones.mockResolvedValue(undefined);
   mockSettingsState.lastSyncTimestamp = null;
@@ -277,5 +283,49 @@ describe('commitPedometerRange', () => {
     );
     expect(mockSettingsState.lastSyncTimestamp).toBeNull();
     expect(mockCheckAndFireMilestones).not.toHaveBeenCalled();
+  });
+
+  describe('raw sample pruning', () => {
+    it('prunes behind the committed watermark by the retention margin', async () => {
+      const toMs = PEDOMETER_SAMPLE_RETENTION_MS + 10 * 60_000;
+      mockGetStepsBetween.mockResolvedValueOnce({
+        steps: 500,
+        fromMs: toMs - 60_000,
+        toMs,
+      });
+
+      await commitPedometerRange(toMs - 60_000, toMs);
+
+      expect(mockPruneSamplesBefore).toHaveBeenCalledWith(
+        toMs - PEDOMETER_SAMPLE_RETENTION_MS,
+      );
+    });
+
+    it('does not prune when nothing is older than the retention window', async () => {
+      mockGetStepsBetween.mockResolvedValueOnce({
+        steps: 500,
+        fromMs: 0,
+        toMs: 60_000,
+      });
+
+      await commitPedometerRange(0, 60_000);
+
+      expect(mockPruneSamplesBefore).not.toHaveBeenCalled();
+    });
+
+    it('still reports a successful commit when pruning fails', async () => {
+      const toMs = PEDOMETER_SAMPLE_RETENTION_MS + 10 * 60_000;
+      mockGetStepsBetween.mockResolvedValueOnce({
+        steps: 500,
+        fromMs: toMs - 60_000,
+        toMs,
+      });
+      mockPruneSamplesBefore.mockRejectedValueOnce(new Error('disk full'));
+
+      const result = await commitPedometerRange(toMs - 60_000, toMs);
+
+      expect(result.entryWritten).toBe(true);
+      expect(mockSettingsState.lastSyncTimestamp).toBe(toMs);
+    });
   });
 });

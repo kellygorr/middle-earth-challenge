@@ -21,7 +21,10 @@ import {
   where,
 } from '@react-native-firebase/firestore';
 
-import type { FriendAffinity } from '../constants/friendAffinities';
+import {
+  FRIEND_AFFINITIES,
+  type FriendAffinity,
+} from '../constants/friendAffinities';
 
 const COLLECTION_NAME = __DEV__ ? 'friend_progress_debug' : 'friend_progress';
 export const FRIEND_PROGRESS_PARTICIPANT_LIMIT = 50;
@@ -81,6 +84,49 @@ const timestampToIsoString = (value: unknown): string => {
   return new Date(0).toISOString();
 };
 
+/**
+ * Security Rules constrain normal client writes, but an admin edit, a seed
+ * mistake, or a legacy row can still contain values we never write. Returning
+ * null skips the row rather than letting it poison sorting and map rendering.
+ */
+export const parseParticipantDocument = (
+  userId: string,
+  raw: unknown,
+): FriendProgressParticipant | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const fields = raw as Record<string, unknown>;
+
+  const affinity = fields.affinity;
+  if (
+    typeof affinity !== 'string' ||
+    !(FRIEND_AFFINITIES as readonly string[]).includes(affinity)
+  ) {
+    return null;
+  }
+
+  const displayName = fields.displayName;
+  if (typeof displayName !== 'string' || displayName.trim().length === 0) {
+    return null;
+  }
+
+  const distanceMiles = fields.distanceMiles;
+  if (
+    typeof distanceMiles !== 'number' ||
+    !Number.isFinite(distanceMiles) ||
+    distanceMiles < 0
+  ) {
+    return null;
+  }
+
+  return {
+    userId,
+    affinity: affinity as FriendAffinity,
+    displayName,
+    distanceMiles,
+    updatedAt: timestampToIsoString(fields.updatedAt),
+  };
+};
+
 const firebaseFriendProgressClient: FriendProgressClient = {
   waitForAuthState: () => getAuth().authStateReady(),
   getCurrentUserId: () => getAuth().currentUser?.uid ?? null,
@@ -115,21 +161,27 @@ const firebaseFriendProgressClient: FriendProgressClient = {
     const snapshot = await getDocs(participantQuery);
     const participants = snapshot.docs
       .map(participantSnapshot => {
-        const participant =
-          participantSnapshot.data() as FriendProgressDocument;
-        return {
-          userId: participantSnapshot.id,
-          affinity: participant.affinity,
-          displayName: participant.displayName,
-          distanceMiles: participant.distanceMiles,
-          updatedAt: timestampToIsoString(participant.updatedAt),
-        };
+        const participant = parseParticipantDocument(
+          participantSnapshot.id,
+          participantSnapshot.data(),
+        );
+        if (!participant) {
+          console.warn('[friendProgress] skipped malformed participant', {
+            userId: participantSnapshot.id,
+          });
+        }
+        return participant;
       })
+      .filter((participant): participant is FriendProgressParticipant =>
+        Boolean(participant),
+      )
       .sort((left, right) => right.distanceMiles - left.distanceMiles);
 
     return {
       participants,
       nextCursor:
+        // Paging is driven by documents read, not documents kept, so a page
+        // of skipped rows must still advance the cursor.
         snapshot.docs.length === participantLimit
           ? snapshot.docs[snapshot.docs.length - 1].id
           : null,

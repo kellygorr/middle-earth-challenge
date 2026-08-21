@@ -25,6 +25,7 @@ import type { DistanceEntry } from '../types';
 import { stepsToMiles } from '../utils/stride';
 import { checkAndFireMilestones } from './milestoneNotifier';
 import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
+import { PEDOMETER_SAMPLE_RETENTION_MS } from '../constants/sync';
 import { useSettingsStore } from '../stores/settingsStore';
 
 export interface PedometerCommitResult {
@@ -107,6 +108,9 @@ export async function commitPedometerRange(
   await progress.applyPedometerSyncChunk(entries, toMs);
   useSettingsStore.setState({ lastSyncTimestamp: toMs });
 
+  // Only safe once the watermark has advanced past this window.
+  await pruneCommittedSamples(toMs);
+
   if (entries.length === 0) {
     return { steps: 0, miles: 0, entryWritten: false };
   }
@@ -123,4 +127,19 @@ export async function commitPedometerRange(
   }
 
   return { steps, miles, entryWritten: true };
+}
+
+/**
+ * Drop raw samples the committed watermark has made unnecessary. Best-effort:
+ * a failure here must not fail an otherwise successful commit, since the only
+ * consequence is that the table stays large.
+ */
+async function pruneCommittedSamples(watermarkMs: number): Promise<void> {
+  const cutoff = watermarkMs - PEDOMETER_SAMPLE_RETENTION_MS;
+  if (cutoff <= 0) return;
+  try {
+    await pedometerService.pruneSamplesBefore(cutoff);
+  } catch (error) {
+    console.warn('[pedometer] sample prune failed', { cutoff, error });
+  }
 }

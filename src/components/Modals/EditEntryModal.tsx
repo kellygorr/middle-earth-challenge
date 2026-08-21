@@ -139,7 +139,8 @@ export default function EditEntryModal() {
   const handleSave = async () => {
     if (!editingEntry || editDate === null) return;
     const inputValue = parseFloat(editInput);
-    if (isNaN(inputValue) || inputValue <= 0) return;
+    // isNaN alone accepts Infinity, which pasted exponent input can produce.
+    if (!Number.isFinite(inputValue) || inputValue <= 0) return;
 
     let newMiles: number;
     let newSteps: number;

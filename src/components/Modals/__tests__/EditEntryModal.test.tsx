@@ -77,4 +77,31 @@ describe('EditEntryModal', () => {
       expect.objectContaining({ id: 'entry-2' }),
     );
   });
+
+  describe('input validation', () => {
+    const saveWith = async (value: string) => {
+      const user = userEvent.setup();
+      openEntry(persistedEntry);
+      await render(<EditEntryModal />);
+
+      const input = screen.getByDisplayValue('3');
+      await user.clear(input);
+      await user.type(input, value);
+      await user.press(screen.getByText('Save'));
+    };
+
+    it('rejects a non-finite value', async () => {
+      // parseFloat('1e400') is Infinity, which isNaN happily accepts. An
+      // Infinity that reaches the database poisons every later total.
+      await saveWith('1e400');
+      expect(addDistanceEntry).not.toHaveBeenCalled();
+    });
+
+    it('accepts a large but real distance', async () => {
+      await saveWith('500');
+      expect(addDistanceEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ miles: 500 }),
+      );
+    });
+  });
 });

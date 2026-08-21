@@ -25,6 +25,7 @@ import {
   createFriendProgressService,
   FRIEND_PROGRESS_PARTICIPANT_LIMIT,
   friendProgressService,
+  parseParticipantDocument,
 } from '../friendProgressService';
 import { getAuth } from '@react-native-firebase/auth';
 import {
@@ -58,6 +59,39 @@ const createService = () =>
     deleteParticipant: mockDeleteParticipant,
     flushPendingWrites: mockFlushPendingWrites,
   });
+
+describe('parseParticipantDocument', () => {
+  const validDoc = {
+    affinity: 'woodland',
+    displayName: 'Frodo of the Shire',
+    distanceMiles: 42,
+    updatedAt: null,
+  };
+
+  it('accepts a well-formed document', () => {
+    expect(parseParticipantDocument('user-1', validDoc)).toEqual(
+      expect.objectContaining({
+        userId: 'user-1',
+        affinity: 'woodland',
+        displayName: 'Frodo of the Shire',
+        distanceMiles: 42,
+      }),
+    );
+  });
+
+  it.each([
+    ['an unknown affinity', { ...validDoc, affinity: 'volcano' }],
+    ['a missing affinity', { ...validDoc, affinity: undefined }],
+    ['a blank display name', { ...validDoc, displayName: '   ' }],
+    ['a non-string display name', { ...validDoc, displayName: 42 }],
+    ['a non-numeric distance', { ...validDoc, distanceMiles: '12' }],
+    ['a negative distance', { ...validDoc, distanceMiles: -1 }],
+    ['a non-finite distance', { ...validDoc, distanceMiles: Infinity }],
+    ['a null document', null],
+  ])('rejects %s', (_label, doc) => {
+    expect(parseParticipantDocument('user-1', doc)).toBeNull();
+  });
+});
 
 describe('friendProgressService', () => {
   beforeEach(() => {
