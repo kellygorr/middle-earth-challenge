@@ -499,11 +499,11 @@ state tests, and spring/fall DST tests.
 
 ### Batch 5: Hardening and cleanup
 
-- [ ] Add raw native sample retention/pruning.
-- [ ] Validate manual input and fetched Firestore rows at runtime.
-- [ ] Cancel deferred UI callbacks on unmount/orientation changes.
-- [ ] Remove dead modal/store APIs.
-- [ ] Add cross-layer affinity parity checks and update stale shared-progress
+- [x] Add raw native sample retention/pruning.
+- [x] Validate manual input and fetched Firestore rows at runtime.
+- [x] Cancel deferred UI callbacks on unmount/orientation changes.
+- [x] Remove dead modal/store APIs.
+- [x] Add cross-layer affinity parity checks and update stale shared-progress
       docs.
 
 **Validation:** long-run native storage tests, malformed-data tests, unmount
@@ -513,29 +513,21 @@ tests, and CI schema parity checks.
 
 ### High: New manual entries cannot be deleted from Manage Data
 
-- **Files:** `src/components/Modals/Content/DataContent.tsx:22-23,106`,
-  `src/components/Modals/Footers/MilesFooter.tsx:67,79`
-- **Impact:** New entries are stored as `manual-distance` or `manual-steps`, but
-  Manage Data recognizes and deletes only legacy `manual` rows. The UI can show
-  "No data" for manual data that exists, classify it as synced data, and leave
-  it untouched after the user confirms "Delete Manual Data."
-- **Suggested fix:** Define shared manual and synced source sets. Treat
-  `manual`, `manual-distance`, and `manual-steps` as manual everywhere, and add
-  focused DataContent/source-classification tests.
+- [x] **Resolved in Batch 4.** `src/constants/distanceSources.ts` defines
+  `MANUAL_DISTANCE_SOURCES` plus `isManualDistanceSource` /
+  `isSyncedDistanceSource`, so `manual`, `manual-distance`, and `manual-steps`
+  classify identically everywhere.
+- **Tests:** `src/constants/__tests__/distanceSources.test.ts`
 
 ### High: SQLite failures can leave memory, entries, and snapshots inconsistent
 
-- **Files:** `src/stores/progressStore.ts:232-348,433-459`,
-  `src/stores/progressStore.ts:188-212`
-- **Impact:** Entry methods mutate Zustand before writing SQLite and catch DB
-  errors without rethrowing or rolling back. Callers therefore continue as if
-  persistence succeeded. Snapshot writes are separate and also swallow errors;
-  startup trusts an existing snapshot without comparing it with loaded entries.
-  A write failure or process death between entry and snapshot writes can make
-  displayed totals disagree with persisted history across restarts.
-- **Suggested fix:** Move entry and snapshot mutations into transactional
-  database operations, update Zustand only after commit, propagate failures to
-  callers, and verify or repair snapshot totals from entries during startup.
+- [x] **Resolved in Batch 1.** Entry and snapshot mutations go through
+  `applyDistanceEntryChanges`, which is serialized by `enqueueWrite` and wrapped
+  in `runTransaction`, returns recalculated totals, and propagates failures.
+  Zustand is updated only after the commit resolves.
+- **Reinforced in Batch 4:** removing the pending-distance staging buffer also
+  removed the last place that computed a total by arithmetic and wrote it over
+  the database's authoritative value.
 
 ### Medium: Streaks and calendar-day averages break across daylight saving time
 
@@ -554,13 +546,17 @@ tests, and CI schema parity checks.
 
 ### Low: Manual entry inputs accept non-finite values
 
-- **Files:** `src/components/Modals/Footers/MilesFooter.tsx:49-79`,
-  `src/components/Modals/EditEntryModal.tsx:136-150`
-- **Impact:** `isNaN` rejects `NaN` but accepts `Infinity`; pasted or extreme
-  exponent input can create non-finite miles and steps that poison totals and
-  cannot be represented in JSON safely.
-- **Suggested fix:** Require `Number.isFinite(inputValue)` and enforce a
-  reasonable upper bound at both UI and store/database boundaries.
+- [x] **Resolved.** Both entry points use `Number.isFinite` instead of `isNaN`.
+  `isNaN` accepts `Infinity`, which `parseFloat('1e400')` produces, and an
+  Infinity that reaches the database poisons every later total irrecoverably.
+- **No upper bound was added.** Large distances are valid — a user who enters
+  five million miles reaches Mordor, which is the intended outcome. The bug was
+  the non-finite value, not the magnitude.
+- **Files:** `src/components/Modals/Footers/MilesFooter.tsx`,
+  `src/components/Modals/EditEntryModal.tsx`
+- **Tests:** `EditEntryModal.test.tsx` covers `1e400` rejection and accepts a
+  large real distance.
+- **Open:** rejection is silent, with no user feedback. See `docs/TODO.md`.
 
 ### Resolved: Native provider failures are distinct from empty health reads
 
@@ -732,52 +728,44 @@ tests, and CI schema parity checks.
 
 ### Low: Firestore participant rows are trusted without runtime validation
 
-- **File:** `src/services/friendProgressService.ts:96-110`
-- **Impact:** Security Rules protect normal client writes, but an admin edit,
-  seed/schema mistake, or legacy row can still provide invalid affinity,
-  distance, name, or timestamp values. The unchecked cast feeds those values
-  directly into sorting and map rendering.
-- **Suggested fix:** Validate each fetched row at runtime and skip/report invalid
-  documents rather than poisoning the whole participant list.
+- [x] **Resolved.** `parseParticipantDocument` validates affinity against
+  `FRIEND_AFFINITIES`, requires a non-blank string name, and requires a finite
+  non-negative distance. Invalid rows are skipped with a warning instead of
+  being rendered.
+- **Paging subtlety:** `nextCursor` is still derived from documents *read*, not
+  documents *kept*, so a page consisting entirely of malformed rows still
+  advances rather than stalling the cursor.
+- **File:** `src/services/friendProgressService.ts`
+- **Tests:** `friendProgressService.test.ts` covers each rejected field plus the
+  accepted shape.
 
 ### High: Initialization failures still transition the app to ready
 
-- **Files:** `App.tsx:66-95`, `src/stores/progressStore.ts:186-218`,
-  `src/stores/settingsStore.ts:217-255`
-- **Impact:** Settings/progress hydration methods log and swallow read failures,
-  and App's `finally` always hides the splash and sets phase `ready`. The UI can
-  therefore render default/empty state as authoritative. If settings loaded but
-  progress hydration failed, an enabled health sync can run against an empty
-  entry store and later persist totals that omit existing history.
-- **Suggested fix:** Make hydration return explicit success/failure, add an
-  initialization error/retry phase, and gate all sync/UI readiness on successful
-  settings and progress hydration. Never write snapshots after a failed hydrate.
+- [x] **Resolved in Batch 1.** `App.tsx` tracks `bootstrapStatus` as
+  `'loading' | 'ready' | 'error'`; a hydration failure sets `'error'` and renders
+  an alert with a Retry button instead of falling through to `ready`. The splash
+  is no longer hidden unconditionally in a `finally`.
 
 ### Medium: Foreground Headless JS can reinitialize an already-open database
 
-- **Files:** `src/services/database.ts:36-55`,
-  `src/services/pedometerBackgroundTask.ts:36-67`,
-  `android/app/src/main/java/com/middleearthchallenge/pedometer/PedometerHeadlessJsService.kt:21-37`
-- **Impact:** WorkManager is explicitly allowed to launch the headless task while
-  the app is foregrounded. The task unconditionally calls `database.init()`, and
-  `init()` unconditionally opens the same database and overwrites `this.db`
-  without checking for an existing handle or sharing an in-flight promise. This
-  can repeat migrations, lose the previous handle, or contend with foreground
-  reads/writes.
-- **Suggested fix:** Make database initialization idempotent with an existing
-  handle check and shared initialization promise. Define whether headless work
-  reuses the foreground React context and serialize hydration/commit accordingly.
+- [x] **Resolved in Batch 1.** `database.init()` shares a single in-flight
+  `initPromise` and returns it to concurrent callers, so a headless task firing
+  while the app is foregrounded reuses the existing initialization rather than
+  reopening the handle and repeating migrations.
+- **File:** `src/services/database.ts`
 
 ### Low: Deferred UI work is not cancelled on unmount
 
-- **Files:** `src/components/Modals/Content/DistanceContent.tsx:344-355`,
-  `src/hooks/useTooltipPositioning.ts:11-38`
-- **Impact:** Distance pagination retains an unmanaged one-second timeout, and
-  tooltip measurement schedules uncaptured animation frames. Closing/replacing
-  those views before callbacks run leaves work targeting stale component state
-  or refs and can produce late layout changes on rapid navigation.
-- **Suggested fix:** Store timeout/frame IDs in refs, clear/cancel them in effect
-  cleanup, and guard native measurement callbacks with a mounted/current token.
+- [x] **Resolved.** The Distance pagination timeout is held in a ref and
+  cleared on unmount. `useTooltipPositioning` now captures and cancels its
+  animation frame, and guards the `measureInWindow` callback with a mounted
+  token — that callback resolves natively, so cancelling the frame alone does
+  not stop it.
+- **Also collapsed** the hook's two near-identical effects into one. They both
+  measured on `showTooltip`, so every dimension change ran the measurement
+  twice.
+- **Files:** `src/components/Modals/Content/DistanceContent.tsx`,
+  `src/hooks/useTooltipPositioning.ts`
 
 ### High: Modal dismissal is re-entrant and can commit pending entries twice
 
@@ -823,15 +811,14 @@ tests, and CI schema parity checks.
 
 ### Low: Exit-animation callbacks have no unmount/orientation ownership guard
 
-- **Files:** `src/hooks/useAnimatedModal.ts:37-108`,
-  `src/screens/SharedModal.tsx:50-61`
-- **Impact:** SharedModalInner is keyed by orientation, but delayed Reanimated
-  completion callbacks and the queued `requestAnimationFrame` are not cancelled
-  on unmount. Rotating during entrance/exit can run state/callback work from the
-  replaced instance, or lose a ref-owned callback before completion.
-- **Suggested fix:** Cancel all animations and queued frames in cleanup, guard
-  `runOnJS` completion with an instance token, and keep dismissal callback
-  ownership outside the orientation-keyed child.
+- [x] **Resolved.** `useAnimatedModal` cancels the queued entrance frame and
+  all three animations on unmount, and `handleExitComplete` returns early when
+  the instance is gone. `SharedModalInner` is keyed by orientation, so rotating
+  mid-animation unmounts the instance while a Reanimated completion is still
+  pending.
+- **File:** `src/hooks/useAnimatedModal.ts`
+- **Not covered by tests:** rotation-during-animation needs a device or a
+  Reanimated timing harness neither of which exists here.
 
 ### Low: Release signing passwords are committed in repository history
 
@@ -857,17 +844,20 @@ tests, and CI schema parity checks.
 
 ### High: Native step-sample storage grows without retention or compaction
 
-- **Files:**
-  `android/app/src/main/java/com/middleearthchallenge/pedometer/StepCounterService.kt:68-74,193-202`,
-  `android/app/src/main/java/com/middleearthchallenge/pedometer/StepCounterDbHelper.kt:55-68`
-- **Impact:** Every qualifying cumulative sensor snapshot is inserted forever;
-  there is no delete, prune, or archive operation. Continuous activity can
-  create up to one row per five steps or ten seconds, yielding millions of rows
-  over long-term use and progressively larger backups, queries, and storage.
-- **Suggested fix:** After committed watermarks make old raw samples unnecessary,
-  retain only the anchor needed before the earliest retryable watermark and a
-  bounded recent history. Prune in a transaction and test multi-boot queries
-  after cleanup.
+- [x] **Resolved.** Added `StepCounterDbHelper.pruneSamplesBefore(cutoffMs)`,
+  exposed as `PedometerModule.pruneSamplesBefore` and called from
+  `commitPedometerRange` after the watermark advances, with a 7-day retention
+  margin (`PEDOMETER_SAMPLE_RETENTION_MS`).
+- **Anchor preservation is the subtle part:** `readStepsBetween` derives a
+  window's starting count from the newest sample *before* the window. Deleting
+  that row would make the next window report every step since boot, so the
+  prune keeps the latest pre-cutoff sample per `boot_id` and deletes in a
+  transaction.
+- **Pruning is best-effort:** a failure is logged and swallowed, because the
+  only consequence is a larger table and it must not fail a committed window.
+- **Files:** `StepCounterDbHelper.kt`, `PedometerModule.kt`,
+  `src/services/pedometerService.ts`, `src/services/pedometerCommit.ts`,
+  `src/constants/sync.ts`
 
 ### Resolved: Sensor sample persistence failures are not handled reliably
 
@@ -899,56 +889,59 @@ tests, and CI schema parity checks.
 
 ### High: Tests stop before the highest-risk integration boundaries
 
-- **Files:** `__tests__/App.test.tsx:1-14`, `src/**/__tests__/`,
-  `android/app/src/test/`, `android/app/src/androidTest/`
-- **Impact:** The suite has 16 files and 170 passing tests, with strong pure
-  utility/service coverage, but no real progressStore/database mutation tests,
-  hook lifecycle tests, SharedModal/EditEntryModal interaction tests, or native
-  JVM/instrumentation tests. Existing sync suites mock the store/database, so
-  they cannot detect the persistence, re-entrancy, initialization, or native
-  failures identified in this review.
-- **Suggested fix:** Add boundary suites in this order: transactional
-  progressStore/database failure recovery; initialization failure gating;
-  health watermark/late-record hook tests; modal double-action/navigation tests;
-  Android step DB/service/worker instrumentation. Keep existing unit tests.
+- **Partially resolved.** The suite is now 27 files / 257 tests, up from 16 /
+  170. Added since the review: modal double-action and navigation tests
+  (`SharedModal`, `EditEntryModal`, `FriendProgressContent`), spring/fall DST
+  tests, friend-participant validation tests, pedometer sample-pruning tests,
+  and cross-layer affinity parity tests.
+- **Still open, in the review's own priority order:**
+  1. Transactional progressStore/database failure recovery — the sync and
+     commit suites still mock the store and database, so a real SQLite failure
+     path is untested.
+  2. Initialization failure gating — `App.test.tsx` renders an almost-empty
+     tree and asserts nothing meaningful. Tracked in `docs/TODO.md`.
+  3. Android JVM/instrumentation — there is no `androidTest` target at all, so
+     `pruneSamplesBefore`'s anchor-preservation SQL is unverified. Tracked in
+     `docs/TODO.md`.
+- **Note:** the interaction tests added here mock the stores, so they prove the
+  right calls happen with the right payloads, not that persistence agrees.
 
 ### High: Settings setters promise immediate success while persistence is fire-and-forget
 
-- **Files:** `src/stores/settingsStore.ts:80-214`,
-  `src/services/database.ts:317-426`
-- **Impact:** Twenty-five setter call sites update Zustand and invoke an async
-  `updateUserSettings()` without awaiting, returning, or catching its promise.
-  Callers cannot know whether durable state changed, sequence dependent writes,
-  or respond to a rejected write. This shared contract underlies watermark,
-  mode-transition, and sharing-state recovery findings across earlier phases.
-- **Suggested fix:** Expose awaited transactional settings commands for
-  correctness-critical state; batch related fields into one DB update; update
-  memory after commit or explicitly roll back; reserve fire-and-forget setters
-  for cosmetic preferences with centralized error handling.
+- [x] **Resolved in Batch 1 for correctness-critical state.** The sharing
+  lifecycle, cursor, and mode-transition setters now return `Promise<void>` and
+  await `database.updateUserSettings`, batching related fields into one update.
+- **Deliberately unchanged:** cosmetic preference setters (theme, units) remain
+  fire-and-forget, which was the Batch 1 decision rather than an oversight.
+- **File:** `src/stores/settingsStore.ts`
 
 ### Low: Legacy modal state and navigation remain in public stores
 
-- **Files:** `src/stores/uiStore.ts:39-75,87-89,132-151,196-198`,
-  `src/stores/mapStore.ts:16,25,38,54`
-- **Impact:** `showSettings`, `showStats`, `showSyncModal`, and a duplicate
-  `showSettings` have no call sites after the stack migration, expanding the
-  store API with behavior that appears supported but is not. (`navigateBack()`
-  and the `returnTo` path were removed with the Phase 6 navigation fix.)
-- **Suggested fix:** Remove the unused state/actions after adding stack
-  navigation tests, and make the modal stack the only navigation API.
+- [x] **Resolved.** Removed `showSettings`, `showStats`, `showSyncModal` and
+  their setters from `uiStore`. (`navigateBack()` and the `returnTo` path went
+  with the Phase 6 navigation fix.) The modal stack is now the only navigation
+  API.
+- **Larger than reported:** the finding cited four lines in `mapStore.ts`, but
+  `useMapStore` had no importers at all — the whole store was unreachable,
+  including map transform, path animation, and selection state. Deleted.
+- **Files:** `src/stores/uiStore.ts`, `src/stores/mapStore.ts` (deleted)
 
 ### Low: Cross-layer schema and feature contracts can drift silently
 
-- **Files:** `src/constants/friendAffinities.ts:3-28`, `firestore.rules:21-45`,
-  `scripts/seed-firebase-debug-users.mjs:8-14`,
-  `docs/shared-progress.md:115-120,157-159`
-- **Impact:** The affinity enum is repeated in TypeScript, Firestore Rules, and
-  seed data with no parity check. The shared-progress document also still
-  promises background publishing, pull-to-refresh, and enabled-name copy that
-  current behavior intentionally does not provide. Future changes can update one
-  surface while security, tooling, or release expectations remain stale.
-- **Suggested fix:** Add CI parity tests for cross-language schema values and
-  update the design doc to distinguish shipped behavior from deferred ideas.
+- [x] **Resolved.** `src/constants/__tests__/friendAffinities.test.ts` parses
+  `firestore.rules` and `scripts/seed-firebase-debug-users.mjs` and compares
+  both against `FRIEND_AFFINITIES`, plus checks the participant field list the
+  rules require. Verified by temporarily renaming an affinity in the rules —
+  the test failed, then passed again once restored.
+- **Doc corrected.** `docs/shared-progress.md` now separates shipped behavior
+  from deferred design: the invite-only group model is marked not built and not
+  planned (superseded by the single-community decision), and the three
+  unimplemented cadence triggers — background-transition publish, pedometer
+  background publish, and pull-to-refresh — are labelled as such rather than
+  described as current behavior.
+- **Tooling:** `tsconfig.json` now includes the `node` types so a test can read
+  repo files. `@types/node` was already present transitively; no dependency was
+  added.
 
 ## Review Log
 

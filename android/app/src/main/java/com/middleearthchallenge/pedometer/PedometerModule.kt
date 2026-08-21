@@ -156,8 +156,21 @@ class PedometerModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  // ---- Permissions & environment ----
+  /**
+   * Deletes raw samples older than [cutoffMs], keeping each boot's anchor.
+   * Callers pass a cutoff safely behind the commit watermark; see
+   * [StepCounterDbHelper.pruneSamplesBefore]. Resolves the rows deleted.
+   */
+  @ReactMethod
+  fun pruneSamplesBefore(cutoffMs: Double, promise: Promise) {
+    try {
+      promise.resolve(dbHelper.pruneSamplesBefore(cutoffMs.toLong()))
+    } catch (t: Throwable) {
+      promise.reject("E_PRUNE_FAILED", t.message, t)
+    }
+  }
 
+  // ---- Permissions & environment ----
   /**
    * Snapshot of everything JS needs to decide what UI to show:
    *

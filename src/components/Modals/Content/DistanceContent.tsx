@@ -323,11 +323,20 @@ export default function DistanceContent() {
   };
 
   // Load more days when scrolling up
+  const loadMoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (loadMoreTimerRef.current) clearTimeout(loadMoreTimerRef.current);
+    };
+  }, []);
+
   const loadMoreDays = useCallback(() => {
     if (hasMoreDays && !isLoadingMore) {
       setIsLoadingMore(true);
       // Show loading indicator for at least 1 second
-      setTimeout(() => {
+      loadMoreTimerRef.current = setTimeout(() => {
+        loadMoreTimerRef.current = null;
         setVisibleDaysCount(prev => prev + DAYS_PER_PAGE);
         setIsLoadingMore(false);
       }, 1000);

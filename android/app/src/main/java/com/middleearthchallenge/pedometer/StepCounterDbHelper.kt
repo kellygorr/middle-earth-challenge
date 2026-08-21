@@ -128,4 +128,43 @@ class StepCounterDbHelper(context: Context) :
 
     return total
   }
+
+  /**
+   * Delete samples older than [cutoffMs].
+   *
+   * Keeps the newest sample before the cutoff for each boot, because
+   * [readStepsBetween] anchors a window's starting count on that row; dropping
+   * it would make the first window after the cutoff report every step taken
+   * since boot.
+   *
+   * Returns the number of rows deleted.
+   */
+  fun pruneSamplesBefore(cutoffMs: Long): Int {
+    var deleted = 0
+    writableDatabase.use { db ->
+      db.beginTransaction()
+      try {
+        deleted =
+            db.delete(
+                TABLE,
+                """
+                $COL_TIMESTAMP < ?
+                  AND $COL_ID NOT IN (
+                    SELECT t1.$COL_ID FROM $TABLE t1
+                    WHERE t1.$COL_TIMESTAMP < ?
+                      AND t1.$COL_TIMESTAMP = (
+                        SELECT MAX(t2.$COL_TIMESTAMP) FROM $TABLE t2
+                        WHERE t2.$COL_BOOT_ID = t1.$COL_BOOT_ID
+                          AND t2.$COL_TIMESTAMP < ?
+                      )
+                  )
+                """.trimIndent(),
+                arrayOf(cutoffMs.toString(), cutoffMs.toString(), cutoffMs.toString()))
+        db.setTransactionSuccessful()
+      } finally {
+        db.endTransaction()
+      }
+    }
+    return deleted
+  }
 }

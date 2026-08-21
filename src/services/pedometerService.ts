@@ -64,6 +64,13 @@ export interface PedometerService {
    * Returns 0 for empty/inverted ranges or when nothing is recorded.
    */
   getStepsBetween(fromMs: number, toMs: number): Promise<StepsWindow>;
+  /**
+   * Deletes raw step samples older than `cutoffMs`, keeping each boot's
+   * anchor sample so later windows still compute correct deltas. Resolves the
+   * number of rows deleted. Callers must pass a cutoff safely behind the
+   * commit watermark.
+   */
+  pruneSamplesBefore(cutoffMs: number): Promise<number>;
   /** Snapshot of the device / permission state we care about. */
   getEnvironment(): Promise<PedometerEnvironment>;
   /**
@@ -119,6 +126,9 @@ const AndroidPedometer: PedometerService = {
 
   getStepsBetween: (fromMs, toMs) =>
     NativeModules.PedometerModule.getStepsBetween(fromMs, toMs),
+
+  pruneSamplesBefore: cutoffMs =>
+    NativeModules.PedometerModule.pruneSamplesBefore(cutoffMs),
 
   getEnvironment: () => NativeModules.PedometerModule.getEnvironment(),
 
@@ -191,6 +201,7 @@ const IosPedometer: PedometerService = {
   isServiceRunning: () => Promise.resolve(false),
   getStepsBetween: (fromMs, toMs) =>
     Promise.resolve({ steps: 0, fromMs, toMs }),
+  pruneSamplesBefore: () => Promise.resolve(0),
   getEnvironment: () =>
     Promise.resolve({
       activityRecognition: false,

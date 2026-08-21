@@ -23,11 +23,6 @@ interface UIStore {
   editingEntry: DistanceEntry | null;
   editDate: number | null;
 
-  // Legacy individual modal visibility (kept for backward compatibility during migration)
-  showSettings: boolean;
-  showStats: boolean;
-  showSyncModal: boolean;
-
   // Stack navigation actions
   pushModal: (screen: ModalScreen) => void;
   popModal: () => void;
@@ -42,11 +37,6 @@ interface UIStore {
 
   // Edit popup actions
   setEditingEntry: (entry: DistanceEntry | null, date?: number) => void;
-
-  // Legacy actions (kept for backward compatibility during migration)
-  setShowSettings: (show: boolean) => void;
-  setShowStats: (show: boolean) => void;
-  setShowSyncModal: (show: boolean) => void;
 }
 
 export const useUIStore = create<UIStore>((set, get) => ({
@@ -54,9 +44,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   modalStack: [],
   editingEntry: null,
   editDate: null,
-  showSettings: false,
-  showStats: false,
-  showSyncModal: false,
 
   // Stack navigation actions
   pushModal: screen =>
@@ -91,9 +78,4 @@ export const useUIStore = create<UIStore>((set, get) => ({
       editingEntry: entry,
       editDate: date ?? entry?.date ?? null,
     }),
-
-  // Legacy actions
-  setShowSettings: show => set({ showSettings: show }),
-  setShowStats: show => set({ showStats: show }),
-  setShowSyncModal: show => set({ showSyncModal: show }),
 }));

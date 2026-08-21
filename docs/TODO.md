@@ -150,4 +150,95 @@ To verify on a device:
 - Repeat with the Distance modal opened from the Hobbiton checkpoint, exiting
   via Back rather than Close
 
+---
+
+## Native step-sample pruning SQL is untested
+
+`StepCounterDbHelper.pruneSamplesBefore` deletes raw samples older than the
+retention cutoff while keeping the newest pre-cutoff sample per `boot_id`. That
+anchor is what `readStepsBetween` subtracts from, so if the SQL drops it, the
+next window reports every step taken since boot instead of the window's steps.
+
+The Jest tests only prove `commitPedometerRange` calls the native method with
+the right cutoff — they would pass even if the SQL deleted the entire table.
+There is no Android instrumentation test target in this project.
+
+To verify, either:
+
+- add an `androidTest` target and cover: prune with samples spanning two boots,
+  prune with nothing older than the cutoff, and a `readStepsBetween` query
+  immediately after a prune that crosses a boot boundary; or
+- run pedometer mode on a device for longer than
+  `PEDOMETER_SAMPLE_RETENTION_MS` (7 days) and confirm daily step totals stay
+  plausible rather than spiking
+
+The failure mode is a wildly inflated step count, so it would be obvious.
+
+---
+
+## Manual entry input rejection has no user feedback
+
+`MilesFooter` and `EditEntryModal` reject input that is not a finite positive
+number (`Number.isFinite`, which unlike `isNaN` also catches `Infinity` from
+input like `1e400`). The rejection is a bare `return`, so the button appears to
+do nothing and the user gets no explanation.
+
+There is deliberately **no upper bound** on distance. Large values are valid —
+if someone enters five million miles they reach Mordor, and that is fine. Do
+not add a cap.
+
+To finish:
+
+- Show an inline message when input is rejected, covering both empty/invalid
+  text and non-finite values
+- Decide how very large but finite values should display in the UI (progress
+  bar, stats, projections) rather than restricting what can be entered
+
+---
+
+## Unmount/rotation cleanup is untested
+
+Batch 5 added cleanup for deferred UI work, none of it covered by tests:
+
+- `useAnimatedModal` cancels the queued entrance frame and all three
+  animations on unmount, and `handleExitComplete` bails when the instance is
+  gone. `SharedModalInner` is keyed by orientation, so rotating mid-animation
+  unmounts it with a Reanimated completion still pending.
+- `useTooltipPositioning` cancels its animation frame and guards the
+  `measureInWindow` callback with a mounted token.
+- `DistanceContent` clears the 1-second pagination timeout on unmount.
+
+Testing these needs either a Reanimated timing harness or a device, neither of
+which exists here. The reanimated mock in `jest.setup.js` does not simulate
+animation completion callbacks.
+
+To finish: decide whether to build the harness, or verify on device by rotating
+the phone during modal open/close and while a tooltip is visible, and by
+closing the Distance modal immediately after triggering pagination.
+
+---
+
+## Audit for duplicate/redundant effects
+
+`useTooltipPositioning` had two `useEffect` blocks doing the same measurement.
+The second's dependency array was a strict superset of the first's, so the
+first could never do anything the second didn't already do — it just measured
+twice on mount and on every `showTooltip` change. Now collapsed into one.
+
+That one was only found because a review finding pointed at the file. There is
+no way to grep for "two effects that do the same thing", so the rest of the
+codebase has not been checked.
+
+To finish: read through the hooks and the larger components looking for
+effects whose dependency arrays overlap or subset one another, and for effects
+whose bodies are near-identical. Likely places are components that grew by
+accretion — `DistanceContent`, `InfoContent`, `FriendProgressContent`,
+`useSyncInterval`.
+
+Related, and also unaudited: work that resolves *after* unmount from
+un-awaited promises rather than timers. `useLivePedometerDelta` guards this
+correctly with a `cancelled` flag; whether every other async handler
+re-checks before calling `setState` is unknown. All 14 timer/frame sites were
+checked and are clean.
+
 
