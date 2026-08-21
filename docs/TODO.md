@@ -79,31 +79,37 @@ shown on affected manufacturers for auto-start/background-manager access.
 
 ---
 
-## App Check token auto-refresh resolves differently per build variant
+## App Check token auto-refresh resolves differently per build variant ✅ done
 
-`src/services/firebaseAppCheck.ts` passes `isTokenAutoRefreshEnabled: true` for
-every build, but the native module reports different values on device:
+Resolved by source inspection; no device testing was needed and there was no
+bug.
 
-- Release (`com.middleearthchallenge`): `isAppCheckTokenRefreshEnabled final
-  value: true`
-- Debug (`com.middleearthchallenge.debug`): `isAppCheckTokenRefreshEnabled final
-  value: false`
+`NativeRNFBTurboAppCheck.isAppCheckTokenRefreshEnabled()` runs in the native
+module constructor, before any JS. Inside `if (BuildConfig.DEBUG)` it re-reads
+`app_check_token_auto_refresh` from `firebase.json` **with a default of
+`false`**, so debug logged `false` while release kept the `RNFBMeta` default of
+`true`. That log line therefore recorded a pre-JS native default, not the final
+state.
 
-Both lines are logged by `RNFBAppCheck` during native startup, before JS calls
-`initializeAppCheck`, so they reflect a manifest/`RNFBMeta` default rather than
-the JS option. What is not established is whether the JS option later overrides
-the native default, or whether the debug variant genuinely runs without
-background refresh.
+JS `initializeAppCheck({ isTokenAutoRefreshEnabled: true })` then calls
+`native.setTokenAutoRefreshEnabled(true)`, which overrides it on both variants.
+Auto-refresh ends up on either way, so the feared mid-session
+`PERMISSION_DENIED` after the 1-hour TTL could not have come from this.
 
-This mattered less while App Check was in monitor mode. Now that Firestore
-enforcement is on, a debug session that outlives the 1-hour App Check token TTL
-could start failing mid-session with `PERMISSION_DENIED` if refresh really is
-off. Neither variant hit this during device validation on 2026-08-19, because
-each token was fresh.
+Fixed anyway so the two variants agree from process start and the log stops
+being misleading: `firebase.json` now sets
 
-Investigate by checking the merged debug manifest for
-`firebase_app_check_token_auto_refresh`, then confirm token renewal by holding a
-debug session past the TTL and watching for a second token exchange.
+```json
+"react-native": { "app_check_token_auto_refresh": true }
+```
+
+The key must sit under `react-native` — `firebase-json.gradle` uses
+`jsonRoot = 'react-native'` — which also keeps it clear of the Firebase CLI's
+own `firestore` block. Verified by regenerating the RNFB BuildConfig:
+`FIREBASE_JSON_RAW` now contains the flag.
+
+This closes the brief startup window where debug had refresh off between native
+module construction and the JS call.
 
 ---
 
