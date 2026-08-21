@@ -107,6 +107,39 @@ debug session past the TTL and watching for a second token exchange.
 
 ---
 
+## WorkManager to Headless JS handoff is a background-policy risk
+
+Phase 7 of the adversarial review examined this and deliberately did not file
+it as a confirmed finding. Recording it here so the reasoning is not lost.
+
+`PedometerBackgroundWorker` starts `PedometerHeadlessJsService` to run the
+~5x/day commit sweep. Starting a service from a Worker is exactly the pattern
+Android's background execution limits target. It was not filed because:
+
+- the persistent step-counting foreground service keeps the app in a foreground
+  state during normal pedometer-mode operation, which exempts the start; and
+- the connected Pixel showed the periodic job registered with a history of
+  successful executions.
+
+Both of those are conditions, not guarantees. The handoff would break if the
+foreground service is stopped, killed by an OEM battery manager, or if the app
+ever commits in the background without it — and the failure is silent, since
+`Result.success()` is returned deliberately so a missed sweep recovers via the
+watermark rather than retrying.
+
+To review:
+
+- Confirm behaviour on a non-Pixel device with an aggressive battery manager
+  (Samsung, Xiaomi, OnePlus) after several days of background operation
+- Check whether the foreground service is genuinely alive at every point the
+  Worker fires, rather than assumed alive
+- Decide whether a missed sweep is detectable at all today; a watermark that
+  silently stops advancing looks identical to not walking
+- Re-check against the background-start restrictions of the current
+  `targetSdkVersion` whenever it is raised
+
+---
+
 ## No transactional database failure-recovery tests
 
 The sync and commit suites mock `useProgressStore` and `database`, so they
