@@ -610,7 +610,7 @@ export default function MapScreen() {
             styles.milesContainer,
             {
               top: insets.top + 60,
-              left: Math.max(0, insets.left - StyleSheet.hairlineWidth),
+              left: insets.left - 1,
             },
             settingsEnterStyle,
           ]}
