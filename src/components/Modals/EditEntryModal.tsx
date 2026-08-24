@@ -36,11 +36,12 @@ import { typographyThemed } from '../../styles/typography';
 import { spacing, borderRadius, shadows } from '../../styles/global';
 import Button, { IconButton } from '../Buttons';
 import DateStepper from './DateStepper';
-import TimeInput from './TimeInput';
+import TimeInput, { type TimeInputHandle } from './TimeInput';
 import { CloseIcon, ResetIcon, TrashIcon } from '../../assets/icons';
 import { DistanceEntry } from '../../types';
 import { milesToSteps, stepsToMiles } from '../../utils/stride';
 import { kmToMiles, milesToKm } from '../../utils/date';
+import { validateManualEntryInput } from '../../utils/manualEntryValidation';
 
 type EditMode = 'distance' | 'steps';
 
@@ -71,7 +72,10 @@ export default function EditEntryModal() {
 
   const [editMode, setEditMode] = useState<EditMode>('distance');
   const [editInput, setEditInput] = useState('');
+  const [inputError, setInputError] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
+  const timeInputRef = useRef<TimeInputHandle>(null);
+  const selectionFrameRef = useRef<number | null>(null);
   // Save and delete stay tappable until the store-driven close renders.
   const actionLockRef = useRef(false);
 
@@ -95,15 +99,27 @@ export default function EditEntryModal() {
         setEditMode('distance');
         setEditInput(formatDistanceInput(editingEntry.miles, useMiles));
       }
+      setInputError(null);
     } else {
       setEditInput('');
+      setInputError(null);
     }
   }, [editingEntry, useMiles]);
+
+  useEffect(
+    () => () => {
+      if (selectionFrameRef.current !== null) {
+        cancelAnimationFrame(selectionFrameRef.current);
+      }
+    },
+    [],
+  );
 
   const closeModal = () => {
     Keyboard.dismiss();
     setEditingEntry(null);
     setEditInput('');
+    setInputError(null);
   };
 
   const handleDateChange = (newDate: number) => {
@@ -121,6 +137,7 @@ export default function EditEntryModal() {
     } else {
       setEditInput(formatDistanceInput(editingEntry.miles, useMiles));
     }
+    setInputError(null);
     setEditMode(mode);
   };
 
@@ -133,20 +150,52 @@ export default function EditEntryModal() {
     } else {
       setEditInput(formatDistanceInput(editingEntry.miles, useMiles));
     }
+    setInputError(null);
     setEditingEntry(editingEntry, editingEntry.date as number);
+  };
+
+  const selectEditInput = () => {
+    if (selectionFrameRef.current !== null) {
+      cancelAnimationFrame(selectionFrameRef.current);
+    }
+    selectionFrameRef.current = requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (typeof input?.setSelection === 'function') {
+        input.setSelection(0, editInput.length);
+      } else {
+        input?.setNativeProps({
+          selection: { start: 0, end: editInput.length },
+        });
+      }
+      selectionFrameRef.current = null;
+    });
+  };
+
+  const cancelPendingSelection = () => {
+    if (selectionFrameRef.current !== null) {
+      cancelAnimationFrame(selectionFrameRef.current);
+      selectionFrameRef.current = null;
+    }
   };
 
   const handleSave = async () => {
     if (!editingEntry || editDate === null) return;
-    const inputValue = parseFloat(editInput);
-    // isNaN alone accepts Infinity, which pasted exponent input can produce.
-    if (!Number.isFinite(inputValue) || inputValue <= 0) return;
+    const committedDate = timeInputRef.current?.commit() ?? editDate;
+    const validation = validateManualEntryInput(
+      editInput,
+      editMode === 'steps',
+    );
+    if (validation.value === null) {
+      setInputError(validation.error);
+      return;
+    }
+    const inputValue = validation.value;
+    setInputError(null);
 
     let newMiles: number;
     let newSteps: number;
     if (editMode === 'steps') {
-      newSteps = Math.floor(inputValue);
-      if (newSteps <= 0) return;
+      newSteps = inputValue;
       newMiles = stepsToMiles(newSteps);
     } else {
       // Input is in the user's preferred unit; internal model is miles.
@@ -161,7 +210,7 @@ export default function EditEntryModal() {
     const updatedEntry: DistanceEntry = {
       id: editingEntry.id,
       saveId: editingEntry.saveId,
-      date: editDate,
+      date: committedDate,
       miles: newMiles,
       steps: newSteps,
       source: editingEntry.source || 'manual',
@@ -250,7 +299,7 @@ export default function EditEntryModal() {
         >
           {/* Stop propagation: taps on the card should not dismiss. */}
           <Pressable
-            onPress={() => {}}
+            onPress={event => event.stopPropagation()}
             style={[
               styles.card,
               {
@@ -270,6 +319,7 @@ export default function EditEntryModal() {
                   <TrashIcon size={22} color={theme.colors.textPrimary} />
                 }
                 onPress={confirmDelete}
+                accessibilityLabel="Delete entry"
                 variant="transparent"
                 size="small"
                 hitSlop={12}
@@ -290,6 +340,7 @@ export default function EditEntryModal() {
                   <CloseIcon size={20} color={theme.colors.textPrimary} />
                 }
                 onPress={closeModal}
+                accessibilityLabel="Close editor"
                 variant="transparent"
                 size="small"
                 hitSlop={12}
@@ -303,6 +354,7 @@ export default function EditEntryModal() {
                 onDateChange={handleDateChange}
               />
               <TimeInput
+                ref={timeInputRef}
                 date={editDate ?? editingEntry?.date ?? Date.now()}
                 onDateChange={handleDateChange}
               />
@@ -321,11 +373,15 @@ export default function EditEntryModal() {
                   },
                 ]}
                 value={editInput}
-                onChangeText={setEditInput}
+                onChangeText={value => {
+                  setEditInput(value);
+                  setInputError(null);
+                }}
+                onFocus={selectEditInput}
+                onBlur={cancelPendingSelection}
                 keyboardType={
                   editMode === 'steps' ? 'number-pad' : 'decimal-pad'
                 }
-                selectTextOnFocus
                 disableFullscreenUI={true}
                 placeholderTextColor={theme.colors.textSecondary}
               />
@@ -333,6 +389,19 @@ export default function EditEntryModal() {
                 {unitLabel}
               </Text>
             </View>
+
+            <Text
+              testID="edit-entry-validation"
+              accessibilityLiveRegion="polite"
+              accessibilityRole={inputError ? 'alert' : undefined}
+              numberOfLines={1}
+              style={[
+                typographyThemed(theme).caption2Secondary,
+                styles.validationSlot,
+              ]}
+            >
+              {inputError ?? ' '}
+            </Text>
 
             {/* Bottom row: mode toggle (left) · reset + save (right) */}
             <View style={styles.actionsRow}>
@@ -357,6 +426,7 @@ export default function EditEntryModal() {
                     />
                   }
                   onPress={resetEdits}
+                  accessibilityLabel="Reset changes"
                   variant="outline"
                   size="medium"
                   hitSlop={8}
@@ -440,6 +510,10 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     borderWidth: 1,
     textAlign: 'right',
+  },
+  validationSlot: {
+    marginTop: -spacing.sm,
+    marginBottom: -spacing.sm,
   },
   actionsRow: {
     flexDirection: 'row',

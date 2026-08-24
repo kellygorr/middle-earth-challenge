@@ -521,25 +521,18 @@ export function useSyncInterval() {
       const status = await getBackgroundRefreshStatus();
       if (cancelled) return;
       const state = useProgressStore.getState();
-      const { lastSyncError } = state;
+      const hasBackgroundIssue = state.syncIssues.some(
+        issue => issue.error.kind === 'backgroundDisabled',
+      );
 
       if (status === 'denied' || status === 'restricted') {
-        // Only surface if nothing more important is already showing. A real
-        // permission/timeout/unavailable error is higher priority — we
-        // don't want to clobber it with an environmental advisory.
-        if (lastSyncError === null) {
-          state.setSyncStatus({
-            ...state.syncStatus,
-            phase: 'error',
-            error: { kind: 'backgroundDisabled' },
-          });
+        // Its own slot, so it no longer has to yield to a source error.
+        if (!hasBackgroundIssue) {
+          state.addSyncIssue({ kind: 'backgroundDisabled' });
         }
-      } else if (
-        status === 'available' &&
-        lastSyncError?.kind === 'backgroundDisabled'
-      ) {
-        // User flipped the iOS Settings switch back on — clear the banner.
-        state.clearLastSyncError();
+      } else if (status === 'available' && hasBackgroundIssue) {
+        // User flipped the iOS Settings switch back on — condition fixed.
+        state.resolveSyncIssue('app');
       }
     };
 

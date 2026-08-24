@@ -113,6 +113,10 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
+
     // Rename release APK output from the default app-release.apk to
     // middle-earth-challenge.apk so uploaded/downloaded builds are
     // self-describing (helpful in Firebase App Distribution).
@@ -129,12 +133,13 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
-    // WorkManager: schedules the ~5x/day pedometer background sweep that
-    // wakes JS via HeadlessJsTaskService to commit a pedometer row.
+    // WorkManager: schedules and owns the ~5x/day Headless JS pedometer
+    // sweep that commits a pedometer row.
     // See docs/pedometer-mode.md § Phase 3b.
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

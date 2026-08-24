@@ -28,6 +28,42 @@ For each phase:
 5. Run focused checks when they can confirm or reject a suspected issue.
 6. Mark the phase complete and report the result before starting the next one.
 
+## Review lenses
+
+The first review asked only "is this code correct?", which is why it missed
+several classes of problem entirely. Apply each of these to every phase, not
+just the phases named after them.
+
+**Should this exist?** Before reviewing whether a mechanism is implemented
+correctly, ask whether it should be there at all. The first review filed three
+separate findings against the `pendingEntries` staging buffer — a re-entrant
+dismiss race, a rapid-tap hazard, and a dead navigation path — and never
+questioned the buffer. It had no cancel path, so it bought nothing; deleting it
+resolved all three at once. A cluster of findings around one mechanism is a
+signal that the mechanism is the finding.
+
+**Does the user find out?** Verifying that a failure sets state correctly is
+not the same as verifying the user learns about it. Ask, for every failure
+path: what does the user see, and how long until they see it? The first review
+confirmed every error kind was recorded, and missed that `lastSyncError` is a
+single slot that silently drops concurrent faults, and that a stalled pedometer
+watermark is indistinguishable from a user who stopped walking.
+
+**Is this written more than once?** Phases organised by subsystem find bugs
+inside a component and structurally cannot see duplication across components.
+Seven hand-assembled copies of the same icon-and-text row each looked fine
+individually; the bug was that omitting one style name from one copy misaligned
+it with no type error. Review component composition as its own surface.
+
+**Does the name match the behaviour?** `ToggleRow` was being used for rows with
+no toggle, which is how the duplication above went unnoticed — there _was_ a
+component, it just did not look like it applied. Names that have drifted from
+behaviour hide reuse and invite more duplication.
+
+**Is the data model shaped like the problem?** A single-value field where the
+domain permits several concurrent values is a design bug that reads as correct
+code. Check cardinality against reality: can two of these be true at once?
+
 ## Phase 1: Establish baseline
 
 - Record branch and working-tree state without modifying user changes.
@@ -514,17 +550,17 @@ tests, and CI schema parity checks.
 ### High: New manual entries cannot be deleted from Manage Data
 
 - [x] **Resolved in Batch 4.** `src/constants/distanceSources.ts` defines
-  `MANUAL_DISTANCE_SOURCES` plus `isManualDistanceSource` /
-  `isSyncedDistanceSource`, so `manual`, `manual-distance`, and `manual-steps`
-  classify identically everywhere.
+      `MANUAL_DISTANCE_SOURCES` plus `isManualDistanceSource` /
+      `isSyncedDistanceSource`, so `manual`, `manual-distance`, and `manual-steps`
+      classify identically everywhere.
 - **Tests:** `src/constants/__tests__/distanceSources.test.ts`
 
 ### High: SQLite failures can leave memory, entries, and snapshots inconsistent
 
 - [x] **Resolved in Batch 1.** Entry and snapshot mutations go through
-  `applyDistanceEntryChanges`, which is serialized by `enqueueWrite` and wrapped
-  in `runTransaction`, returns recalculated totals, and propagates failures.
-  Zustand is updated only after the commit resolves.
+      `applyDistanceEntryChanges`, which is serialized by `enqueueWrite` and wrapped
+      in `runTransaction`, returns recalculated totals, and propagates failures.
+      Zustand is updated only after the commit resolves.
 - **Reinforced in Batch 4:** removing the pending-distance staging buffer also
   removed the last place that computed a total by arithmetic and wrote it over
   the database's authoritative value.
@@ -532,11 +568,11 @@ tests, and CI schema parity checks.
 ### Medium: Streaks and calendar-day averages break across daylight saving time
 
 - [x] **Resolved.** Added `differenceInCalendarDays`, which rounds the gap
-  between two local midnights, and used it for streak continuity, the
-  today/yesterday check, and the inclusive `totalDays` count. The 24-hour
-  constant is gone.
+      between two local midnights, and used it for streak continuity, the
+      today/yesterday check, and the inclusive `totalDays` count. The 24-hour
+      constant is gone.
 - **Testing note:** the first version of the DST tests passed against the
-  unfixed code. Two reasons — the dates were wrong (the clocks move *during*
+  unfixed code. Two reasons — the dates were wrong (the clocks move _during_
   2026-03-08, so the 23-hour gap is 03-08 → 03-09, not 03-07 → 03-08), and
   `process.env.TZ` set in `beforeAll` has no effect once the date cache is
   warm. Fixed by pinning the zone in `jest.globalSetup.js` and adding a
@@ -547,8 +583,8 @@ tests, and CI schema parity checks.
 ### Low: Manual entry inputs accept non-finite values
 
 - [x] **Resolved.** Both entry points use `Number.isFinite` instead of `isNaN`.
-  `isNaN` accepts `Infinity`, which `parseFloat('1e400')` produces, and an
-  Infinity that reaches the database poisons every later total irrecoverably.
+      `isNaN` accepts `Infinity`, which `parseFloat('1e400')` produces, and an
+      Infinity that reaches the database poisons every later total irrecoverably.
 - **No upper bound was added.** Large distances are valid — a user who enters
   five million miles reaches Mordor, which is the intended outcome. The bug was
   the non-finite value, not the magnitude.
@@ -716,11 +752,11 @@ tests, and CI schema parity checks.
 ### Medium: Failed friend fetches leave stale map data with no visible state
 
 - [x] **Resolved.** `friendProgressStore` now records `lastFetchedAt` on every
-  successful fetch and leaves it untouched on failure, so cached participants
-  can be reported with their real age. `FriendProgressContent` shows "Updated
-  Xm ago" normally and "Couldn't refresh — showing positions from Xm ago" when
-  `fetchError` is set with cached rows present, falling back to "Couldn't load
-  friend progress" when there is nothing cached.
+      successful fetch and leaves it untouched on failure, so cached participants
+      can be reported with their real age. `FriendProgressContent` shows "Updated
+      Xm ago" normally and "Couldn't refresh — showing positions from Xm ago" when
+      `fetchError` is set with cached rows present, falling back to "Couldn't load
+      friend progress" when there is nothing cached.
 - **Files:** `src/stores/friendProgressStore.ts`,
   `src/components/Modals/Content/FriendProgressContent.tsx`
 - **Tests:** `src/stores/__tests__/friendProgressStore.test.ts` covers cache
@@ -729,11 +765,11 @@ tests, and CI schema parity checks.
 ### Low: Firestore participant rows are trusted without runtime validation
 
 - [x] **Resolved.** `parseParticipantDocument` validates affinity against
-  `FRIEND_AFFINITIES`, requires a non-blank string name, and requires a finite
-  non-negative distance. Invalid rows are skipped with a warning instead of
-  being rendered.
-- **Paging subtlety:** `nextCursor` is still derived from documents *read*, not
-  documents *kept*, so a page consisting entirely of malformed rows still
+      `FRIEND_AFFINITIES`, requires a non-blank string name, and requires a finite
+      non-negative distance. Invalid rows are skipped with a warning instead of
+      being rendered.
+- **Paging subtlety:** `nextCursor` is still derived from documents _read_, not
+  documents _kept_, so a page consisting entirely of malformed rows still
   advances rather than stalling the cursor.
 - **File:** `src/services/friendProgressService.ts`
 - **Tests:** `friendProgressService.test.ts` covers each rejected field plus the
@@ -742,25 +778,25 @@ tests, and CI schema parity checks.
 ### High: Initialization failures still transition the app to ready
 
 - [x] **Resolved in Batch 1.** `App.tsx` tracks `bootstrapStatus` as
-  `'loading' | 'ready' | 'error'`; a hydration failure sets `'error'` and renders
-  an alert with a Retry button instead of falling through to `ready`. The splash
-  is no longer hidden unconditionally in a `finally`.
+      `'loading' | 'ready' | 'error'`; a hydration failure sets `'error'` and renders
+      an alert with a Retry button instead of falling through to `ready`. The splash
+      is no longer hidden unconditionally in a `finally`.
 
 ### Medium: Foreground Headless JS can reinitialize an already-open database
 
 - [x] **Resolved in Batch 1.** `database.init()` shares a single in-flight
-  `initPromise` and returns it to concurrent callers, so a headless task firing
-  while the app is foregrounded reuses the existing initialization rather than
-  reopening the handle and repeating migrations.
+      `initPromise` and returns it to concurrent callers, so a headless task firing
+      while the app is foregrounded reuses the existing initialization rather than
+      reopening the handle and repeating migrations.
 - **File:** `src/services/database.ts`
 
 ### Low: Deferred UI work is not cancelled on unmount
 
 - [x] **Resolved.** The Distance pagination timeout is held in a ref and
-  cleared on unmount. `useTooltipPositioning` now captures and cancels its
-  animation frame, and guards the `measureInWindow` callback with a mounted
-  token — that callback resolves natively, so cancelling the frame alone does
-  not stop it.
+      cleared on unmount. `useTooltipPositioning` now captures and cancels its
+      animation frame, and guards the `measureInWindow` callback with a mounted
+      token — that callback resolves natively, so cancelling the frame alone does
+      not stop it.
 - **Also collapsed** the hook's two near-identical effects into one. They both
   measured on `showTooltip`, so every dimension change ran the measurement
   twice.
@@ -770,11 +806,11 @@ tests, and CI schema parity checks.
 ### High: Modal dismissal is re-entrant and can commit pending entries twice
 
 - [x] **Resolved at the root.** The `pendingEntries` / `pendingDeletions`
-  staging buffer was removed entirely. Adding, editing, and deleting distance
-  now write straight to SQLite via `applyDistanceEntryChanges`, which is already
-  serialized (`enqueueWrite`), transactional, and returns the recalculated
-  miles/steps. Dismissal no longer commits anything, so there is nothing to
-  commit twice and no dismiss lock is needed.
+      staging buffer was removed entirely. Adding, editing, and deleting distance
+      now write straight to SQLite via `applyDistanceEntryChanges`, which is already
+      serialized (`enqueueWrite`), transactional, and returns the recalculated
+      miles/steps. Dismissal no longer commits anything, so there is nothing to
+      commit twice and no dismiss lock is needed.
 - **Note:** the buffer had no cancel path — every exit committed — so it was a
   batch-write mechanism with no user-visible benefit. It also recomputed the
   total arithmetically (`baseMiles + pendingTotal - deletionTotal`) and
@@ -787,12 +823,12 @@ tests, and CI schema parity checks.
 ### Medium: Checkpoint-to-Distance return navigation is dead code
 
 - [x] **Resolved.** TrackingOptions now pushes `{ type: 'miles' }` onto the
-  modal stack instead of dismissing the checkpoint, so `canGoBack` renders the
-  Back chevron and closing Distance returns to the checkpoint that launched it.
-  The unused `returnTo` / `setReturnTo` / `navigateBack` / `ReturnToContext`
-  path was removed, along with the now-orphaned `closeAllModalsWithCallback` /
-  `consumeDismissCallback` machinery and the circular-import `require()` it
-  forced inside `useAnimatedModal`.
+      modal stack instead of dismissing the checkpoint, so `canGoBack` renders the
+      Back chevron and closing Distance returns to the checkpoint that launched it.
+      The unused `returnTo` / `setReturnTo` / `navigateBack` / `ReturnToContext`
+      path was removed, along with the now-orphaned `closeAllModalsWithCallback` /
+      `consumeDismissCallback` machinery and the circular-import `require()` it
+      forced inside `useAnimatedModal`.
 - **Follow-on found while fixing:** `handleBack` popped without committing
   pending distance rows, which would have stranded them until the whole stack
   closed. The commit was extracted into `commitPendingDistance()` and is now
@@ -805,17 +841,17 @@ tests, and CI schema parity checks.
 ### Medium: Edit save/delete actions are not protected from rapid repeat taps
 
 - [x] **Resolved.** `actionLockRef` guards save and delete, and with the staging
-  buffer gone a repeated save is an idempotent upsert on the same row id rather
-  than an append to two parallel arrays. Covered by
-  `src/components/Modals/__tests__/EditEntryModal.test.tsx`.
+      buffer gone a repeated save is an idempotent upsert on the same row id rather
+      than an append to two parallel arrays. Covered by
+      `src/components/Modals/__tests__/EditEntryModal.test.tsx`.
 
 ### Low: Exit-animation callbacks have no unmount/orientation ownership guard
 
 - [x] **Resolved.** `useAnimatedModal` cancels the queued entrance frame and
-  all three animations on unmount, and `handleExitComplete` returns early when
-  the instance is gone. `SharedModalInner` is keyed by orientation, so rotating
-  mid-animation unmounts the instance while a Reanimated completion is still
-  pending.
+      all three animations on unmount, and `handleExitComplete` returns early when
+      the instance is gone. `SharedModalInner` is keyed by orientation, so rotating
+      mid-animation unmounts the instance while a Reanimated completion is still
+      pending.
 - **File:** `src/hooks/useAnimatedModal.ts`
 - **Not covered by tests:** rotation-during-animation needs a device or a
   Reanimated timing harness neither of which exists here.
@@ -845,11 +881,11 @@ tests, and CI schema parity checks.
 ### High: Native step-sample storage grows without retention or compaction
 
 - [x] **Resolved.** Added `StepCounterDbHelper.pruneSamplesBefore(cutoffMs)`,
-  exposed as `PedometerModule.pruneSamplesBefore` and called from
-  `commitPedometerRange` after the watermark advances, with a 7-day retention
-  margin (`PEDOMETER_SAMPLE_RETENTION_MS`).
+      exposed as `PedometerModule.pruneSamplesBefore` and called from
+      `commitPedometerRange` after the watermark advances, with a 7-day retention
+      margin (`PEDOMETER_SAMPLE_RETENTION_MS`).
 - **Anchor preservation is the subtle part:** `readStepsBetween` derives a
-  window's starting count from the newest sample *before* the window. Deleting
+  window's starting count from the newest sample _before_ the window. Deleting
   that row would make the next window report every step since boot, so the
   prune keeps the latest pre-cutoff sample per `boot_id` and deletes in a
   transaction.
@@ -890,11 +926,11 @@ tests, and CI schema parity checks.
 ### High: Tests stop before the highest-risk integration boundaries
 
 - [x] **Closed; remaining work tracked in `docs/TODO.md`.** The suite is now 27
-  files / 257 tests, up from 16 / 170. Added since the review: modal
-  double-action and navigation tests (`SharedModal`, `EditEntryModal`,
-  `FriendProgressContent`), spring/fall DST tests, friend-participant
-  validation tests, pedometer sample-pruning tests, and cross-layer affinity
-  parity tests.
+      files / 257 tests, up from 16 / 170. Added since the review: modal
+      double-action and navigation tests (`SharedModal`, `EditEntryModal`,
+      `FriendProgressContent`), spring/fall DST tests, friend-participant
+      validation tests, pedometer sample-pruning tests, and cross-layer affinity
+      parity tests.
 - **Three gaps remain, each with its own TODO entry** rather than being carried
   in this document:
   1. No transactional database failure-recovery tests — the sync and commit
@@ -909,8 +945,8 @@ tests, and CI schema parity checks.
 ### High: Settings setters promise immediate success while persistence is fire-and-forget
 
 - [x] **Resolved in Batch 1 for correctness-critical state.** The sharing
-  lifecycle, cursor, and mode-transition setters now return `Promise<void>` and
-  await `database.updateUserSettings`, batching related fields into one update.
+      lifecycle, cursor, and mode-transition setters now return `Promise<void>` and
+      await `database.updateUserSettings`, batching related fields into one update.
 - **Deliberately unchanged:** cosmetic preference setters (theme, units) remain
   fire-and-forget, which was the Batch 1 decision rather than an oversight.
 - **File:** `src/stores/settingsStore.ts`
@@ -918,9 +954,9 @@ tests, and CI schema parity checks.
 ### Low: Legacy modal state and navigation remain in public stores
 
 - [x] **Resolved.** Removed `showSettings`, `showStats`, `showSyncModal` and
-  their setters from `uiStore`. (`navigateBack()` and the `returnTo` path went
-  with the Phase 6 navigation fix.) The modal stack is now the only navigation
-  API.
+      their setters from `uiStore`. (`navigateBack()` and the `returnTo` path went
+      with the Phase 6 navigation fix.) The modal stack is now the only navigation
+      API.
 - **Larger than reported:** the finding cited four lines in `mapStore.ts`, but
   `useMapStore` had no importers at all — the whole store was unreachable,
   including map transform, path animation, and selection state. Deleted.
@@ -929,10 +965,10 @@ tests, and CI schema parity checks.
 ### Low: Cross-layer schema and feature contracts can drift silently
 
 - [x] **Resolved.** `src/constants/__tests__/friendAffinities.test.ts` parses
-  `firestore.rules` and `scripts/seed-firebase-debug-users.mjs` and compares
-  both against `FRIEND_AFFINITIES`, plus checks the participant field list the
-  rules require. Verified by temporarily renaming an affinity in the rules —
-  the test failed, then passed again once restored.
+      `firestore.rules` and `scripts/seed-firebase-debug-users.mjs` and compares
+      both against `FRIEND_AFFINITIES`, plus checks the participant field list the
+      rules require. Verified by temporarily renaming an affinity in the rules —
+      the test failed, then passed again once restored.
 - **Doc corrected.** `docs/shared-progress.md` now separates shipped behavior
   from deferred design: the invite-only group model is marked not built and not
   planned (superseded by the single-community decision), and the three

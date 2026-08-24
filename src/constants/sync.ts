@@ -29,11 +29,17 @@ export const PEDOMETER_BG_COMMIT_INTERVAL_MS = Math.floor(
 );
 
 // Raw native samples are only needed to recompute a window that has not been
-// committed yet. Everything older than the watermark minus this margin is
-// prunable; the margin leaves room for a clock skew or a failed commit that
-// left the watermark behind. Without pruning the table grows by up to one row
-// per five steps, forever.
-export const PEDOMETER_SAMPLE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+// committed yet. A 48-hour margin covers delayed WorkManager runs and transient
+// commit failures without retaining a week of sensor snapshots. Without
+// pruning the table grows by up to one row per five steps, forever.
+export const PEDOMETER_SAMPLE_RETENTION_MS = 48 * 60 * 60 * 1000;
+
+// A commit advances the watermark even for a zero-step window, so a watermark
+// older than this means commits stopped rather than that the user was idle.
+// Three missed background sweeps -- roughly half a day -- is long enough that
+// a delayed OEM-throttled sweep does not trip it, and short enough that a
+// genuinely broken handoff is caught on the user's next app open.
+export const PEDOMETER_STALL_THRESHOLD_MS = 3 * PEDOMETER_BG_COMMIT_INTERVAL_MS;
 
 // Display-only: the map screen refreshes its miles counter every 2s by
 // reading the uncommitted-window step count and folding it into the

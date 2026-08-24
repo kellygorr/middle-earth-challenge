@@ -200,7 +200,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         ? typography.buttonLarge
         : textSize === 'default'
         ? typography.buttonMedium
-        : typography.button;
+        : typography.buttonSmall;
 
     // Apply global Text size scaling unless this is an on-map label button.
     const baseTextStyle = isLabelButton

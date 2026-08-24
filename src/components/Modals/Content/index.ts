@@ -6,3 +6,4 @@ export { default as DistanceContent } from './DistanceContent';
 export { default as InfoContent } from './InfoContent';
 export { default as DataContent } from './DataContent';
 export { default as FriendProgressContent } from './FriendProgressContent';
+export { default as SyncHistoryContent } from './SyncHistoryContent';

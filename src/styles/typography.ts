@@ -9,9 +9,11 @@ export interface Typography {
   subtitleLarge: TextStyle;
   body: TextStyle;
   caption: TextStyle;
+  caption2: TextStyle;
+  caption2Bold: TextStyle;
   buttonLarge: TextStyle;
   buttonMedium: TextStyle;
-  button: TextStyle;
+  buttonSmall: TextStyle;
 }
 
 export const typography: Typography = {
@@ -40,6 +42,18 @@ export const typography: Typography = {
     lineHeight: 24,
     fontWeight: '400',
   },
+  // Smallest text size. Shares its metrics with `buttonSmall` so existing
+  // 12px labels can move onto it without shifting, but is not a button.
+  caption2: {
+    fontSize: 12,
+    lineHeight: 21,
+    fontWeight: '400',
+  },
+  caption2Bold: {
+    fontSize: 12,
+    lineHeight: 21,
+    fontWeight: '600',
+  },
   buttonLarge: {
     fontSize: 18,
     lineHeight: 31,
@@ -50,7 +64,7 @@ export const typography: Typography = {
     lineHeight: 24,
     fontWeight: 'bold',
   },
-  button: {
+  buttonSmall: {
     fontSize: 12,
     lineHeight: 21,
     fontWeight: '600',
@@ -70,9 +84,11 @@ export const typographyThemed = (theme: Theme) => {
     subtitleLarge: s(typography.subtitleLarge),
     body: s(typography.body),
     caption: s(typography.caption),
+    caption2: s(typography.caption2),
+    caption2Bold: s(typography.caption2Bold),
     buttonLarge: s(typography.buttonLarge),
     buttonMedium: s(typography.buttonMedium),
-    button: s(typography.button),
+    buttonSmall: s(typography.buttonSmall),
     // Themed large title/subtitle for inverted (overlay) surfaces
     titleMediumInverted: s({
       ...typography.titleMedium,
@@ -137,6 +153,16 @@ export const typographyThemed = (theme: Theme) => {
     }) as TextStyle,
     captionInverted: s({
       ...typography.caption,
+      color: theme.colors.textInverted,
+      textAlign: 'left',
+    }) as TextStyle,
+    caption2Secondary: s({
+      ...typography.caption2,
+      color: theme.colors.textSecondary,
+      textAlign: 'left',
+    }) as TextStyle,
+    caption2Inverted: s({
+      ...typography.caption2,
       color: theme.colors.textInverted,
       textAlign: 'left',
     }) as TextStyle,

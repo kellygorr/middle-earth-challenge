@@ -14,7 +14,7 @@ import { useProgressStore } from '../stores/progressStore';
 import type { SyncError } from '../stores/progressStore';
 import { useFriendProgressStore } from '../stores/friendProgressStore';
 
-import Button, { IconButton } from './Buttons';
+import Button, { IconButton, Dropdown } from './Buttons';
 import { DevModeIcon } from '../assets/icons';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import { formatDistance } from '../utils/date';
@@ -93,12 +93,30 @@ export default function DevView({
   // Fake-error buttons: push a synthetic `phase: 'error'` straight into
   // the store so we can iterate on the badge + (forthcoming) banner UI
   // without running a real sync. The store treats this exactly like a
-  // real error: it captures `lastSyncError` / `lastSyncErrorAt`, which
-  // lights up the Settings badge.
-  const lastSyncError = useProgressStore(state => state.lastSyncError);
-  const clearLastSyncError = useProgressStore(
-    state => state.clearLastSyncError,
+  // real error: it records a SyncIssue, which lights up the Settings badge.
+  const clearAllSyncIssues = useProgressStore(
+    state => state.clearAllSyncIssues,
   );
+  const addSyncIssue = useProgressStore(state => state.addSyncIssue);
+
+  // Writes straight to the issue list rather than through setSyncStatus, so
+  // the three land in different slots without the sync phase overwriting them.
+  // Clear first so sticky dismissals from earlier previews cannot hide one.
+  const pushThreeFakeErrors = () => {
+    clearAllSyncIssues();
+    addSyncIssue({
+      kind: 'pedometerServiceStopped',
+      lastCommitAt: Date.now() - 20 * 60 * 60 * 1000,
+      staleForMs: 20 * 60 * 60 * 1000,
+      manufacturer: 'samsung',
+    });
+    addSyncIssue({
+      kind: 'sourceFallback',
+      unavailableSource: 'health-app',
+      activeSource: 'pedometer',
+    });
+    addSyncIssue({ kind: 'backgroundDisabled' });
+  };
   const pushFakeError = (error: SyncError) => {
     if (fakeSyncActive) {
       setFakeSyncActive(false);
@@ -119,9 +137,74 @@ export default function DevView({
   // status stuck on phase==='error' even though the badge is gone, which
   // confuses any selector reading syncStatus.phase.
   const clearFakeError = () => {
-    clearLastSyncError();
+    clearAllSyncIssues();
     resetSyncStatus();
   };
+
+  const [selectedErrLabel, setSelectedErrLabel] = useState<string | null>(null);
+
+  const FAKE_ERROR_OPTIONS: Array<{ label: string; apply: () => void }> = [
+    {
+      label: '3 at once',
+      apply: pushThreeFakeErrors,
+    },
+    {
+      label: 'unknown (silent)',
+      apply: () =>
+        pushFakeError({ kind: 'unknown', message: 'forced for testing' }),
+    },
+    {
+      label: 'unavailable',
+      apply: () =>
+        pushFakeError({
+          kind: 'unavailable',
+          message: 'forced unavailable for testing',
+        }),
+    },
+    {
+      label: 'permission (health)',
+      apply: () =>
+        pushFakeError({
+          kind: 'permission',
+          source: 'health-app',
+          message: 'forced permission error for testing',
+        }),
+    },
+    {
+      label: 'permission (pedometer)',
+      apply: () =>
+        pushFakeError({
+          kind: 'permission',
+          source: 'pedometer',
+          message: 'forced pedometer permission error for testing',
+        }),
+    },
+    {
+      label: 'timeout',
+      apply: () =>
+        pushFakeError({
+          kind: 'timeout',
+          chunkStart: Date.now() - 7 * 24 * 60 * 60 * 1000,
+          chunkEnd: Date.now() - 6 * 24 * 60 * 60 * 1000,
+          chunksDone: 3,
+          chunksTotal: 8,
+        }),
+    },
+    {
+      label: 'bg off (iOS)',
+      apply: () => pushFakeError({ kind: 'backgroundDisabled' }),
+    },
+    {
+      label: 'pedometer service stopped',
+      apply: () =>
+        pushFakeError({
+          kind: 'pedometerServiceStopped',
+          lastCommitAt: Date.now() - 20 * 60 * 60 * 1000,
+          staleForMs: 20 * 60 * 60 * 1000,
+          manufacturer: 'samsung',
+        }),
+    },
+  ];
 
   // Initialize with current miles when opening, clear when test override ends
   useEffect(() => {
@@ -147,6 +230,7 @@ export default function DevView({
         <IconButton
           icon={<DevModeIcon size={iconSizes.medium} />}
           variant="primary"
+          accessibilityLabel="Exit developer mode"
           onPress={() => {
             if (fakeSyncActive) resetSyncStatus();
             setDevMode(false);
@@ -178,106 +262,25 @@ export default function DevView({
           shipped app have no reason to inject synthetic errors. */}
       {__DEV__ && (
         <View style={[styles.row, styles.errRow]}>
-          <Button
-            onPress={() =>
-              pushFakeError({ kind: 'unknown', message: 'forced for testing' })
-            }
-            variant={lastSyncError?.kind === 'unknown' ? 'brand' : 'primary'}
-            size="small"
+          <Dropdown
+            options={FAKE_ERROR_OPTIONS.map(option => ({
+              value: option.label,
+              label: option.label,
+            }))}
+            value={selectedErrLabel}
+            onChange={next => {
+              setSelectedErrLabel(next);
+              if (next === null) {
+                clearFakeError();
+                return;
+              }
+              FAKE_ERROR_OPTIONS.find(o => o.label === next)?.apply();
+            }}
+            placeholder="none"
+            labelPrefix="Fake error:"
+            openUpward
             disabled={isRealSyncing}
-          >
-            Err: unknown (silent)
-          </Button>
-          <Button
-            onPress={() =>
-              pushFakeError({
-                kind: 'unavailable',
-                message: 'forced unavailable for testing',
-              })
-            }
-            variant={
-              lastSyncError?.kind === 'unavailable' ? 'brand' : 'primary'
-            }
-            size="small"
-            disabled={isRealSyncing}
-          >
-            Err: unavailable
-          </Button>
-          <Button
-            onPress={() =>
-              pushFakeError({
-                kind: 'permission',
-                source: 'health-app',
-                message: 'forced permission error for testing',
-              })
-            }
-            variant={
-              lastSyncError?.kind === 'permission' &&
-              lastSyncError.source === 'health-app'
-                ? 'brand'
-                : 'primary'
-            }
-            size="small"
-            disabled={isRealSyncing}
-          >
-            Err: permission (health)
-          </Button>
-          <Button
-            onPress={() =>
-              pushFakeError({
-                kind: 'permission',
-                source: 'pedometer',
-                message: 'forced pedometer permission error for testing',
-              })
-            }
-            variant={
-              lastSyncError?.kind === 'permission' &&
-              lastSyncError.source === 'pedometer'
-                ? 'brand'
-                : 'primary'
-            }
-            size="small"
-            disabled={isRealSyncing}
-          >
-            Err: permission (pedometer)
-          </Button>
-          <Button
-            onPress={() =>
-              pushFakeError({
-                kind: 'timeout',
-                chunkStart: Date.now() - 7 * 24 * 60 * 60 * 1000,
-                chunkEnd: Date.now() - 6 * 24 * 60 * 60 * 1000,
-                chunksDone: 3,
-                chunksTotal: 8,
-              })
-            }
-            variant={lastSyncError?.kind === 'timeout' ? 'brand' : 'primary'}
-            size="small"
-            disabled={isRealSyncing}
-          >
-            Err: timeout
-          </Button>
-          <Button
-            onPress={() => pushFakeError({ kind: 'backgroundDisabled' })}
-            variant={
-              lastSyncError?.kind === 'backgroundDisabled' ? 'brand' : 'primary'
-            }
-            size="small"
-            disabled={isRealSyncing}
-          >
-            Err: bg off (iOS)
-          </Button>
-          <Button
-            onPress={clearFakeError}
-            variant="outline"
-            size="default"
-            disabled={
-              isRealSyncing ||
-              (lastSyncError === null && syncStatus.phase !== 'error')
-            }
-          >
-            Clear err
-          </Button>
+          />
         </View>
       )}
       <View
@@ -364,6 +367,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     flexWrap: 'wrap',
     gap: spacing.sm,
+    zIndex: 2,
   },
   closeButton: {
     position: 'absolute',

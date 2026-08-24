@@ -23,7 +23,6 @@ export default function ErrorMessageBanner({
         styles.card,
         {
           backgroundColor: theme.colors.surface,
-          borderLeftColor: '#F4B400',
         },
       ]}
     >
@@ -50,6 +49,7 @@ export default function ErrorMessageBanner({
 
 const styles = StyleSheet.create({
   card: {
+    borderLeftColor: '#F4B400',
     borderLeftWidth: 4,
     borderRadius: borderRadius.md,
     paddingVertical: spacing.sm,

@@ -49,11 +49,11 @@ export default function JourneyProgressBar({
   const firstName = (checkpoints[0] as any)?.name ?? '';
   const lastName = (checkpoints[checkpoints.length - 1] as any)?.name ?? '';
 
-  // Side / header label style: scaled `button` token (12px base) with
+  // Side / header label style: scaled `smallBold` token (12px base) with
   // dark-mode-aware color. Using a token (not a hardcoded fontSize) is what
   // lets these labels respond to the Text size setting.
   const labelStyle = {
-    ...typographyThemed(theme).button,
+    ...typographyThemed(theme).caption2Bold,
     color: darkMode ? theme.colors.textInverted : theme.colors.textPrimary,
   };
 

@@ -1,5 +1,6 @@
 export { default as ChevronIcon } from './ChevronIcon';
 export { default as ChatIcon } from './ChatIcon';
+export { default as ClockIcon } from './ClockIcon';
 export { default as CloseIcon } from './CloseIcon';
 export { default as DataIcon } from './DataIcon';
 export { default as DevModeIcon } from './DevModeIcon';

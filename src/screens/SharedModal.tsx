@@ -217,6 +217,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
       return (
         <IconButton
           icon={<HomeIcon size={iconSizes.medium} />}
+          accessibilityLabel="Home"
           onPress={handleHomePress}
           variant="transparent"
           hitSlop={16}
@@ -228,6 +229,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
       return (
         <IconButton
           icon={<ChevronIcon direction="left" size={iconSizes.medium} />}
+          accessibilityLabel="Back"
           onPress={handleBack}
           variant="primary"
           hitSlop={8}

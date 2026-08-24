@@ -5,6 +5,7 @@ import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing, borderRadius } from '../../../styles/global';
 import Button from '../../Buttons/Button';
+import { StatusBadge } from '../../StatusBadge';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
 import { friendProgressWorkflow } from '../../../services/friendProgressWorkflow';
@@ -40,7 +41,27 @@ export default function DataContent() {
   );
   const hasSharedData =
     sharingEnabled || sharingProvisioningPending || sharingDeletionPending;
-  const hasAllData = hasAnyData || hasSharedData;
+  const syncIssues = useProgressStore(state => state.syncIssues);
+  const clearAllSyncIssues = useProgressStore(
+    state => state.clearAllSyncIssues,
+  );
+  const hasTrackingHistory = syncIssues.length > 0;
+  const hasAllData = hasAnyData || hasSharedData || hasTrackingHistory;
+
+  const handleDeleteTrackingHistory = () => {
+    Alert.alert(
+      'Delete Troubleshooting History',
+      'Delete the record of problems we detected? Your journey progress will not be changed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => clearAllSyncIssues(),
+        },
+      ],
+    );
+  };
 
   const handleDeleteSharedData = async () => {
     Alert.alert(
@@ -155,6 +176,7 @@ export default function DataContent() {
             // resetProgress() does a single setState + one SQL DELETE +
             // one miles snapshot write — no per-entry looping.
             await useProgressStore.getState().resetProgress();
+            clearAllSyncIssues();
 
             // Reset sync bookmarks so the next sync's fromDate falls back
             // to syncStartDate (now) instead of the pre-reset lastSync-
@@ -229,21 +251,7 @@ export default function DataContent() {
               Delete
             </Button>
           ) : (
-            <View
-              style={[
-                styles.badge,
-                { backgroundColor: theme.colors.emptyStateBg },
-              ]}
-            >
-              <Text
-                style={[
-                  typographyThemed(theme).captionPrimary,
-                  { color: theme.colors.emptyStateText },
-                ]}
-              >
-                No data
-              </Text>
-            </View>
+            <StatusBadge label="No data" tone="neutral" />
           )}
         </View>
 
@@ -272,21 +280,7 @@ export default function DataContent() {
               Delete
             </Button>
           ) : (
-            <View
-              style={[
-                styles.badge,
-                { backgroundColor: theme.colors.emptyStateBg },
-              ]}
-            >
-              <Text
-                style={[
-                  typographyThemed(theme).captionPrimary,
-                  { color: theme.colors.emptyStateText },
-                ]}
-              >
-                No data
-              </Text>
-            </View>
+            <StatusBadge label="No data" tone="neutral" />
           )}
         </View>
 
@@ -300,10 +294,10 @@ export default function DataContent() {
         >
           <View style={styles.flex1}>
             <Text style={typographyThemed(theme).bodyPrimary}>
-              Delete shared data
+              Delete shared friends data
             </Text>
             <Text style={typographyThemed(theme).captionSecondary}>
-              Delete your shared name and distance and turn sharing off
+              Delete your shared name and distance and turn friend sharing off
             </Text>
           </View>
           {hasSharedData ? (
@@ -315,21 +309,31 @@ export default function DataContent() {
               {sharingDeletionPending ? 'Retry' : 'Delete'}
             </Button>
           ) : (
-            <View
-              style={[
-                styles.badge,
-                { backgroundColor: theme.colors.emptyStateBg },
-              ]}
+            <StatusBadge label="No shared data" tone="neutral" />
+          )}
+        </View>
+
+        {/* Tracking history */}
+        <View style={[styles.contentRow]}>
+          <View style={styles.flex1}>
+            <Text style={[typographyThemed(theme).bodyPrimary]}>
+              Delete troubleshooting history
+            </Text>
+            <Text style={[typographyThemed(theme).captionSecondary]}>
+              Remove the record of problems we detected and how they were
+              resolved
+            </Text>
+          </View>
+          {hasTrackingHistory ? (
+            <Button
+              onPress={handleDeleteTrackingHistory}
+              variant="outline"
+              size="default"
             >
-              <Text
-                style={[
-                  typographyThemed(theme).captionPrimary,
-                  { color: theme.colors.emptyStateText },
-                ]}
-              >
-                No shared data
-              </Text>
-            </View>
+              Delete
+            </Button>
+          ) : (
+            <StatusBadge label="No history" tone="neutral" />
           )}
         </View>
 
@@ -350,24 +354,10 @@ export default function DataContent() {
               variant="outline"
               size="default"
             >
-              Delete
+              Delete all
             </Button>
           ) : (
-            <View
-              style={[
-                styles.badge,
-                { backgroundColor: theme.colors.emptyStateBg },
-              ]}
-            >
-              <Text
-                style={[
-                  typographyThemed(theme).captionPrimary,
-                  { color: theme.colors.emptyStateText },
-                ]}
-              >
-                No data
-              </Text>
-            </View>
+            <StatusBadge label="No data" tone="neutral" />
           )}
         </View>
       </Section>

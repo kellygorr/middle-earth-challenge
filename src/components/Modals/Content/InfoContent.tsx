@@ -206,7 +206,10 @@ export default function InfoContent() {
 
         {/* Tracking options for first checkpoint */}
         {showTrackingOptions && (
-          <TrackingOptions onOpenSyncModal={() => pushModal({ type: 'sync' })} />
+          <TrackingOptions
+            compact
+            onOpenSyncModal={() => pushModal({ type: 'sync' })}
+          />
         )}
 
         {/* Miles display */}

@@ -9,6 +9,7 @@
     "start": "react-native start",
     "test": "jest",
     "test:unit": "jest src/utils/__tests__ src/constants/__tests__ src/stores/__tests__ src/services/__tests__ --forceExit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "prepare": "husky"
   },
   "dependencies": {

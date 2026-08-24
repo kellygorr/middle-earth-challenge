@@ -6,16 +6,25 @@ import {
   StyleSheet,
   Linking,
   Platform,
+  ScrollView,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
-import type { SyncError } from '../stores/progressStore';
+import type { SyncError, SyncIssue } from '../stores/progressStore';
+import {
+  orderSyncIssues,
+  syncErrorSlot,
+  type SyncIssueSlot,
+} from '../constants/syncIssues';
 import { typographyThemed } from '../styles/typography';
 import { useUIStore } from '../stores/uiStore';
-import { spacing, borderRadius } from '../styles/global';
+import { spacing, borderRadius, iconSizes } from '../styles/global';
 import { SyncNowRow } from './SyncNowRow';
 import Button from './Buttons/Button';
+import IconButton from './Buttons/IconButton';
 import { PlusIcon } from '../assets/icons';
+import { getOemBatteryGuidance } from '../utils/oemBattery';
 
 /**
  * Per-kind copy for the persistent sync-error banner.
@@ -31,9 +40,16 @@ import { PlusIcon } from '../assets/icons';
  * automatic path is genuinely blocked — not for transient issues like
  * timeout, where nudging manual entry would misrepresent the state.
  */
-function getCopy(
-  error: SyncError,
-): { headline: string; body: string; showAddHint: boolean } | null {
+function getCopy(error: SyncError): {
+  headline: string;
+  body: string;
+  bodyEmphasis?: string;
+  bodyAfterEmphasis?: string;
+  showAddHint: boolean;
+  problem?: string;
+  solution?: string;
+  showCatchUpHint?: boolean;
+} | null {
   switch (error.kind) {
     case 'permission':
       // Copy varies by source so we can name the exact permission the
@@ -42,9 +58,12 @@ function getCopy(
       if (error.source === 'pedometer') {
         return {
           headline: 'Pedometer tracking is off',
+          // Deliberately unspecific: this fires for physical activity, the
+          // step sensor, or battery optimisation, and Sync settings lists
+          // exactly which one is missing.
           body:
-            'The Physical activity permission was turned off or never granted, ' +
-            'so we can’t count your steps. Turn it back on to resume.',
+            'Permissions were turned off, so we can’t count your steps. ' +
+            'Turn them back on to resume.',
           showAddHint: true,
         };
       }
@@ -60,7 +79,7 @@ function getCopy(
       return {
         headline: 'Disconnected from health data',
         body:
-          'Your health app permission was revoked or never granted. ' +
+          'Your health app permission was turned off. ' +
           'Reconnect below to sync automatically.',
         showAddHint: true,
       };
@@ -114,6 +133,17 @@ function getCopy(
           'will retry on the next sensor update.',
         showAddHint: false,
       };
+    case 'pedometerServiceStopped':
+      return {
+        headline: 'Step counting stopped',
+        body: 'Your phone shut down step tracking, so nothing was recorded after ',
+        bodyEmphasis: formatTimestamp(error.lastCommitAt),
+        bodyAfterEmphasis:
+          '. We were able to restart it when you opened the app.',
+        ...getOemBatteryGuidance(error.manufacturer),
+        showAddHint: false,
+        showCatchUpHint: true,
+      };
     case 'backgroundDisabled':
       return {
         headline: 'Background updates are off',
@@ -153,37 +183,49 @@ function formatTimestamp(at: number): string {
 }
 
 /**
- * Persistent advisory card shown wherever the user can act on a sync
- * problem (Settings → Sync, eventually WelcomeModal). Subscribes to
- * `lastSyncError`; renders `null` when there is no error.
- *
- * Dismissal calls `clearLastSyncError`, which also clears the badge dot
- * on the Settings icon. A successful sync clears both automatically.
+ * One issue card. Multiple issues can be true at once (a pedometer fault and
+ * a health-app fault are independent), so this renders a single `SyncIssue`
+ * and the container below decides how they are laid out.
  */
-export default function SyncErrorBanner() {
+function SyncIssueCard({
+  issue,
+  width,
+  onDismiss,
+}: {
+  issue: SyncIssue;
+  width: number | undefined;
+  onDismiss: () => void;
+}) {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
-  const lastSyncError = useProgressStore(state => state.lastSyncError);
-  const lastSyncErrorAt = useProgressStore(state => state.lastSyncErrorAt);
-  const clearLastSyncError = useProgressStore(
-    state => state.clearLastSyncError,
-  );
   const pushModal = useUIStore(state => state.pushModal);
 
-  if (!lastSyncError) return null;
+  const lastSyncError = issue.error;
+  const lastSyncErrorAt = issue.at;
 
   const copy = getCopy(lastSyncError);
   // Safety net: if we ever end up with an error kind we have no copy for,
   // render nothing rather than showing an empty card.
   if (!copy) return null;
-  const { headline, body, showAddHint } = copy;
+  const {
+    headline,
+    body,
+    bodyEmphasis,
+    bodyAfterEmphasis,
+    showAddHint,
+    problem,
+    solution,
+    showCatchUpHint,
+  } = copy;
   const unitLabel = useMiles ? 'Miles' : 'Kilometers';
   const accent = '#F4B400'; // matches IconButton badge color
 
   return (
     <View
+      testID={`sync-issue-card-${syncErrorSlot(lastSyncError)}`}
       style={[
         styles.card,
+        width === undefined ? null : { width },
         {
           backgroundColor: theme.colors.surface,
           borderLeftColor: accent,
@@ -191,67 +233,17 @@ export default function SyncErrorBanner() {
       ]}
     >
       <View style={styles.topRow}>
-        <View style={styles.textCol}>
-          <Text
-            style={[
-              typographyThemed(theme).bodyPrimary,
-              styles.headline,
-              { color: theme.colors.textPrimary },
-            ]}
-          >
-            {headline}
-          </Text>
-          <Text
-            style={[
-              typographyThemed(theme).body,
-              { color: theme.colors.textPrimary },
-            ]}
-          >
-            {body}
-          </Text>
-          {/* Manual-entry hint: only for kinds where the automatic path is
-              actually blocked (permission). Unit is dynamic so we don't
-              lie to km users. The inline plus icon mirrors the pattern
-              used in SyncContentIOS's copy so the two references look
-              like the same UI element. */}
-          {showAddHint && (
-            <Text
-              style={[
-                typographyThemed(theme).body,
-                styles.addHint,
-                { color: theme.colors.textPrimary },
-              ]}
-            >
-              {`${unitLabel} can also be logged with the `}
-              <View style={styles.inlinePlus}>
-                <View style={styles.inlinePlusCircle}>
-                  <PlusIcon size={8} color="#fff" />
-                </View>
-              </View>
-              {' button.'}
-            </Text>
-          )}
-          {/* Timestamp is suppressed for `permission` errors because
-              trackingModeService restamps `lastSyncErrorAt` on every
-              foreground reconciliation, which makes it read as "just
-              now" every session and adds no signal. For transient kinds
-              (timeout / unavailable / backgroundDisabled), the stamp
-              reflects when the last failed sync tick happened and is
-              actually useful. */}
-          {lastSyncErrorAt !== null && lastSyncError.kind !== 'permission' && (
-            <Text
-              style={[
-                typographyThemed(theme).caption,
-                styles.timestamp,
-                { color: theme.colors.textSecondary },
-              ]}
-            >
-              {formatTimestamp(lastSyncErrorAt)}
-            </Text>
-          )}
-        </View>
+        <Text
+          style={[
+            typographyThemed(theme).captionPrimary,
+            styles.headline,
+            { color: theme.colors.textPrimary },
+          ]}
+        >
+          {headline}
+        </Text>
         <Pressable
-          onPress={clearLastSyncError}
+          onPress={onDismiss}
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Dismiss sync error"
@@ -267,6 +259,129 @@ export default function SyncErrorBanner() {
           </Text>
         </Pressable>
       </View>
+      <ScrollView
+        style={styles.cardContent}
+        contentContainerStyle={styles.cardContentContainer}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+      >
+        <Text
+          style={[
+            typographyThemed(theme).captionSecondary,
+            { color: theme.colors.textPrimary },
+          ]}
+        >
+          {body}
+          {bodyEmphasis && (
+            <Text style={styles.bodyEmphasis}>{bodyEmphasis}</Text>
+          )}
+          {bodyAfterEmphasis}
+        </Text>
+        {problem && (
+          <View style={styles.section}>
+            <Text
+              style={[
+                typographyThemed(theme).captionPrimary,
+                styles.sectionTitle,
+                { color: theme.colors.textPrimary },
+              ]}
+            >
+              Problem
+            </Text>
+            <Text
+              style={[
+                typographyThemed(theme).captionSecondary,
+                { color: theme.colors.textPrimary },
+              ]}
+            >
+              {problem}
+            </Text>
+          </View>
+        )}
+        {solution && (
+          <View style={styles.section}>
+            <Text
+              style={[
+                typographyThemed(theme).captionPrimary,
+                styles.sectionTitle,
+                { color: theme.colors.textPrimary },
+              ]}
+            >
+              Solution
+            </Text>
+            <Text
+              style={[
+                typographyThemed(theme).captionSecondary,
+                { color: theme.colors.textPrimary },
+              ]}
+            >
+              {solution}
+            </Text>
+          </View>
+        )}
+        {showCatchUpHint && (
+          <View style={styles.section}>
+            <Text
+              style={[
+                typographyThemed(theme).captionPrimary,
+                styles.sectionTitle,
+                { color: theme.colors.textPrimary },
+              ]}
+            >
+              {`Add catch-up ${unitLabel.toLowerCase()}`}
+            </Text>
+            <Text
+              style={[
+                typographyThemed(theme).captionSecondary,
+                { color: theme.colors.textPrimary },
+              ]}
+            >
+              {
+                'You can estimate what you walked while tracking was stopped and add it with the '
+              }
+              <View style={styles.inlinePlus}>
+                <View style={styles.inlinePlusCircle}>
+                  <PlusIcon size={8} color="#fff" />
+                </View>
+              </View>
+              {' button.'}
+            </Text>
+          </View>
+        )}
+        {/* Manual-entry hint: only for kinds where the automatic path is
+            actually blocked (permission). Unit is dynamic so we don't
+            lie to km users. */}
+        {showAddHint && (
+          <Text
+            style={[
+              typographyThemed(theme).captionSecondary,
+              styles.addHint,
+              { color: theme.colors.textPrimary },
+            ]}
+          >
+            {`${unitLabel} can also be logged with the `}
+            <View style={styles.inlinePlus}>
+              <View style={styles.inlinePlusCircle}>
+                <PlusIcon size={8} color="#fff" />
+              </View>
+            </View>
+            {' button.'}
+          </Text>
+        )}
+        {lastSyncErrorAt !== null &&
+          lastSyncError.kind !== 'permission' &&
+          lastSyncError.kind !== 'pedometerServiceStopped' && (
+            <Text
+              style={[
+                typographyThemed(theme).caption,
+                styles.timestamp,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              {formatTimestamp(lastSyncErrorAt)}
+            </Text>
+          )}
+      </ScrollView>
       {/* Per-error action row */}
       {lastSyncError.kind === 'timeout' && (
         <View style={styles.retry}>
@@ -313,6 +428,23 @@ export default function SyncErrorBanner() {
           </Button>
         </View>
       )}
+      {lastSyncError.kind === 'pedometerServiceStopped' && (
+        <View style={styles.stalledActions}>
+          <Button
+            variant="primary"
+            size="small"
+            onPress={() => pushModal({ type: 'sync' })}
+          >
+            Sync settings
+          </Button>
+          <IconButton
+            icon={<PlusIcon size={iconSizes.medium} />}
+            variant="primary"
+            accessibilityLabel={`Add ${unitLabel.toLowerCase()}`}
+            onPress={() => pushModal({ type: 'miles' })}
+          />
+        </View>
+      )}
       {lastSyncError.kind === 'backgroundDisabled' && (
         <View style={styles.retry}>
           <Button
@@ -334,7 +466,108 @@ export default function SyncErrorBanner() {
   );
 }
 
+/** Headline for an issue, for compact surfaces like the history list. */
+export function getSyncIssueSummary(error: SyncError): string {
+  return getCopy(error)?.headline ?? 'Tracking problem';
+}
+
+/** Visible sliver of the next card, which is what signals it is there. */
+const PEEK_WIDTH = spacing.xl;
+
+/**
+ * Persistent advisory shown wherever the user can act on a sync problem
+ * (WelcomeModal, Settings → Sync).
+ *
+ * With a single issue this is one full-width card, unchanged. With more it
+ * becomes a horizontal scroller where the next card peeks in from the right;
+ * the peek is the affordance, so there is nothing small to aim at. Neither
+ * host can scroll vertically, so stacking is not an option.
+ *
+ * Dismissed issues leave here entirely and are recoverable only from the
+ * issue history in Settings.
+ */
+export default function SyncErrorBanner({ bleed = 0 }: { bleed?: number }) {
+  const syncIssues = useProgressStore(state => state.syncIssues);
+  const dismissSyncIssue = useProgressStore(state => state.dismissSyncIssue);
+  const [containerWidth, setContainerWidth] = React.useState(0);
+
+  const issues = React.useMemo(
+    () =>
+      orderSyncIssues(syncIssues).filter(
+        issue =>
+          issue.dismissedAt === null &&
+          issue.resolvedAt === null &&
+          getCopy(issue.error),
+      ),
+    [syncIssues],
+  );
+
+  const onLayout = React.useCallback((event: LayoutChangeEvent) => {
+    setContainerWidth(event.nativeEvent.layout.width);
+  }, []);
+
+  if (issues.length === 0) return null;
+
+  const dismiss = (slot: SyncIssueSlot) => () => dismissSyncIssue(slot);
+
+  if (issues.length === 1) {
+    return (
+      <SyncIssueCard
+        issue={issues[0]}
+        width={undefined}
+        onDismiss={dismiss(syncErrorSlot(issues[0].error))}
+      />
+    );
+  }
+
+  // Until the first layout pass we do not know the card width, so render the
+  // first issue full-width rather than flashing a mis-sized row.
+  // `containerWidth` is the bled-out width (host width + 2 * bleed); a card
+  // still rests aligned to the host content, so it loses one inset plus the
+  // peek.
+  const cardWidth =
+    containerWidth > 0 ? containerWidth - bleed - PEEK_WIDTH : undefined;
+
+  return (
+    <View
+      testID="sync-issue-carousel"
+      onLayout={onLayout}
+      style={bleed === 0 ? null : { marginHorizontal: -bleed }}
+    >
+      <ScrollView
+        testID="sync-issue-pager"
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        snapToInterval={
+          cardWidth === undefined ? undefined : cardWidth + spacing.md
+        }
+        snapToAlignment="start"
+        contentContainerStyle={[
+          styles.pagerContent,
+          { paddingHorizontal: bleed },
+        ]}
+      >
+        {issues.map(issue => (
+          <SyncIssueCard
+            key={syncErrorSlot(issue.error)}
+            issue={issue}
+            width={cardWidth}
+            onDismiss={dismiss(syncErrorSlot(issue.error))}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  pagerContent: {
+    gap: spacing.md,
+    // Cards size to their own content; stretching makes every card as tall as
+    // the longest one and clips the shorter bodies.
+    alignItems: 'flex-start',
+  },
   card: {
     flexDirection: 'column',
     alignItems: 'stretch',
@@ -352,10 +585,26 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: spacing.sm,
   },
-  textCol: {
-    flex: 1,
+  cardContent: {
+    flexGrow: 0,
+    maxHeight: 180,
+    marginRight: -spacing.md,
+  },
+  cardContentContainer: {
+    paddingRight: spacing.md,
   },
   headline: {
+    flex: 1,
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  bodyEmphasis: {
+    fontWeight: '600',
+  },
+  section: {
+    marginTop: spacing.sm,
+  },
+  sectionTitle: {
     fontWeight: '600',
     marginBottom: spacing.xs,
   },
@@ -388,6 +637,15 @@ const styles = StyleSheet.create({
   },
   retry: {
     marginTop: spacing.sm,
+    // Buttons size to their label rather than filling the card.
+    alignItems: 'flex-end',
+  },
+  // Fix on the left, catch-up entry on the right.
+  stalledActions: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   // Pedometer permission recovery row — mirrors the shape of the row
   // TrackingOptions renders for the health-app case (IconButton + text

@@ -124,7 +124,7 @@ export async function reconcileCompletedDualTrackingDays(
       const entry: DistanceEntry = {
         id: entryId,
         saveId: DEFAULT_SAVE_ID,
-        date: cursor + Math.floor((dayEnd - cursor) / 2),
+        date: dayEnd - 1,
         miles: topUpMiles,
         steps: topUpSteps,
         source: 'health-reconciliation',

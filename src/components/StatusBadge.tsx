@@ -14,6 +14,8 @@ import { typographyThemed } from '../styles/typography';
 interface StatusBadgeProps {
   label: string;
   inProgress?: boolean;
+  /** `neutral` is the grey treatment used when there is nothing to report. */
+  tone?: 'success' | 'neutral';
   visible?: boolean;
   reserveSpace?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -24,6 +26,7 @@ const IN_PROGRESS_COLOR = '#F5A623';
 export function StatusBadge({
   label,
   inProgress = false,
+  tone = 'success',
   visible = true,
   reserveSpace = false,
   style,
@@ -71,6 +74,11 @@ export function StatusBadge({
         styles.badge,
         inProgress
           ? { borderColor: animatedColor }
+          : tone === 'neutral'
+          ? {
+              backgroundColor: theme.colors.emptyStateBg,
+              borderColor: theme.colors.emptyStateBg,
+            }
           : {
               backgroundColor: theme.colors.successBg,
               borderColor: theme.colors.successBorder,
@@ -83,7 +91,11 @@ export function StatusBadge({
         style={[
           typographyThemed(theme).captionPrimary,
           {
-            color: inProgress ? animatedColor : theme.colors.successText,
+            color: inProgress
+              ? animatedColor
+              : tone === 'neutral'
+              ? theme.colors.emptyStateText
+              : theme.colors.successText,
           } as Animated.WithAnimatedObject<TextStyle>,
         ]}
       >

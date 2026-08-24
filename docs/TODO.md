@@ -113,118 +113,76 @@ module construction and the JS call.
 
 ---
 
-## WorkManager to Headless JS handoff is a background-policy risk
+## WorkManager owns the Headless JS sweep ✅ done
 
-Phase 7 of the adversarial review examined this and deliberately did not file
-it as a confirmed finding. Recording it here so the reasoning is not lost.
+The periodic sweep runs on every Android device while a pedometer-backed mode
+is active; aggressive OEM battery policies only affect how reliably Android
+schedules it and keeps step recording alive.
 
-`PedometerBackgroundWorker` starts `PedometerHeadlessJsService` to run the
-~5x/day commit sweep. Starting a service from a Worker is exactly the pattern
-Android's background execution limits target. It was not filed because:
+`PedometerBackgroundWorker` is now a `CoroutineWorker` that starts
+`PedometerSweep` directly through React Native's public `ReactHost` and
+`HeadlessJsTaskContext` APIs. No secondary Android service is launched from a
+background context. The Worker remains active until the JS promise completes,
+retries startup/time-out failures instead of falsely returning success, and
+skips the sweep when the native recording service is already stopped.
 
-- the persistent step-counting foreground service keeps the app in a foreground
-  state during normal pedometer-mode operation, which exempts the start; and
-- the connected Pixel showed the periodic job registered with a history of
-  successful executions.
-
-Both of those are conditions, not guarantees. The handoff would break if the
-foreground service is stopped, killed by an OEM battery manager, or if the app
-ever commits in the background without it — and the failure is silent, since
-`Result.success()` is returned deliberately so a missed sweep recovers via the
-watermark rather than retrying.
-
-To review:
-
-- Confirm behaviour on a non-Pixel device with an aggressive battery manager
-  (Samsung, Xiaomi, OnePlus) after several days of background operation
-- Check whether the foreground service is genuinely alive at every point the
-  Worker fires, rather than assumed alive
-- Decide whether a missed sweep is detectable at all today; a watermark that
-  silently stops advancing looks identical to not walking
-- Re-check against the background-start restrictions of the current
-  `targetSdkVersion` whenever it is raised
+This keeps the single JS commit transaction used by foreground sync and avoids
+duplicating watermark, distance, snapshot, and milestone logic in Kotlin.
 
 ---
 
-## A stalled pedometer watermark is undetectable
+## Detect stopped pedometer recording ✅ done
 
-If background commits stop — OEM battery manager, a killed foreground service,
-a broken Worker/Headless handoff, a revoked permission — nothing surfaces it.
-The watermark simply stops advancing, which is indistinguishable from a user
-who stopped walking. `Result.success()` is returned deliberately so a missed
-sweep recovers on the next tick via the watermark rather than retrying, and
-that same choice removes the only signal that anything went wrong.
+Resolved after tracing the native data path. A stale commit watermark while
+`StepCounterService` is still running means ingestion was delayed, not that
+steps were lost: native `step_samples` remain intact and the next foreground
+sync catches up automatically. That state is intentionally silent; a comment
+marks the branch as a future telemetry hook if telemetry is added later.
 
-This is separate from whether the handoff ever actually breaks. It is the
-reason a break would go unnoticed for as long as it lasted.
+When the native recording service is both stopped and stale beyond the normal
+commit interval, the app now persists a `pedometerServiceStopped` issue and
+restarts the service. Its troubleshooting card explains that samples are
+missing after the last commit, provides OEM-specific battery guidance, links
+to Sync settings, and offers manual catch-up entry. Multiple concurrent issues
+are retained in persistent history and shown in a horizontal carousel.
 
-Worth considering:
-
-- Track the last successful commit time and surface it when it falls well
-  outside the expected ~4.8h cadence, similar to the Friend Progress freshness
-  label
-- `pedometerService.isServiceRunning()` already exists and is used for
-  detecting silent OS kills; the same signal could feed a persistent warning
-  rather than only an on-demand check
-- Decide what the app should say. "No steps recorded since Tuesday" is
-  actionable; a generic sync error is not
-- Take care not to alarm users who genuinely did not walk — absence of steps
-  and absence of *commits* are different conditions, and only the second is a
-  fault
+Focused tests cover the stopped-service card, dynamic units, recovery actions,
+carousel sizing and dismissal, plus store-level dismiss, resolve, recurrence,
+replacement, and restore semantics.
 
 ---
 
-## No transactional database failure-recovery tests
+## Transactional database failure recovery ✅ done
 
-The sync and commit suites mock `useProgressStore` and `database`, so they
-prove the right calls are made with the right payloads — not that persistence
-agrees. Nothing exercises a real SQLite failure path.
+Added a stateful in-memory SQLite adapter for tests that models transaction
+snapshots and real `BEGIN` / `COMMIT` / `ROLLBACK` effects while exercising the
+production `Database` class and progress store.
 
-This is the first item in the adversarial review's own test-priority order and
-the largest remaining coverage gap. The findings it would have caught are real
-ones already fixed by inspection rather than by a failing test: swallowed write
-errors, memory/snapshot divergence, and partial commits.
-
-Worth covering:
-
-- `applyDistanceEntryChanges` rejecting mid-transaction leaves entries and the
-  progress snapshot consistent, and the store is not updated
-- A failed `persistMilesSnapshot` does not leave Zustand ahead of the database
-- Hydration repairs a snapshot that disagrees with the entries it was derived
-  from
-- `commitPedometerRange` does not advance the watermark when the write rejects
-  (currently asserted against a mock)
-
-Needs a real `op-sqlite` instance in Jest, or a thin in-memory adapter behind
-the same interface. Decide which before writing the tests — mocking the mock is
-what produced this gap.
+Coverage now proves that a mid-transaction snapshot failure rolls back entries
+and snapshot state without publishing changes to Zustand, failed snapshot
+reconciliation leaves memory unchanged, hydration repairs an unversioned or
+disagreeing snapshot from persisted entries, and a failed pedometer cursor
+write retains neither its entry nor cursor advance. Existing commit tests also
+verify that the JS watermark is not published after a rejected database write.
 
 ---
 
-## `App.test.tsx` "renders correctly" asserts an almost-empty tree
+## Meaningful app smoke test ✅ done
 
-`SafeAreaProvider` renders nothing until it measures a native layout, which
-never happens under Jest. The app tree is mounted inside it, so the smoke test
-has been passing without exercising any screen.
+Jest now provides deterministic global safe-area metrics and the Skia path
+measurement primitives used by the map. The app smoke test renders through the
+real `MapScreen` and asserts that its Labels control is present instead of
+passing on an almost-empty provider tree. `SharedModal` uses the same global
+safe-area setup and retains its focused navigation coverage.
 
-Mocking `react-native-safe-area-context` globally makes the test render the real
-map, which then fails on mocks that were never needed before:
-
-- `react-native-reanimated`: `useAnimatedReaction`, `useEvent`, `useHandler`
-  (the last two are pulled in by `react-native-gesture-handler`)
-- `@shopify/react-native-skia`: `Skia.ContourMeasureIter`, and likely more
-  behind it
-
-The reanimated gaps are already filled in `jest.setup.js`. The safe-area mock is
-deliberately scoped to `src/screens/__tests__/SharedModal.test.tsx` so it does
-not change what other suites render.
-
-To finish: stub the Skia surface the map needs, move the safe-area mock into
-`jest.setup.js`, and give the smoke test a real assertion about what rendered.
+The initial map-path reveal also has a tested watchdog: normal completion is
+single-shot, but if Reanimated never calls back, the path is forced fully
+visible after the expected reveal window and initialization advances. Reset,
+unmount, rerender, and already-dismissed onboarding paths are covered.
 
 ---
 
-## Verify direct distance writes on device
+## Verify direct distance writes on device ✅ done
 
 The `pendingEntries` / `pendingDeletions` staging buffer was removed; adding,
 editing, and deleting distance now write straight to SQLite through
@@ -234,63 +192,95 @@ The unit tests mock `useProgressStore`, so they prove the right call is made
 with the right payload — not that SQLite agrees. Nothing currently exercises the
 real database layer.
 
-To verify on a device:
+Verified on the Android device:
 
-- Add miles and add steps; confirm the total updates immediately
-- Edit an entry's value and its date; confirm the row updates in place rather
-  than duplicating (the write is an upsert on the same id)
-- Delete an entry; confirm the total drops
-- Force-quit after each and confirm the change survived
-- Repeat with the Distance modal opened from the Hobbiton checkpoint, exiting
-  via Back rather than Close
-
----
-
-## Native step-sample pruning SQL is untested
-
-`StepCounterDbHelper.pruneSamplesBefore` deletes raw samples older than the
-retention cutoff while keeping the newest pre-cutoff sample per `boot_id`. That
-anchor is what `readStepsBetween` subtracts from, so if the SQL drops it, the
-next window reports every step taken since boot instead of the window's steps.
-
-The Jest tests only prove `commitPedometerRange` calls the native method with
-the right cutoff — they would pass even if the SQL deleted the entire table.
-There is no Android instrumentation test target in this project.
-
-To verify, either:
-
-- add an `androidTest` target and cover: prune with samples spanning two boots,
-  prune with nothing older than the cutoff, and a `readStepsBetween` query
-  immediately after a prune that crosses a boot boundary; or
-- run pedometer mode on a device for longer than
-  `PEDOMETER_SAMPLE_RETENTION_MS` (7 days) and confirm daily step totals stay
-  plausible rather than spiking
-
-The failure mode is a wildly inflated step count, so it would be obvious.
+- Adding, editing, and deleting update totals immediately and survive process
+  restarts.
+- Editing retains the same id and updates the row rather than duplicating it.
+- Date and time edits persist together.
+- Opening Distance from Hobbiton renders the same `DistanceContent` and uses
+  the same store/database actions; the modal stack changes only the Back
+  destination and does not create a separate write path.
 
 ---
 
-## Manual entry input rejection has no user feedback
+## Manual entry validation feedback ✅ done
 
-`MilesFooter` and `EditEntryModal` reject input that is not a finite positive
-number (`Number.isFinite`, which unlike `isNaN` also catches `Infinity` from
-input like `1e400`). The rejection is a bare `return`, so the button appears to
-do nothing and the user gets no explanation.
-
-There is deliberately **no upper bound** on distance. Large values are valid —
-if someone enters five million miles they reach Mordor, and that is fine. Do
-not add a cap.
-
-To finish:
-
-- Show an inline message when input is rejected, covering both empty/invalid
-  text and non-finite values
-- Decide how very large but finite values should display in the UI (progress
-  bar, stats, projections) rather than restricting what can be entered
+`MilesFooter` and `EditEntryModal` now share strict input validation. Empty and
+zero values remain silent no-ops; malformed, negative, non-finite, fractional
+step, and over-limit values receive specific inline feedback. Both distance
+and step modes use the same numeric cap of 5,000,000, and the cap itself is
+accepted. A reserved caption-2 validation line prevents the controls from
+moving when a message appears.
 
 ---
 
-## Unmount/rotation cleanup is untested
+## Audit for duplicate/redundant effects ✅ done
+
+`useTooltipPositioning` had two `useEffect` blocks doing the same measurement.
+The second's dependency array was a strict superset of the first's, so the
+first could never do anything the second didn't already do — it just measured
+twice on mount and on every `showTooltip` change. Now collapsed into one.
+
+The remaining hooks and larger components were audited, including
+`DistanceContent`, `InfoContent`, `FriendProgressContent`, `MapScreen`,
+`SharedModal`, `useSyncInterval`, and `useLivePedometerDelta`. No further
+overlapping effects or unsafe post-unmount React state updates were found.
+
+`useFriendProgressSync` deliberately has separate interval and AppState
+effects: the interval does not tick immediately on foreground resume, while
+the AppState listener does. A timer and foreground event can coincide, but
+`friendProgressWorkflow.synchronize` deduplicates concurrent calls through its
+shared in-flight promise.
+
+---
+
+## Restrict Node types to tests ✅ done
+
+`tsconfig.json` now excludes tests and exposes only Jest types, so React Native
+app code can no longer typecheck imports from Node built-ins. The separate
+`tsconfig.test.json` includes test files and adds Node types for cross-layer
+parity checks that read repository files. `npm run typecheck` validates both
+compiler programs.
+
+---
+
+## Verify Worker-owned pedometer sweep on device ✅ done
+
+The Worker-to-Headless-JS refactor compiles and its shared JS commit path is
+covered by unit tests, but the Android scheduler/runtime boundary needs device
+validation before release.
+
+Verified on a Pixel 6 debug build with Metro available:
+
+- WorkManager registered `middleearth.pedometer.background.sweep` and the
+  native step service was running.
+- A forced idle-window run advanced `last_sync_timestamp` without creating a
+  zero-step row.
+- A forced run after walking 34 steps created exactly one pedometer row,
+  advanced the watermark, remained `RUNNING` while Headless JS persisted the
+  result, and returned to WorkManager's `ENQUEUED` periodic state.
+
+Stopped-service and retry branches remain covered by focused tests. A longer
+untethered battery soak can still be performed as release QA on an aggressive
+OEM device, but it is not required to establish that WorkManager owns and
+awaits the Headless JS sweep correctly.
+
+---
+
+## Verify native step-sample pruning ✅ done
+
+Raw samples now retain a 48-hour recovery margin for delayed WorkManager runs
+and transient commit failures. A Robolectric test exercises the real
+`StepCounterDbHelper` against an isolated temporary SQLite database seeded with
+multiple faux boot histories. It verifies that pruning deletes redundant old
+samples, keeps the newest pre-cutoff anchor for every `boot_id`, preserves all
+newer samples, and still computes the correct step delta across the cutoff.
+The installed app database is not involved.
+
+---
+
+## Verify unmount/rotation cleanup on device ✅ done
 
 Batch 5 added cleanup for deferred UI work, none of it covered by tests:
 
@@ -302,53 +292,20 @@ Batch 5 added cleanup for deferred UI work, none of it covered by tests:
   `measureInWindow` callback with a mounted token.
 - `DistanceContent` clears the 1-second pagination timeout on unmount.
 
-Testing these needs either a Reanimated timing harness or a device, neither of
-which exists here. The reanimated mock in `jest.setup.js` does not simulate
-animation completion callbacks.
-
-To finish: decide whether to build the harness, or verify on device by rotating
-the phone during modal open/close and while a tooltip is visible, and by
-closing the Distance modal immediately after triggering pagination.
-
----
-
-## Audit for duplicate/redundant effects
-
-`useTooltipPositioning` had two `useEffect` blocks doing the same measurement.
-The second's dependency array was a strict superset of the first's, so the
-first could never do anything the second didn't already do — it just measured
-twice on mount and on every `showTooltip` change. Now collapsed into one.
-
-That one was only found because a review finding pointed at the file. There is
-no way to grep for "two effects that do the same thing", so the rest of the
-codebase has not been checked.
-
-To finish: read through the hooks and the larger components looking for
-effects whose dependency arrays overlap or subset one another, and for effects
-whose bodies are near-identical. Likely places are components that grew by
-accretion — `DistanceContent`, `InfoContent`, `FriendProgressContent`,
-`useSyncInterval`.
-
-Related, and also unaudited: work that resolves *after* unmount from
-un-awaited promises rather than timers. `useLivePedometerDelta` guards this
-correctly with a `cancelled` flag; whether every other async handler
-re-checks before calling `setState` is unknown. All 14 timer/frame sites were
-checked and are clean.
+Modal open/close rotation and tooltip rotation were verified without crashes,
+stale overlays, or React Native errors. The tooltip remained correctly
+positioned after rotation. Distance pagination was triggered with render-only
+synthetic history, then the modal was closed while its one-second timer was
+pending; the app remained responsive and logged no deferred update or lifecycle
+errors. The synthetic entries were never persisted and were removed afterward.
 
 ---
 
-## Node types are enabled for all TypeScript, not just tests
+## Add labels to icon-only controls ✅ done
 
-`tsconfig.json` sets `"types": ["jest", "node"]` so
-`src/constants/__tests__/friendAffinities.test.ts` can read `firestore.rules`
-and the seed script to check cross-layer parity.
-
-The side effect is that app code can now `import { readFileSync } from 'fs'`
-and typecheck cleanly, then fail at runtime — React Native has no Node
-built-ins. TypeScript no longer catches that mistake.
-
-Low priority; the parity test is worth more than the footgun. To resolve
-properly, use a separate `tsconfig.test.json` that adds `node` only for test
-files, and keep the app config restricted to `jest`.
-
-
+Every interactive `IconButton` call site now has a concise action-oriented
+accessible name; the sole unnamed instance has no press handler and renders as
+a decorative view. Focused component tests cover the Map, shared-modal, and
+entry-editor controls. On the Pixel 6, Android's accessibility hierarchy exposes
+View statistics, Open settings, Recenter map, and Add distance as named buttons
+for TalkBack and UI automation.

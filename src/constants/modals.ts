@@ -12,6 +12,7 @@ import {
   InfoContent,
   DataContent,
   FriendProgressContent,
+  SyncHistoryContent,
 } from '../components/Modals/Content';
 import { MilesFooter, InfoFooter } from '../components/Modals/Footers';
 
@@ -22,7 +23,8 @@ export type ModalType =
   | 'sync'
   | 'info'
   | 'data'
-  | 'friend-progress';
+  | 'friend-progress'
+  | 'sync-history';
 
 export interface ModalConfig {
   /** Modal title (displayed above card in portrait, left side in landscape) */
@@ -90,6 +92,13 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     smallHeader: true,
     leftButton: 'back',
     keyboardAvoiding: true,
+    scrollType: 'default',
+  },
+  'sync-history': {
+    title: 'Troubleshooting',
+    content: SyncHistoryContent,
+    smallHeader: true,
+    leftButton: 'back',
     scrollType: 'default',
   },
 };
