@@ -16,6 +16,11 @@ import {
   LONG_SYNC_CHUNK_THRESHOLD,
   LONG_SYNC_TIME_THRESHOLD_MS,
 } from '../constants/sync';
+import {
+  supersededSlots,
+  syncErrorSlot,
+  type SyncIssueSlot,
+} from '../constants/syncIssues';
 
 // The JSON files are hand-authored PointType-shaped rows. Cast once at
 // import time so the rest of this module can drop the per-call
@@ -67,6 +72,17 @@ export type SyncError =
       message: string;
     }
   | { kind: 'pedometerStorage'; message: string }
+  /**
+   * The step service was down long enough to have cost steps. Nothing was
+   * written natively for that window, so those steps are unrecoverable and the
+   * card offers manual entry.
+   */
+  | {
+      kind: 'pedometerServiceStopped';
+      lastCommitAt: number;
+      staleForMs: number;
+      manufacturer: string;
+    }
   // iOS-only: HealthKit permission is granted but the OS won't let us
   // refresh in the background (Settings → General → Background App Refresh
   // is off, either globally or for this app). Detection requires a native
@@ -95,6 +111,68 @@ export const initialSyncStatus: SyncStatus = {
   error: null,
 };
 
+export interface SyncIssue {
+  error: SyncError;
+  /** Wall-clock time the issue was last observed. */
+  at: number;
+  /**
+   * Set when the user swipes the card away. The issue is kept rather than
+   * deleted so an accidental dismissal is recoverable, and so history can
+   * show what the user did about it.
+   */
+  dismissedAt: number | null;
+  /**
+   * Set when something re-checked the condition and found it gone. Only ever
+   * written by a real re-check, never on a timer or at app start, so the app
+   * cannot claim health it has not verified.
+   */
+  resolvedAt: number | null;
+}
+
+/**
+ * Advisory data, so this is deliberately fire-and-forget with centralized
+ * logging rather than an awaited transactional command: a failed write must
+ * not break a sync or block the UI, and the worst case is a lost history row.
+ */
+const persistSyncIssues = (issues: SyncIssue[]): void => {
+  database
+    .saveSyncIssues(
+      issues.map(issue => ({
+        slot: syncErrorSlot(issue.error),
+        error: issue.error,
+        at: issue.at,
+        dismissedAt: issue.dismissedAt,
+        resolvedAt: issue.resolvedAt,
+      })),
+    )
+    .catch(error => {
+      console.warn('[progress] could not save tracking issue history', error);
+    });
+};
+
+const mergeSyncIssue = (issues: SyncIssue[], error: SyncError): SyncIssue[] => {
+  const replaced = supersededSlots(error);
+  const slot = syncErrorSlot(error);
+  const previous = issues.find(issue => syncErrorSlot(issue.error) === slot);
+  return [
+    ...issues.filter(issue => !replaced.includes(syncErrorSlot(issue.error))),
+    {
+      error,
+      at: Date.now(),
+      // Dismissal is sticky across re-detections of the SAME fault. Several of
+      // these are the result of a deliberate choice made outside the app --
+      // revoking Health Connect access, for instance -- so re-raising the card
+      // every time we notice again would be nagging the user about a decision
+      // they already made. Keyed on kind rather than slot so a different fault
+      // in the same subsystem is still shown.
+      dismissedAt:
+        previous?.error.kind === error.kind ? previous.dismissedAt : null,
+      // A recurrence proves it is not fixed after all.
+      resolvedAt: null,
+    },
+  ];
+};
+
 interface ProgressStore {
   // State
   miles: number;
@@ -113,11 +191,13 @@ interface ProgressStore {
   distanceEntries: DistanceEntry[];
   lastSyncDate: string | null;
   syncStatus: SyncStatus;
-  // Persists the most recent sync error (until the user dismisses it) so
-  // we can surface it in the Settings → Sync panel after the transient
-  // pill has faded.
-  lastSyncError: SyncError | null;
-  lastSyncErrorAt: number | null;
+  /**
+   * Persisted sync issues (until dismissed) so they remain discoverable
+   * after the transient pill fades. At most one entry per slot, because
+   * failures cascade within a subsystem but are independent across them --
+   * see `src/constants/syncIssues.ts`.
+   */
+  syncIssues: SyncIssue[];
   // Dev/test override state
   testOverrideMiles: number | null;
 
@@ -160,7 +240,20 @@ interface ProgressStore {
     status: SyncStatus | ((prev: SyncStatus) => SyncStatus),
   ) => void;
   resetSyncStatus: () => void;
-  clearLastSyncError: () => void;
+  /** Record an issue, replacing any it supersedes. */
+  addSyncIssue: (error: SyncError) => void;
+  /** User swiped the card away; kept in history so it can be re-raised. */
+  dismissSyncIssue: (slot: SyncIssueSlot) => void;
+  /** Bring a dismissed issue back to the banner, from history. */
+  restoreSyncIssue: (slot: SyncIssueSlot) => void;
+  /**
+   * The underlying condition was re-checked and found gone. Only applies to
+   * active issues: a closed one represents a decision the user made, so
+   * relabelling it behind their back would both rewrite that record and take
+   * away its Reopen action. Reopening re-checks explicitly.
+   */
+  resolveSyncIssue: (slot: SyncIssueSlot) => void;
+  clearAllSyncIssues: () => void;
   resetProgress: () => Promise<void>;
   persistMilesSnapshot: () => Promise<void>;
 
@@ -202,8 +295,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   distanceEntries: [],
   lastSyncDate: null,
   syncStatus: initialSyncStatus,
-  lastSyncError: null,
-  lastSyncErrorAt: null,
+  syncIssues: [],
   testOverrideMiles: null,
 
   // Initialize from database on app start
@@ -214,6 +306,15 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       steps: progress.steps,
       distanceEntries: progress.entries,
     });
+
+    // Advisory data, so a failure here must not block hydration of the
+    // journey itself.
+    try {
+      const stored = await database.loadSyncIssues();
+      set({ syncIssues: stored as SyncIssue[] });
+    } catch (error) {
+      console.warn('[progress] could not load tracking issue history', error);
+    }
   },
 
   // Actions
@@ -369,40 +470,88 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
         next.error &&
         next.error.kind !== 'unknown'
       ) {
-        return {
-          syncStatus: next,
-          lastSyncError: next.error,
-          lastSyncErrorAt: Date.now(),
-        };
+        const syncIssues = mergeSyncIssue(state.syncIssues, next.error);
+        persistSyncIssues(syncIssues);
+        return { syncStatus: next, syncIssues };
       }
       // Clear on success: phase=='idle' is only set by the success branch
       // in useSyncInterval (initial state and resetSyncStatus take other
       // code paths). Clearing here avoids the badge flicker that would
       // happen if we cleared on 'syncing' and the retry itself failed.
-      if (next.phase === 'idle' && state.lastSyncError !== null) {
-        return {
-          syncStatus: next,
-          lastSyncError: null,
-          lastSyncErrorAt: null,
-        };
+      // Scoped to health-app: a successful health sync says nothing about
+      // whether the pedometer is still broken.
+      if (next.phase === 'idle' && state.syncIssues.length > 0) {
+        const syncIssues = state.syncIssues.map(issue =>
+          syncErrorSlot(issue.error) === 'health-app' &&
+          issue.resolvedAt === null &&
+          issue.dismissedAt === null
+            ? { ...issue, resolvedAt: Date.now() }
+            : issue,
+        );
+        persistSyncIssues(syncIssues);
+        return { syncStatus: next, syncIssues };
       }
       return { syncStatus: next };
     }),
 
   resetSyncStatus: () => set({ syncStatus: initialSyncStatus }),
 
-  clearLastSyncError: () =>
-    set(state => ({
-      lastSyncError: null,
-      lastSyncErrorAt: null,
-      // Also reset syncStatus if it's still stuck in the error phase, so
-      // anything reading syncStatus.phase (e.g. dev tools, indicators)
-      // doesn't show the error as still active after the user dismissed it.
-      syncStatus:
-        state.syncStatus.phase === 'error'
-          ? initialSyncStatus
-          : state.syncStatus,
-    })),
+  addSyncIssue: error =>
+    set(state => {
+      const syncIssues = mergeSyncIssue(state.syncIssues, error);
+      persistSyncIssues(syncIssues);
+      return { syncIssues };
+    }),
+
+  dismissSyncIssue: slot =>
+    set(state => {
+      const syncIssues = state.syncIssues.map(issue =>
+        syncErrorSlot(issue.error) === slot && issue.dismissedAt === null
+          ? { ...issue, dismissedAt: Date.now() }
+          : issue,
+      );
+      persistSyncIssues(syncIssues);
+      return { syncIssues };
+    }),
+
+  restoreSyncIssue: slot =>
+    set(state => {
+      const syncIssues = state.syncIssues.map(issue =>
+        syncErrorSlot(issue.error) === slot
+          ? { ...issue, dismissedAt: null }
+          : issue,
+      );
+      persistSyncIssues(syncIssues);
+      return { syncIssues };
+    }),
+
+  resolveSyncIssue: slot =>
+    set(state => {
+      const syncIssues = state.syncIssues.map(issue =>
+        syncErrorSlot(issue.error) === slot &&
+        issue.resolvedAt === null &&
+        issue.dismissedAt === null
+          ? { ...issue, resolvedAt: Date.now() }
+          : issue,
+      );
+      persistSyncIssues(syncIssues);
+      return { syncIssues };
+    }),
+
+  clearAllSyncIssues: () =>
+    set(state => {
+      persistSyncIssues([]);
+      return {
+        syncIssues: [],
+        // Also reset syncStatus if it's still stuck in the error phase, so
+        // anything reading syncStatus.phase (e.g. dev tools, indicators)
+        // doesn't show the error as still active after the user dismissed it.
+        syncStatus:
+          state.syncStatus.phase === 'error'
+            ? initialSyncStatus
+            : state.syncStatus,
+      };
+    }),
 
   persistMilesSnapshot: async () => {
     const progress = await database.reconcileProgress(SAVE_ID);
@@ -424,8 +573,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       distanceEntries: progress.entries,
       lastSyncDate: null,
       syncStatus: initialSyncStatus,
-      lastSyncError: null,
-      lastSyncErrorAt: null,
+      syncIssues: [],
       testOverrideMiles: null,
     });
   },

@@ -1,4 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, {
+  forwardRef,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { View, StyleSheet, TextInput } from 'react-native';
 import { useTheme } from '../../stores/settingsStore';
 import { spacing, borderRadius } from '../../styles/global';
@@ -7,6 +13,10 @@ interface TimeInputProps {
   /** Full timestamp (ms). Only the time portion is mutated. */
   date: number;
   onDateChange: (newDate: number) => void;
+}
+
+export interface TimeInputHandle {
+  commit: () => number;
 }
 
 function pad(n: number): string {
@@ -87,55 +97,73 @@ function parseTimeInput(
  * dismisses the keyboard). If input can't be parsed, the field snaps
  * back to the last valid value.
  */
-export default function TimeInput({ date, onDateChange }: TimeInputProps) {
-  const theme = useTheme();
-  const [text, setText] = useState(() => formatTimeInput(date));
+const TimeInput = forwardRef<TimeInputHandle, TimeInputProps>(
+  function TimeInput({ date, onDateChange }, ref) {
+    const theme = useTheme();
+    const [text, setText] = useState(() => formatTimeInput(date));
+    const textRef = useRef(text);
 
-  // Reset the field text whenever the source date changes externally
-  // (e.g. reset button, opening a different entry).
-  useEffect(() => {
-    setText(formatTimeInput(date));
-  }, [date]);
+    // Reset the field text whenever the source date changes externally
+    // (e.g. reset button, opening a different entry).
+    useLayoutEffect(() => {
+      const formatted = formatTimeInput(date);
+      textRef.current = formatted;
+      setText(formatted);
+    }, [date]);
 
-  const commit = () => {
-    const parsed = parseTimeInput(text);
-    if (!parsed) {
-      // Revert to the last known-good value.
-      setText(formatTimeInput(date));
-      return;
-    }
-    const d = new Date(date);
-    d.setHours(parsed.hours24, parsed.minutes, 0, 0);
-    const nextTs = d.getTime();
-    // Normalize the display (e.g. "1045pm" -> "10:45 PM").
-    setText(formatTimeInput(nextTs));
-    if (nextTs !== date) onDateChange(nextTs);
-  };
+    const commit = (): number => {
+      const parsed = parseTimeInput(textRef.current);
+      if (!parsed) {
+        // Revert to the last known-good value.
+        const formatted = formatTimeInput(date);
+        textRef.current = formatted;
+        setText(formatted);
+        return date;
+      }
+      const d = new Date(date);
+      d.setHours(parsed.hours24, parsed.minutes, 0, 0);
+      const nextTs = d.getTime();
+      // Normalize the display (e.g. "1045pm" -> "10:45 PM").
+      const formatted = formatTimeInput(nextTs);
+      textRef.current = formatted;
+      setText(formatted);
+      if (nextTs !== date) onDateChange(nextTs);
+      return nextTs;
+    };
 
-  return (
-    <View style={styles.container}>
-      <TextInput
-        style={[
-          styles.input,
-          {
-            backgroundColor: theme.colors.surface,
-            color: theme.colors.textPrimary,
-            borderColor: theme.colors.divider,
-          },
-        ]}
-        value={text}
-        onChangeText={setText}
-        onBlur={commit}
-        onSubmitEditing={commit}
-        returnKeyType="done"
-        autoCapitalize="characters"
-        autoCorrect={false}
-        placeholder="10:45 AM"
-        placeholderTextColor={theme.colors.textSecondary}
-      />
-    </View>
-  );
-}
+    useImperativeHandle(ref, () => ({ commit }));
+
+    return (
+      <View style={styles.container}>
+        <TextInput
+          testID="edit-time-input"
+          style={[
+            styles.input,
+            {
+              backgroundColor: theme.colors.surface,
+              color: theme.colors.textPrimary,
+              borderColor: theme.colors.divider,
+            },
+          ]}
+          value={text}
+          onChangeText={value => {
+            textRef.current = value;
+            setText(value);
+          }}
+          onBlur={commit}
+          onSubmitEditing={commit}
+          returnKeyType="done"
+          autoCapitalize="characters"
+          autoCorrect={false}
+          placeholder="10:45 AM"
+          placeholderTextColor={theme.colors.textSecondary}
+        />
+      </View>
+    );
+  },
+);
+
+export default TimeInput;
 
 const styles = StyleSheet.create({
   container: {

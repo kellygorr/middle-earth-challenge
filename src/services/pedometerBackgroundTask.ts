@@ -1,7 +1,7 @@
 /**
  * Headless JS task registered as `PedometerSweep` in index.js and
- * invoked ~5x/day by [`PedometerBackgroundWorker`] via
- * [`PedometerHeadlessJsService`]. See docs/pedometer-mode.md § Phase 3b.
+ * invoked directly inside [`PedometerBackgroundWorker`] ~5x/day. See
+ * docs/pedometer-mode.md § Phase 3b.
  *
  * The task's job is to commit a single pedometer `DistanceEntry` for
  * the watermark window `[lastSyncTimestamp, now]`, then advance the

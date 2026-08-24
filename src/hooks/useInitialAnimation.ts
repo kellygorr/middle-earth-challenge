@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   useAnimatedStyle,
   useSharedValue,
@@ -10,8 +10,11 @@ import {
 } from 'react-native-reanimated';
 import { motion } from '../styles/motion';
 
+const PATH_REVEAL_WATCHDOG_BUFFER_MS = 1000;
+
 interface UseInitialAnimationOptions {
   showWelcome: boolean;
+  pathRevealStart?: number;
   // Latest sync state. When the welcome modal dismisses while a sync is in
   // progress, the path reveal animation is skipped (set to full) because
   // the screen already has competing motion (bg pulse, shimmer) and the
@@ -42,6 +45,7 @@ interface UseInitialAnimationReturn {
 
 export function useInitialAnimation({
   showWelcome,
+  pathRevealStart = 0,
   isSyncing = false,
   recenterOpacity,
   originMonitorEnabled,
@@ -54,7 +58,9 @@ export function useInitialAnimation({
   const isSyncingRef = useRef(isSyncing);
   isSyncingRef.current = isSyncing;
   // Initial path reveal animation (0 to 1)
-  const initialBasePathProgress = useSharedValue(showWelcome ? 0 : 1);
+  const initialBasePathProgress = useSharedValue(
+    showWelcome ? pathRevealStart : 1,
+  );
 
   // UI button opacities
   const settingsOpacity = useSharedValue(showWelcome ? 0 : 1);
@@ -72,6 +78,41 @@ export function useInitialAnimation({
   const hasInfoAnimated = useSharedValue(!showWelcome);
   const hasPathRevealed = useSharedValue(!showWelcome);
   const hasStartupSignaled = useSharedValue(!showWelcome);
+  const pathRevealCompletedRef = useRef(false);
+  const startedWithoutWelcomeRef = useRef(!showWelcome);
+  const pathRevealWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const onPathRevealCompleteRef = useRef(onPathRevealComplete);
+  onPathRevealCompleteRef.current = onPathRevealComplete;
+
+  const clearPathRevealWatchdog = useCallback(() => {
+    if (pathRevealWatchdogRef.current !== null) {
+      clearTimeout(pathRevealWatchdogRef.current);
+      pathRevealWatchdogRef.current = null;
+    }
+  }, []);
+
+  const completePathReveal = useCallback(() => {
+    if (pathRevealCompletedRef.current) return;
+    pathRevealCompletedRef.current = true;
+    clearPathRevealWatchdog();
+    initialBasePathProgress.value = 1;
+    onPathRevealCompleteRef.current?.();
+  }, [clearPathRevealWatchdog, initialBasePathProgress]);
+
+  useEffect(
+    () => () => {
+      clearPathRevealWatchdog();
+    },
+    [clearPathRevealWatchdog],
+  );
+
+  useEffect(() => {
+    if (startedWithoutWelcomeRef.current) {
+      completePathReveal();
+    }
+  }, [completePathReveal]);
 
   // Animated styles for buttons
   const settingsEnterStyle = useAnimatedStyle(() => ({
@@ -124,11 +165,14 @@ export function useInitialAnimation({
       if (!hasPathRevealed.value) {
         hasPathRevealed.value = true;
         if (isSyncingRef.current) {
-          initialBasePathProgress.value = 1;
-          if (onPathRevealComplete) {
-            runOnJS(onPathRevealComplete)();
-          }
+          completePathReveal();
         } else {
+          pathRevealWatchdogRef.current = setTimeout(
+            completePathReveal,
+            motion.pathReveal.delay +
+              motion.pathReveal.duration +
+              PATH_REVEAL_WATCHDOG_BUFFER_MS,
+          );
           initialBasePathProgress.value = withDelay(
             motion.pathReveal.delay,
             withTiming(
@@ -136,8 +180,8 @@ export function useInitialAnimation({
               { duration: motion.pathReveal.duration },
               finished => {
                 'worklet';
-                if (finished && onPathRevealComplete) {
-                  runOnJS(onPathRevealComplete)();
+                if (finished) {
+                  runOnJS(completePathReveal)();
                 }
               },
             ),
@@ -171,15 +215,18 @@ export function useInitialAnimation({
       }
     } else {
       // Reset opacities when welcome shows
+      clearPathRevealWatchdog();
       cancelAnimation(settingsOpacity);
       cancelAnimation(labelsOpacity);
       cancelAnimation(infoOpacity);
       cancelAnimation(startupSignal);
+      cancelAnimation(initialBasePathProgress);
       hasSettingsAnimated.value = false;
       hasLabelsAnimated.value = false;
       hasInfoAnimated.value = false;
       hasPathRevealed.value = false;
       hasStartupSignaled.value = false;
+      pathRevealCompletedRef.current = false;
       settingsOpacity.value = withTiming(0, {
         duration: motion.button.exitDuration,
       });
@@ -202,10 +249,11 @@ export function useInitialAnimation({
       resetToOrigin();
 
       // Hide path so it can re-run on next dismissal
-      initialBasePathProgress.value = 0;
+      initialBasePathProgress.value = pathRevealStart;
     }
   }, [
     showWelcome,
+    pathRevealStart,
     initialBasePathProgress,
     settingsOpacity,
     labelsOpacity,
@@ -219,8 +267,9 @@ export function useInitialAnimation({
     hasInfoAnimated,
     hasPathRevealed,
     hasStartupSignaled,
+    clearPathRevealWatchdog,
+    completePathReveal,
     onStartupReady,
-    onPathRevealComplete,
   ]);
 
   return {

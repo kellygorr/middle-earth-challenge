@@ -116,12 +116,10 @@ export default function DistanceContent() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
-  const flatListRef = useRef<FlatList<DayGroup>>(null);
 
   // Store state
   const distanceEntries = useProgressStore(state => state.distanceEntries);
 
-  const editingEntry = useUIStore(state => state.editingEntry);
   const setEditingEntry = useUIStore(state => state.setEditingEntry);
 
   // Pagination state
@@ -264,6 +262,7 @@ export default function DistanceContent() {
     }
     return new Set();
   });
+  const mostRecentDayRef = useRef(dayGroupsWithLive[0]?.dayKey ?? null);
 
   // Animated rotation values for each day's chevron
   const rotationValues = useRef<Map<number, Animated.Value>>(new Map());
@@ -283,21 +282,27 @@ export default function DistanceContent() {
     [],
   );
 
-  // Update expanded days when a new most recent day appears — either a
-  // freshly committed entry OR the synthetic today group that appears
-  // when pedometer live steps arrive before today's first commit.
+  // Writes rebuild the groups even when their day keys do not change.
+  // Auto-expand only when a genuinely newer day appears; otherwise keep
+  // the user's collapsed state.
   useEffect(() => {
-    if (dayGroupsWithLive.length > 0) {
-      const mostRecentDay = dayGroupsWithLive[0].dayKey;
-      setExpandedDays(prev => {
-        if (!prev.has(mostRecentDay)) {
-          const next = new Set(prev);
-          next.add(mostRecentDay);
-          return next;
-        }
-        return prev;
-      });
+    const mostRecentDay = dayGroupsWithLive[0]?.dayKey ?? null;
+    const previousMostRecentDay = mostRecentDayRef.current;
+    mostRecentDayRef.current = mostRecentDay;
+
+    if (
+      mostRecentDay === null ||
+      (previousMostRecentDay !== null && mostRecentDay <= previousMostRecentDay)
+    ) {
+      return;
     }
+
+    setExpandedDays(prev => {
+      if (prev.has(mostRecentDay)) return prev;
+      const next = new Set(prev);
+      next.add(mostRecentDay);
+      return next;
+    });
   }, [dayGroupsWithLive]);
 
   const toggleDay = (dayKey: number) => {
@@ -343,15 +348,8 @@ export default function DistanceContent() {
     }
   }, [hasMoreDays, isLoadingMore]);
 
-  // Editing a row now delegates to `EditEntryModal`. Tapping the pencil
-  // simply flips the uiStore's `editingEntry` on; the modal watches
-  // that value and mounts itself. Tapping the pencil for an already-
-  // open entry closes the modal.
+  // Editing delegates to a separate overlay, leaving this list untouched.
   const startEditing = (item: DistanceEntry) => {
-    if (editingEntry?.id === item.id) {
-      setEditingEntry(null);
-      return;
-    }
     setEditingEntry(item, item.date as number);
   };
 
@@ -436,6 +434,7 @@ export default function DistanceContent() {
   const renderEntry = (item: DistanceEntry) => {
     const isLivePedometer = item.id === LIVE_ENTRY_ID;
     const inProgress = isLivePedometer || inProgressHealthIds.has(item.id);
+    const isHealthAdjustment = item.source === 'health-reconciliation';
     const sourceLabel = getDistanceSourceLabel(item.source);
     return (
       <View key={item.id}>
@@ -459,6 +458,7 @@ export default function DistanceContent() {
                 />
               }
               onPress={() => startEditing(item)}
+              accessibilityLabel="Edit distance entry"
               variant="transparent"
               size="small"
               hitSlop={16}
@@ -485,6 +485,7 @@ export default function DistanceContent() {
               ]}
             >
               {sourceLabel}
+              {isHealthAdjustment ? '*' : ''}
             </Text>
           </View>
           <View style={styles.entryValue}>
@@ -508,6 +509,18 @@ export default function DistanceContent() {
             </Text>
           </View>
         </View>
+        {isHealthAdjustment && (
+          <Text
+            style={[
+              typographyThemed(theme).caption2Secondary,
+              styles.adjustmentExplanation,
+            ]}
+          >
+            *Your health app reported more {useMiles ? 'miles' : 'kilometers'}
+            {' or steps than this app had captured. The difference was added '}
+            at the end of the day.
+          </Text>
+        )}
       </View>
     );
   };
@@ -545,7 +558,10 @@ export default function DistanceContent() {
               {formatDateLabel(item.dayKey)}
             </Text>
             <Text style={typographyThemed(theme).bodyPrimary}>
-              {formatDistance(item.totalMiles, true)}
+              {formatDistance(item.totalMiles, {
+                includeUnits: true,
+                useMiles,
+              })}
               {' / '}
               {item.totalSteps.toLocaleString()} steps
             </Text>
@@ -577,9 +593,8 @@ export default function DistanceContent() {
   return (
     <>
       <FlatList
-        ref={flatListRef}
         data={dayGroupsWithLive}
-        extraData={`${editingEntry?.id ?? ''}|${liveSteps}`}
+        extraData={expandedDays}
         keyExtractor={item => item.dayKey.toString()}
         renderItem={renderDayGroup}
         ItemSeparatorComponent={DaySeparator}
@@ -593,6 +608,7 @@ export default function DistanceContent() {
         keyboardShouldPersistTaps="handled"
         removeClippedSubviews={false}
         inverted
+        maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
         onEndReached={loadMoreDays}
         onEndReachedThreshold={0.5}
         scrollEventThrottle={16}
@@ -653,6 +669,9 @@ const styles = StyleSheet.create({
   },
   entryStepsCaption: {
     lineHeight: 18,
+  },
+  adjustmentExplanation: {
+    paddingBottom: spacing.sm,
   },
   separator: {
     height: 1,

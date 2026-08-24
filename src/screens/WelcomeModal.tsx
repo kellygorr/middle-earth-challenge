@@ -23,6 +23,7 @@ import { useProgressStore } from '../stores/progressStore';
 import JourneyProgressBar from '../components/JourneyProgressBar';
 import SyncIndicator from '../components/SyncIndicator';
 import SyncErrorBanner from '../components/SyncErrorBanner';
+import SettingsRef from '../components/SettingsRef';
 
 interface WelcomeModalProps {
   visible: boolean;
@@ -37,7 +38,11 @@ export default function WelcomeModal({
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const miles = useProgressStore(state => state.miles) || 0;
-  const lastSyncError = useProgressStore(state => state.lastSyncError);
+  const hasSyncIssues = useProgressStore(state =>
+    state.syncIssues.some(
+      issue => issue.dismissedAt === null && issue.resolvedAt === null,
+    ),
+  );
 
   // Measure the journey progress bar so the absolutely-positioned sync
   // pill can sit exactly above it without overlapping.
@@ -110,9 +115,21 @@ export default function WelcomeModal({
                     × dismiss; we deliberately do NOT clear it when the
                     welcome modal closes — the badge dot on Settings
                     should keep reflecting the unresolved problem. */}
-                {lastSyncError && (
+                {hasSyncIssues && (
                   <View style={styles.bannerWrap}>
-                    <SyncErrorBanner />
+                    <SyncErrorBanner bleed={spacing.xl} />
+                    <Text
+                      style={[
+                        typographyThemed(theme).caption2Inverted,
+                        styles.bannerHint,
+                      ]}
+                    >
+                      Troubleshooting history is available in{' '}
+                      <SettingsRef
+                        size={12}
+                        color={theme.colors.textInverted}
+                      />
+                    </Text>
                   </View>
                 )}
               </View>
@@ -223,6 +240,10 @@ const styles = StyleSheet.create({
   bannerWrap: {
     width: '100%',
     marginTop: spacing.xl,
+  },
+  bannerHint: {
+    marginTop: spacing.xs,
+    textAlign: 'left',
   },
   hint: {
     textAlign: 'center',

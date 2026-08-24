@@ -4,6 +4,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
 import { pedometerService } from './pedometerService';
 import { commitPedometerRange } from './pedometerCommit';
+import { evaluatePedometerCommitHealth } from './pedometerHealth';
 import { startOfLocalDay } from './dualSourceReconciliation';
 import { fitnessService } from './fitnessService';
 
@@ -143,7 +144,7 @@ async function performTrackingModeSwitch(
   });
   progress.setLastSyncDate(new Date().toISOString());
   progress.resetSyncStatus();
-  progress.clearLastSyncError();
+  progress.clearAllSyncIssues();
 
   if (usesPedometer(mode)) {
     if (!pedometerService.isSupported()) {
@@ -272,10 +273,13 @@ export async function ensureTrackingModeRunning(): Promise<void> {
           message: env.samplePersistenceError ?? 'Native sample write failed',
         },
       });
-    } else if (progress.lastSyncError?.kind === 'pedometerStorage') {
-      progress.clearLastSyncError();
+    } else if (
+      progress.syncIssues.some(issue => issue.error.kind === 'pedometerStorage')
+    ) {
+      progress.resolveSyncIssue('pedometer');
     }
-    // Match the selection-time gate in SyncContentAndroid: both
+
+    // Matches the selection-time gate in SyncContentAndroid: both
     // physical-activity AND background-activity (battery-opt allowlist)
     // are required. If either is off we can't reliably keep the FGS
     // alive across Doze, so treat it the same as an outright revoke
@@ -416,6 +420,37 @@ export async function ensureTrackingModeRunning(): Promise<void> {
       // (cold boot, force-stop recovery, fresh install).
       if (!running) {
         await pedometerService.startTracking();
+      }
+
+      // Reported only after the restart above, because both of these are
+      // retrospective: this pass repairs the condition it is describing. A
+      // present-tense "tracking is stopped" would be false by the time the
+      // card renders, and a restart failure is not something the user can act
+      // on anyway -- the next foreground pass will report it again.
+      //
+      // Skipped when permissions are missing (handled by the gate above),
+      // because then a dead service is a revoke, not a battery manager, and
+      // the card would name the wrong cause and the wrong fix.
+      const commitHealth = evaluatePedometerCommitHealth({
+        trackingMode: settings.trackingMode,
+        lastCommitAt: settings.lastSyncTimestamp,
+        now: Date.now(),
+        serviceRunning: running,
+      });
+      if (commitHealth.status === 'service-stopped') {
+        progress.addSyncIssue({
+          kind: 'pedometerServiceStopped',
+          lastCommitAt: commitHealth.lastCommitAt,
+          staleForMs: commitHealth.staleForMs,
+          manufacturer: env.manufacturer || '',
+        });
+      } else if (
+        commitHealth.status === 'ok' &&
+        progress.syncIssues.some(
+          issue => issue.error.kind === 'pedometerServiceStopped',
+        )
+      ) {
+        progress.resolveSyncIssue('pedometer');
       }
     } else if (running) {
       // Persisted off-state is the user's intent. Mark cleanup before

@@ -141,6 +141,7 @@ describe('dual source reconciliation', () => {
       entry => entry.id === reconciliationEntryId(dayOne),
     );
     expect(topUp.miles).toBeCloseTo(3);
+    expect(topUp.date).toBe(dayTwo - 1);
     expect(
       progress.distanceEntries.find(
         entry => entry.id === reconciliationEntryId(dayTwo),

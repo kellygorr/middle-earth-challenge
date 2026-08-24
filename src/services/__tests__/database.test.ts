@@ -1,6 +1,8 @@
 import { open } from '@op-engineering/op-sqlite';
 
 import { database } from '../database';
+import { useProgressStore } from '../../stores/progressStore';
+import { createTransactionalProgressDb } from '../__testHelpers__/transactionalProgressDb';
 
 const mockOpen = open as jest.MockedFunction<typeof open>;
 
@@ -57,6 +59,31 @@ describe('database initialization', () => {
     );
     expect(mockDb.executeSync).toHaveBeenCalledWith(
       'ALTER TABLE user_settings ADD COLUMN pedometer_cleanup_pending INTEGER NOT NULL DEFAULT 0',
+    );
+  });
+
+  it('moves existing health adjustments to the end of their local day', async () => {
+    const mockDb = createMockDatabase();
+    mockDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes("WHERE source = 'health-reconciliation'")) {
+        return {
+          rows: [
+            {
+              id: 'health_reconciliation_2026-08-16',
+              date: new Date(2026, 7, 16, 12).getTime(),
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+
+    await database.init();
+
+    expect(mockDb.executeSync).toHaveBeenCalledWith(
+      'UPDATE distance_entries SET date = ? WHERE id = ?',
+      [new Date(2026, 7, 17).getTime() - 1, 'health_reconciliation_2026-08-16'],
     );
   });
 
@@ -222,5 +249,117 @@ describe('database initialization', () => {
 
     expect(mockDb.executeSync).toHaveBeenCalledWith('ROLLBACK');
     expect(mockDb.executeSync).not.toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('leaves persisted and in-memory progress unchanged when recalculation fails', async () => {
+    const originalEntry = {
+      id: 'manual-1',
+      saveId: 'default',
+      date: 1,
+      miles: 2,
+      steps: 4000,
+      source: 'manual-distance' as const,
+    };
+    const mockDb = createTransactionalProgressDb({
+      entries: [originalEntry],
+      snapshot: { miles: 2, steps: 4000, cacheVersion: 1 },
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    useProgressStore.setState({
+      distanceEntries: [originalEntry],
+      miles: 2,
+      steps: 4000,
+    });
+    mockDb.failSnapshotWrite();
+
+    await expect(
+      useProgressStore.getState().applyDistanceEntryChanges({
+        upsert: [
+          {
+            id: 'manual-2',
+            saveId: 'default',
+            date: 2,
+            miles: 3,
+            steps: 6000,
+            source: 'manual-distance',
+          },
+        ],
+      }),
+    ).rejects.toThrow('snapshot write failed');
+
+    const persisted = mockDb.readState();
+    expect([...persisted.entries.values()]).toEqual([originalEntry]);
+    expect(persisted.snapshot).toEqual({
+      miles: 2,
+      steps: 4000,
+      cacheVersion: 1,
+    });
+    expect(useProgressStore.getState()).toMatchObject({
+      distanceEntries: [originalEntry],
+      miles: 2,
+      steps: 4000,
+    });
+  });
+
+  it('repairs an unversioned snapshot from persisted entries', async () => {
+    const mockDb = createTransactionalProgressDb({
+      entries: [
+        {
+          id: 'manual-1',
+          saveId: 'default',
+          date: 1,
+          miles: 3,
+          steps: 6000,
+          source: 'manual-distance',
+        },
+      ],
+      snapshot: { miles: 99, steps: 99, cacheVersion: 0 },
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+
+    await expect(database.hydrateProgress('default')).resolves.toMatchObject({
+      miles: 3,
+      steps: 6000,
+    });
+    expect(mockDb.readState().snapshot).toEqual({
+      miles: 3,
+      steps: 6000,
+      cacheVersion: 1,
+    });
+  });
+
+  it('does not advance the pedometer cursor or retain entries on failure', async () => {
+    const mockDb = createTransactionalProgressDb({
+      snapshot: { miles: 0, steps: 0, cacheVersion: 1 },
+      lastSyncTimestamp: 100,
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.failCursorWrite();
+
+    await expect(
+      database.applyPedometerSyncChunk(
+        'default',
+        [
+          {
+            id: 'pedo_100',
+            saveId: 'default',
+            date: 150,
+            miles: 1,
+            steps: 2000,
+            source: 'pedometer',
+          },
+        ],
+        200,
+      ),
+    ).rejects.toThrow('cursor write failed');
+
+    expect(mockDb.readState()).toMatchObject({
+      lastSyncTimestamp: 100,
+      snapshot: { miles: 0, steps: 0, cacheVersion: 1 },
+    });
+    expect(mockDb.readState().entries).toEqual(new Map());
   });
 });

@@ -199,7 +199,7 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
           {displayed.lineTwo && (
             <Text
               style={[
-                typographyThemed(theme).button,
+                typographyThemed(theme).buttonSmall,
                 styles.textSecondary,
                 { color: theme.colors.checkpointLabel },
               ]}

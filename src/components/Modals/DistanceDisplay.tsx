@@ -19,7 +19,7 @@ function DistanceValue({ value, unitLabel, color }: DistanceValueProps) {
   const theme = useTheme();
   const themedTypography = typographyThemed(theme);
   const valueLineHeight = Number(themedTypography.titleLarge.fontSize) + 2;
-  const unitLineHeight = Number(themedTypography.button.fontSize) + 2;
+  const unitLineHeight = Number(themedTypography.buttonSmall.fontSize) + 2;
   const [unitWrapped, setUnitWrapped] = React.useState(false);
 
   return (
@@ -38,7 +38,7 @@ function DistanceValue({ value, unitLabel, color }: DistanceValueProps) {
           setUnitWrapped(event.nativeEvent.layout.y >= valueLineHeight - 1)
         }
         style={[
-          themedTypography.button,
+          themedTypography.buttonSmall,
           styles.suffix,
           { color, lineHeight: unitLineHeight },
         ]}

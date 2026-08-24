@@ -4,18 +4,25 @@ const mockStopTracking = jest.fn();
 const mockIsServiceRunning = jest.fn();
 const mockGetEnvironment = jest.fn();
 const mockSetSyncStatus = jest.fn();
-const mockClearLastSyncError = jest.fn();
+const mockResolveSyncIssue = jest.fn();
+const mockClearAllSyncIssues = jest.fn();
 const mockProgress: {
-  lastSyncError: null | { kind: 'pedometerStorage'; message: string };
+  syncIssues: Array<{
+    error: { kind: string; message?: string };
+    at: number;
+    dismissedAt: number | null;
+  }>;
   setLastSyncDate: jest.Mock;
   resetSyncStatus: jest.Mock;
-  clearLastSyncError: jest.Mock;
+  clearAllSyncIssues: jest.Mock;
+  resolveSyncIssue: jest.Mock;
   setSyncStatus: jest.Mock;
 } = {
-  lastSyncError: null,
+  syncIssues: [],
   setLastSyncDate: jest.fn(),
   resetSyncStatus: jest.fn(),
-  clearLastSyncError: jest.fn(),
+  clearAllSyncIssues: mockClearAllSyncIssues,
+  resolveSyncIssue: mockResolveSyncIssue,
   setSyncStatus: mockSetSyncStatus,
 };
 const mockSettings: {
@@ -132,8 +139,8 @@ describe('tracking mode pedometer flush boundary', () => {
     mockUpdateSyncSettings.mockImplementation(async updates => {
       Object.assign(mockSettings, updates);
     });
-    mockProgress.lastSyncError = null;
-    mockProgress.clearLastSyncError = mockClearLastSyncError;
+    mockProgress.syncIssues = [];
+    mockProgress.resolveSyncIssue = mockResolveSyncIssue;
     jest.spyOn(Date, 'now').mockReturnValue(200);
   });
 
@@ -244,13 +251,16 @@ describe('tracking mode pedometer flush boundary', () => {
       }),
     );
 
-    mockProgress.lastSyncError = {
-      kind: 'pedometerStorage',
-      message: 'disk full',
-    };
+    mockProgress.syncIssues = [
+      {
+        error: { kind: 'pedometerStorage', message: 'disk full' },
+        at: 1,
+        dismissedAt: null,
+      },
+    ];
     await ensureTrackingModeRunning();
 
-    expect(mockClearLastSyncError).toHaveBeenCalledTimes(1);
+    expect(mockResolveSyncIssue).toHaveBeenCalledWith('pedometer');
     Platform.OS = originalOS;
   });
 });

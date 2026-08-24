@@ -6,24 +6,23 @@ import {
   TextInput,
   Keyboard,
   Pressable,
-  useWindowDimensions,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing, borderRadius } from '../../../styles/global';
 import Button from '../../Buttons';
-import { useUIStore } from '../../../stores/uiStore';
 import { useProgressStore } from '../../../stores/progressStore';
 import { DistanceEntry } from '../../../types';
 import { milesToSteps, stepsToMiles } from '../../../utils/stride';
 import { kmToMiles } from '../../../utils/date';
 import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
+import { validateManualEntryInput } from '../../../utils/manualEntryValidation';
 
 type AddMode = 'distance' | 'steps';
 
 /**
  * MilesFooter - Footer content for the Miles modal.
- * Displays total and add input. Uses uiStore for pending state.
+ * Displays total and add input.
  *
  * The add input can be toggled between distance (miles or km, per the
  * user's unit setting) and steps. Defaults to distance. When steps mode
@@ -35,25 +34,24 @@ type AddMode = 'distance' | 'steps';
 export default function MilesFooter() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
   const inputRef = useRef<TextInput>(null);
   const [addInput, setAddInput] = useState('');
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [addMode, setAddMode] = useState<AddMode>('distance');
+  const [inputError, setInputError] = useState<string | null>(null);
 
-  // Pending state from uiStore
-  const editingEntry = useUIStore(state => state.editingEntry);
   const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
   const clearTestOverride = useProgressStore(state => state.clearTestOverride);
   const addLockRef = useRef(false);
 
   const handleAdd = async () => {
-    const delta = parseFloat(addInput);
-    // isNaN alone accepts Infinity, which pasted exponent input can produce.
-    if (!Number.isFinite(delta) || delta <= 0) {
+    const validation = validateManualEntryInput(addInput, addMode === 'steps');
+    if (validation.value === null) {
+      setInputError(validation.error);
       return;
     }
+    const delta = validation.value;
+    setInputError(null);
     if (addLockRef.current) return;
     addLockRef.current = true;
 
@@ -62,12 +60,7 @@ export default function MilesFooter() {
 
     let entry: DistanceEntry;
     if (addMode === 'steps') {
-      // Steps are discrete; drop any decimal portion the user typed.
-      const inputSteps = Math.floor(delta);
-      if (inputSteps <= 0) {
-        addLockRef.current = false;
-        return;
-      }
+      const inputSteps = delta;
       entry = {
         id: `manual_${timestamp}`,
         saveId,
@@ -107,13 +100,9 @@ export default function MilesFooter() {
     // miles); clear whatever the user typed so they don't accidentally
     // submit the wrong unit.
     setAddInput('');
+    setInputError(null);
     setAddMode(mode);
   };
-
-  // Hide in landscape when editing
-  if (isLandscape && editingEntry) {
-    return null;
-  }
 
   const distanceLabel = useMiles ? 'Miles' : 'Km';
   const isSteps = addMode === 'steps';
@@ -171,7 +160,10 @@ export default function MilesFooter() {
             },
           ]}
           value={addInput}
-          onChangeText={setAddInput}
+          onChangeText={value => {
+            setAddInput(value);
+            setInputError(null);
+          }}
           keyboardType={isSteps ? 'number-pad' : 'decimal-pad'}
           disableFullscreenUI={true}
           placeholder={isInputFocused ? '' : '0'}
@@ -181,6 +173,19 @@ export default function MilesFooter() {
         />
         <Text style={typographyThemed(theme).bodyPrimary}>{unitLabel}</Text>
       </View>
+
+      <Text
+        testID="add-entry-validation"
+        accessibilityLiveRegion="polite"
+        accessibilityRole={inputError ? 'alert' : undefined}
+        numberOfLines={1}
+        style={[
+          typographyThemed(theme).caption2Secondary,
+          styles.validationSlot,
+        ]}
+      >
+        {inputError ?? ' '}
+      </Text>
 
       {/* Bottom row: mode toggle (left) · add button (right) */}
       <View style={styles.controlsRow}>
@@ -246,6 +251,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  validationSlot: {
+    marginTop: -spacing.xs,
+    marginBottom: spacing.xs,
   },
   input: {
     paddingHorizontal: spacing.md,

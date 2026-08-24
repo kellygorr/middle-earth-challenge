@@ -8,6 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
+import { useProgressStore } from '../../../stores/progressStore';
 import { typographyThemed } from '../../../styles/typography';
 import {
   spacing,
@@ -15,13 +16,15 @@ import {
   iconButtonSizes,
   borderRadius,
 } from '../../../styles/global';
-import Button, { IconButton } from '../../Buttons';
+import Button from '../../Buttons';
 import SectionHeader from '../SectionHeader';
 import Section from '../Section';
 import ToggleRow from '../ToggleRow';
+import ButtonRow from '../ButtonRow';
 import SyncErrorBanner from '../../SyncErrorBanner';
+import { StatusBadge } from '../../StatusBadge';
 import { SyncNowRow } from '../../SyncNowRow';
-import { SyncIcon, DataIcon, ChatIcon } from '../../../assets/icons';
+import { SyncIcon, DataIcon, ChatIcon, ClockIcon } from '../../../assets/icons';
 import { useUIStore } from '../../../stores/uiStore';
 
 /**
@@ -82,11 +85,17 @@ export default function SettingsContent() {
   // dead-end there — hide it entirely.
   const showLiveSync = syncEnabled && trackingMode === 'health-app';
 
+  const hasActiveTrackingIssue = useProgressStore(state =>
+    state.syncIssues.some(
+      issue => issue.dismissedAt === null && issue.resolvedAt === null,
+    ),
+  );
+  const hasTrackingHistory = useProgressStore(
+    state => state.syncIssues.length > 0,
+  );
+
   return (
     <>
-      {/* Sync error advisory (renders nothing when no error) */}
-      <SyncErrorBanner />
-
       {/* Theme Selection */}
       <SectionHeader title="Theme" />
       <View style={styles.themeButtons}>
@@ -238,33 +247,13 @@ export default function SettingsContent() {
       <Section>
         <SectionHeader title="Sync health data" />
 
-        {/* Sync option - show toggle with icon */}
-        <View
-          style={[
-            styles.contentRow,
-            styles.contentRowSpaceBetween,
-            styles.contentRowWithGap,
-          ]}
-        >
-          <Pressable
-            style={styles.iconButtonContainer}
-            onPress={() => pushModal({ type: 'sync' })}
-          >
-            <IconButton
-              icon={<SyncIcon size={iconSizes.medium} />}
-              variant={syncEnabled ? 'brand' : 'outline'}
-            />
-          </Pressable>
-          <Pressable
-            style={styles.flex1}
-            onPress={() => pushModal({ type: 'sync' })}
-          >
-            <Text style={[typographyThemed(theme).bodyPrimary]}>
-              Manage health syncing
-            </Text>
-            {syncEnabled && lastSyncDate ? (
-              <Text style={[typographyThemed(theme).captionSecondary]}>
-                {`Last synced: ${
+        <ButtonRow
+          icon={<SyncIcon size={iconSizes.medium} />}
+          active={syncEnabled}
+          label="Manage health syncing"
+          caption={
+            syncEnabled && lastSyncDate
+              ? `Last synced: ${
                   lastSyncWasToday
                     ? `Today, ${lastSyncDate.toLocaleTimeString(undefined, {
                         timeStyle: 'short',
@@ -273,15 +262,13 @@ export default function SettingsContent() {
                         dateStyle: 'short',
                         timeStyle: 'short',
                       })
-                }`}
-              </Text>
-            ) : (
-              <Text style={[typographyThemed(theme).captionSecondary]}>
-                {syncEnabled ? 'Enabled' : 'Disabled'}
-              </Text>
-            )}
-          </Pressable>
-        </View>
+                }`
+              : syncEnabled
+              ? 'Enabled'
+              : 'Disabled'
+          }
+          onPress={() => pushModal({ type: 'sync' })}
+        />
 
         {/* Manual sync trigger. Hidden when no health provider is connected. */}
         {showSyncNow && (
@@ -342,7 +329,9 @@ export default function SettingsContent() {
           Share your journey progress with friends and see their progress on
           your map.
         </Text>
-        <ToggleRow
+        <ButtonRow
+          icon={<ChatIcon size={iconSizes.medium} />}
+          active={sharingEnabled || sharingProvisioningPending}
           label="Connect with friends"
           caption={
             sharingDeletionPending
@@ -354,16 +343,6 @@ export default function SettingsContent() {
               : 'Sharing off'
           }
           onPress={() => pushModal({ type: 'friend-progress' })}
-          icon={
-            <IconButton
-              icon={<ChatIcon size={iconSizes.medium} />}
-              variant={
-                sharingEnabled || sharingProvisioningPending
-                  ? 'brand'
-                  : 'outline'
-              }
-            />
-          }
         />
       </Section>
 
@@ -377,6 +356,31 @@ export default function SettingsContent() {
           value={devMode}
           onValueChange={setDevMode}
         />
+      </Section>
+
+      {/* Troubleshooting */}
+      <Section>
+        <SectionHeader title="Troubleshooting" />
+
+        {/* Renders nothing when there is no active issue. */}
+        <SyncErrorBanner bleed={spacing.lg} />
+
+        {!hasActiveTrackingIssue && (
+          <StatusBadge
+            label="No active issues"
+            tone="neutral"
+            style={styles.trackingStatusOk}
+          />
+        )}
+
+        {hasTrackingHistory && (
+          <ButtonRow
+            icon={<ClockIcon size={iconSizes.medium} />}
+            label="Issue history"
+            caption="Problems we detected, including ones you dismissed"
+            onPress={() => pushModal({ type: 'sync-history' })}
+          />
+        )}
       </Section>
 
       {/* Data Management */}
@@ -405,31 +409,13 @@ export default function SettingsContent() {
           </Text>
         </View>
 
-        <Pressable
-          style={[
-            styles.contentRow,
-            styles.contentRowSpaceBetween,
-            styles.contentRowWithGap,
-            styles.contentRowBorderTop,
-            { borderTopColor: theme.colors.divider },
-          ]}
+        <ButtonRow
+          icon={<DataIcon size={iconSizes.medium} />}
+          label="Manage data"
+          caption="Delete synced data, reset progress, or clear settings"
           onPress={() => pushModal({ type: 'data' })}
-        >
-          <View style={styles.iconButtonContainer}>
-            <IconButton
-              icon={<DataIcon size={iconSizes.medium} />}
-              variant="primary"
-            />
-          </View>
-          <View style={styles.flex1}>
-            <Text style={[typographyThemed(theme).bodyPrimary]}>
-              Manage data
-            </Text>
-            <Text style={[typographyThemed(theme).captionSecondary]}>
-              Delete synced data, reset progress, or clear settings
-            </Text>
-          </View>
-        </Pressable>
+          borderTop
+        />
       </Section>
     </>
   );
@@ -480,6 +466,9 @@ const styles = StyleSheet.create({
     width: iconButtonSizes.medium,
     height: iconButtonSizes.medium,
     borderRadius: borderRadius.full,
+  },
+  trackingStatusOk: {
+    alignSelf: 'center',
   },
   dataUseIntro: {
     paddingBottom: spacing.md,

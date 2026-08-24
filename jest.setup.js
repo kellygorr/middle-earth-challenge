@@ -26,7 +26,10 @@ jest.mock('react-native-reanimated', () => ({
   __esModule: true,
   default: mockReanimated,
   ...mockReanimated,
-  useSharedValue: jest.fn(() => ({ value: 0 })),
+  useSharedValue: jest.fn(initialValue => {
+    const ReactModule = require('react');
+    return ReactModule.useRef({ value: initialValue }).current;
+  }),
   useAnimatedStyle: jest.fn(() => ({})),
   useDerivedValue: jest.fn(() => ({ value: 0 })),
   useAnimatedProps: jest.fn(() => ({})),
@@ -101,15 +104,38 @@ jest.mock('@react-native-firebase/firestore', () => ({
   where: jest.fn(),
 }));
 
+jest.mock('react-native-safe-area-context', () => {
+  const ReactModule = require('react');
+  const { View } = require('react-native');
+  const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  const frame = { x: 0, y: 0, width: 390, height: 844 };
+
+  return {
+    SafeAreaProvider: ({ children }) =>
+      ReactModule.createElement(View, null, children),
+    SafeAreaView: ({ children, ...props }) =>
+      ReactModule.createElement(View, props, children),
+    SafeAreaInsetsContext: ReactModule.createContext(insets),
+    useSafeAreaInsets: () => insets,
+    useSafeAreaFrame: () => frame,
+    initialWindowMetrics: { insets, frame },
+  };
+});
+
 // Mock Skia
 jest.mock('@shopify/react-native-skia', () => ({
   Canvas: 'Canvas',
   Path: 'Path',
   Group: 'Group',
+  LinearGradient: 'LinearGradient',
+  vec: jest.fn((x, y) => ({ x, y })),
   Skia: {
     Path: {
       MakeFromSVGString: jest.fn(() => ({})),
     },
+    ContourMeasureIter: jest.fn(() => ({
+      next: jest.fn(() => null),
+    })),
   },
   useFont: jest.fn(),
   useDerivedValue: jest.fn(() => ({ value: 0 })),

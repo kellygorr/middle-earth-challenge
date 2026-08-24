@@ -35,6 +35,7 @@ export default function DateStepper({ date, onDateChange }: DateStepperProps) {
           />
         }
         onPress={() => onDateChange(date - ONE_DAY_MS)}
+        accessibilityLabel="Previous day"
         size="small"
         variant="transparent"
         hitSlop={12}
@@ -58,6 +59,7 @@ export default function DateStepper({ date, onDateChange }: DateStepperProps) {
           />
         }
         onPress={() => onDateChange(date + ONE_DAY_MS)}
+        accessibilityLabel="Next day"
         size="small"
         variant="transparent"
         hitSlop={12}

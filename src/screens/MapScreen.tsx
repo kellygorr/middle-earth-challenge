@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
+import { Skia } from '@shopify/react-native-skia';
 import {
   GestureHandlerRootView,
   GestureDetector,
@@ -37,6 +38,7 @@ import FriendProgressMarkerLayer from '../components/FriendProgressMarkerLayer';
 
 import { spacing } from '../styles/global';
 import { formatDistance } from '../utils/date';
+import { mapBookMilesToPathProgress } from '../utils/pathProgress';
 import { milesToSteps } from '../utils/stride';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
@@ -66,6 +68,55 @@ import { useKeyboardOffset } from '../hooks/useKeyboardOffset';
 const checkpointsData = checkpointsDataRaw as PointType[];
 const triviaData = triviaDataRaw as PointType[];
 // Sourced from gameConstants
+
+const PATH_REVEAL_EDGE_OUTSET = 4;
+const PATH_REVEAL_SEARCH_STEP = 0.001;
+
+const findPathRevealStart = ({
+  milestoneMiles,
+  uniformScale,
+  mapOffsetX,
+  mapOffsetY,
+  translateX,
+  translateY,
+  screenWidth,
+  screenHeight,
+}: {
+  milestoneMiles: number;
+  uniformScale: number;
+  mapOffsetX: number;
+  mapOffsetY: number;
+  translateX: number;
+  translateY: number;
+  screenWidth: number;
+  screenHeight: number;
+}) => {
+  const milestoneProgress = mapBookMilesToPathProgress(milestoneMiles);
+  const path = Skia.Path.MakeFromSVGString(GAME_PATH);
+  const contour = path ? Skia.ContourMeasureIter(path, false, 1).next() : null;
+  if (!contour) return milestoneProgress;
+
+  for (
+    let progress = milestoneProgress;
+    progress >= 0;
+    progress -= PATH_REVEAL_SEARCH_STEP
+  ) {
+    const [position] = contour.getPosTan(contour.length() * progress);
+    const x = position.x * uniformScale - mapOffsetX + translateX;
+    const y = position.y * uniformScale - mapOffsetY + translateY;
+    const insideRevealBounds =
+      x >= -PATH_REVEAL_EDGE_OUTSET &&
+      x <= screenWidth + PATH_REVEAL_EDGE_OUTSET &&
+      y >= -PATH_REVEAL_EDGE_OUTSET &&
+      y <= screenHeight + PATH_REVEAL_EDGE_OUTSET;
+
+    if (!insideRevealBounds) {
+      return progress;
+    }
+  }
+
+  return 0;
+};
 
 export default function MapScreen() {
   const theme = useTheme();
@@ -142,6 +193,19 @@ export default function MapScreen() {
       : committedSteps + liveDelta;
 
   const firstCheckpoint = checkpointsData[0];
+  const rivendellCheckpoint =
+    checkpointsData.find(checkpoint => checkpoint.name === 'Rivendell') ??
+    firstCheckpoint;
+  const lothlorienCheckpoint =
+    checkpointsData.find(checkpoint => checkpoint.name === 'Lothlorien') ??
+    rivendellCheckpoint;
+  const hasReachedRivendell = miles >= rivendellCheckpoint.CUMULATIVE_MILES;
+  const hasReachedLothlorien = miles >= lothlorienCheckpoint.CUMULATIVE_MILES;
+  const homeCheckpoint = hasReachedLothlorien
+    ? lothlorienCheckpoint
+    : hasReachedRivendell
+    ? rivendellCheckpoint
+    : firstCheckpoint;
   const {
     uniformScale,
     mapWidth,
@@ -155,11 +219,36 @@ export default function MapScreen() {
     height,
     SVG_WIDTH,
     SVG_HEIGHT,
-    firstCheckpoint,
-    50,
-    300,
-    100,
+    homeCheckpoint,
+    hasReachedLothlorien ? 40 : hasReachedRivendell ? 60 : 50,
+    hasReachedLothlorien ? 300 : hasReachedRivendell ? 250 : 300,
+    hasReachedLothlorien ? 60 : hasReachedRivendell ? 85 : 100,
+    hasReachedLothlorien ? 260 : hasReachedRivendell ? 240 : 200,
   );
+  const pathRevealStart = useMemo(() => {
+    if (!hasReachedRivendell) return 0;
+
+    return findPathRevealStart({
+      milestoneMiles: homeCheckpoint.CUMULATIVE_MILES,
+      uniformScale,
+      mapOffsetX,
+      mapOffsetY,
+      translateX: initialScrollX,
+      translateY: initialScrollY,
+      screenWidth: width,
+      screenHeight: height,
+    });
+  }, [
+    hasReachedRivendell,
+    homeCheckpoint.CUMULATIVE_MILES,
+    uniformScale,
+    mapOffsetX,
+    mapOffsetY,
+    initialScrollX,
+    initialScrollY,
+    width,
+    height,
+  ]);
 
   // Map gestures
   const {
@@ -192,7 +281,11 @@ export default function MapScreen() {
   // Drives the small red badge on the Settings icon when there's an
   // unresolved sync problem. Cleared by a successful sync or by the user
   // dismissing the banner inside Settings.
-  const hasSyncError = useProgressStore(state => state.lastSyncError !== null);
+  const hasSyncError = useProgressStore(state =>
+    state.syncIssues.some(
+      issue => issue.dismissedAt === null && issue.resolvedAt === null,
+    ),
+  );
 
   // Initial animation
   const {
@@ -202,6 +295,7 @@ export default function MapScreen() {
     infoEnterStyle,
   } = useInitialAnimation({
     showWelcome,
+    pathRevealStart,
     isSyncing,
     recenterOpacity,
     originMonitorEnabled,
@@ -516,7 +610,7 @@ export default function MapScreen() {
             styles.milesContainer,
             {
               top: insets.top + 60,
-              left: insets.left,
+              left: Math.max(0, insets.left - StyleSheet.hairlineWidth),
             },
             settingsEnterStyle,
           ]}
@@ -624,6 +718,7 @@ export default function MapScreen() {
               <Animated.View style={settingsEnterStyle}>
                 <IconButton
                   icon={<StatsIcon size={iconSizes.medium} />}
+                  accessibilityLabel="View statistics"
                   onPress={() => {
                     clearStickyInfo();
                     pushModal({ type: 'stats' });
@@ -635,6 +730,7 @@ export default function MapScreen() {
               <Animated.View style={settingsEnterStyle}>
                 <IconButton
                   icon={<SettingsIcon size={iconSizes.medium} />}
+                  accessibilityLabel="Open settings"
                   onPress={() => {
                     clearStickyInfo();
                     pushModal({ type: 'settings' });
@@ -726,6 +822,7 @@ export default function MapScreen() {
                     color={theme.colors.mapBackground}
                   />
                 }
+                accessibilityLabel="Recenter map"
                 onPress={() => {
                   clearStickyInfo();
                   handleRecenter();
@@ -739,6 +836,7 @@ export default function MapScreen() {
             <Animated.View style={[styles.iconColumnItem, settingsEnterStyle]}>
               <IconButton
                 icon={<PlusIcon size={iconSizes.medium} />}
+                accessibilityLabel="Add distance"
                 onPress={() => {
                   clearStickyInfo();
                   pushModal({ type: 'miles' });

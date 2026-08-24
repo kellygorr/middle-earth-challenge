@@ -41,6 +41,26 @@ function normalizeTextSize(value: unknown): TextSize {
   return 'medium';
 }
 
+function reconciliationDayEndFromId(id: string): number | null {
+  const match = /^health_reconciliation_(\d{4})-(\d{2})-(\d{2})$/.exec(id);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const dayStart = new Date(year, month, day);
+  if (
+    dayStart.getFullYear() !== year ||
+    dayStart.getMonth() !== month ||
+    dayStart.getDate() !== day
+  ) {
+    return null;
+  }
+
+  const nextDay = new Date(year, month, day + 1);
+  return nextDay.getTime() - 1;
+}
+
 class Database {
   private db: DB | null = null;
   private initPromise: Promise<void> | null = null;
@@ -120,6 +140,18 @@ class Database {
         sharing_deletion_pending INTEGER NOT NULL DEFAULT 0,
         last_published_miles REAL,
         last_shared_progress_sync_at INTEGER
+      )
+    `);
+
+    // Tracking issues the user can review in Settings. Keyed by slot so a
+    // repeat fault updates in place rather than accumulating duplicates.
+    this.db.executeSync(`
+      CREATE TABLE IF NOT EXISTS sync_issues (
+        slot TEXT PRIMARY KEY,
+        error TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        dismissed_at INTEGER,
+        resolved_at INTEGER
       )
     `);
 
@@ -260,6 +292,20 @@ class Database {
       );
     } catch (error) {
       if (!isDuplicateColumnError(error)) throw error;
+    }
+
+    const reconciliationRows = this.db.executeSync(
+      `SELECT id, date FROM distance_entries
+       WHERE source = 'health-reconciliation'`,
+    ).rows as Array<{ id: string; date: number }>;
+    for (const row of reconciliationRows) {
+      const dayEnd = reconciliationDayEndFromId(row.id);
+      if (dayEnd !== null && row.date !== dayEnd) {
+        this.db.executeSync(
+          `UPDATE distance_entries SET date = ? WHERE id = ?`,
+          [dayEnd, row.id],
+        );
+      }
     }
 
     // Progress snapshot table (single row per save id). Stores running
@@ -673,6 +719,72 @@ class Database {
         CURRENT_PROGRESS_CACHE_VERSION,
         ts,
       ],
+    );
+  }
+
+  /**
+   * Tracking issues survive process death because several faults cannot
+   * re-announce themselves — the native sample-persistence flag resets with
+   * the process, and a source fallback fires only once at switch time.
+   * Without this, closing the app erases the evidence without fixing it.
+   */
+  async loadSyncIssues(): Promise<
+    Array<{
+      error: unknown;
+      at: number;
+      dismissedAt: number | null;
+      resolvedAt: number | null;
+    }>
+  > {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.executeSync(
+      `SELECT error, at, dismissed_at, resolved_at FROM sync_issues ORDER BY at ASC`,
+    );
+    const rows = result.rows ?? [];
+    const issues = [];
+    for (const row of rows as any[]) {
+      try {
+        issues.push({
+          error: JSON.parse(row.error),
+          at: Number(row.at),
+          dismissedAt:
+            row.dismissed_at == null ? null : Number(row.dismissed_at),
+          resolvedAt: row.resolved_at == null ? null : Number(row.resolved_at),
+        });
+      } catch {
+        // A row we can't parse is a row we can't act on; skip rather than
+        // failing hydration for the whole app.
+      }
+    }
+    return issues;
+  }
+
+  async saveSyncIssues(
+    issues: Array<{
+      slot: string;
+      error: unknown;
+      at: number;
+      dismissedAt: number | null;
+      resolvedAt: number | null;
+    }>,
+  ): Promise<void> {
+    return this.enqueueWrite(() =>
+      this.runTransaction(() => {
+        if (!this.db) throw new Error('Database not initialized');
+        this.db.executeSync(`DELETE FROM sync_issues`);
+        for (const issue of issues) {
+          this.db.executeSync(
+            `INSERT OR REPLACE INTO sync_issues (slot, error, at, dismissed_at, resolved_at) VALUES (?, ?, ?, ?, ?)`,
+            [
+              issue.slot,
+              JSON.stringify(issue.error),
+              issue.at,
+              issue.dismissedAt,
+              issue.resolvedAt,
+            ],
+          );
+        }
+      }),
     );
   }
 
