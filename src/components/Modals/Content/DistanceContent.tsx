@@ -80,7 +80,14 @@ interface DayGroup {
 }
 
 // Separator between day groups
-const DaySeparator = () => <View style={styles.daySeparator} />;
+const DaySeparator = () => {
+  const theme = useTheme();
+  return (
+    <View
+      style={[styles.daySeparator, { backgroundColor: theme.colors.divider }]}
+    />
+  );
+};
 
 // Footer rendered at the *top* of the inverted list. Extracted from
 // DistanceContent's render body to satisfy `react/no-unstable-nested-components`
@@ -592,7 +599,14 @@ export default function DistanceContent() {
           <View style={styles.entriesContainer}>
             {item.entries.map((entry, index) => (
               <View key={entry.id}>
-                {index > 0 && <View style={styles.separator} />}
+                {index > 0 && (
+                  <View
+                    style={[
+                      styles.separator,
+                      { backgroundColor: theme.colors.divider },
+                    ]}
+                  />
+                )}
                 {renderEntry(entry, index, item.entries)}
               </View>
             ))}
@@ -696,11 +710,9 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.08)',
   },
   daySeparator: {
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.15)',
     marginVertical: spacing.xs,
   },
   listEndContainer: {

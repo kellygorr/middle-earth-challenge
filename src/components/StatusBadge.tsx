@@ -22,8 +22,6 @@ interface StatusBadgeProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const IN_PROGRESS_COLOR = '#F5A623';
-
 export function StatusBadge({
   label,
   inProgress = false,
@@ -64,7 +62,7 @@ export function StatusBadge({
 
   const animatedColor = pulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [theme.colors.textPrimary, IN_PROGRESS_COLOR],
+    outputRange: [theme.colors.textPrimary, theme.colors.uiBadgeInProgress],
   });
 
   return (
@@ -78,12 +76,12 @@ export function StatusBadge({
           ? { borderColor: animatedColor }
           : tone === 'neutral'
           ? {
-              backgroundColor: theme.colors.emptyStateBg,
-              borderColor: theme.colors.emptyStateBg,
+              backgroundColor: theme.colors.uiBadgeNeutralBackground,
+              borderColor: theme.colors.uiBadgeNeutralBackground,
             }
           : {
-              backgroundColor: theme.colors.successBg,
-              borderColor: theme.colors.successBorder,
+              backgroundColor: theme.colors.uiBadgeSuccessBackground,
+              borderColor: theme.colors.uiBadgeSuccessBorder,
             },
         !visible && styles.hidden,
         style,
@@ -96,8 +94,8 @@ export function StatusBadge({
             color: inProgress
               ? animatedColor
               : tone === 'neutral'
-              ? theme.colors.emptyStateText
-              : theme.colors.successText,
+              ? theme.colors.uiBadgeNeutralText
+              : theme.colors.uiBadgeSuccessText,
           } as Animated.WithAnimatedObject<TextStyle>,
         ]}
       >

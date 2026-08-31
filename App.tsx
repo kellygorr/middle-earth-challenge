@@ -19,7 +19,7 @@ import {
 import MapScreen from './src/screens/MapScreen';
 import WelcomeModal from './src/screens/WelcomeModal';
 import SharedModal from './src/screens/SharedModal';
-import { useSettingsStore } from './src/stores/settingsStore';
+import { useSettingsStore, useTheme } from './src/stores/settingsStore';
 import { useSyncInterval } from './src/hooks/useSyncInterval';
 import { useFriendProgressSync } from './src/hooks/useFriendProgressSync';
 import { useLivePedometerDeltaOwner } from './src/hooks/useLivePedometerDelta';
@@ -49,6 +49,7 @@ export async function runRecoverableBootstrapStep(
 
 // Splash overlay - root level, fades out only after successful hydration
 export function SplashOverlay({ status }: { status: BootstrapStatus }) {
+  const theme = useTheme();
   const [visible, setVisible] = useState(true);
   const [showSpinner, setShowSpinner] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
@@ -98,12 +99,16 @@ export function SplashOverlay({ status }: { status: BootstrapStatus }) {
     <Animated.View
       pointerEvents="auto"
       testID="splash-overlay"
-      style={[StyleSheet.absoluteFillObject, styles.splashFill, { opacity }]}
+      style={[
+        StyleSheet.absoluteFillObject,
+        styles.splashFill,
+        { backgroundColor: theme.colors.splashBackground, opacity },
+      ]}
     >
       {showSpinner && (
         <ActivityIndicator
           accessibilityLabel="Loading saved journey"
-          color="#ffffff"
+          color={theme.colors.iconInverted}
           size="large"
         />
       )}
@@ -112,6 +117,7 @@ export function SplashOverlay({ status }: { status: BootstrapStatus }) {
 }
 
 function App(): React.JSX.Element {
+  const theme = useTheme();
   const [bootstrapStatus, setBootstrapStatus] =
     useState<BootstrapStatus>('loading');
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
@@ -228,18 +234,46 @@ function App(): React.JSX.Element {
         <SharedModal />
 
         {bootstrapStatus === 'error' && (
-          <View style={styles.bootstrapError} accessibilityRole="alert">
-            <Text style={styles.bootstrapErrorTitle}>Unable to load data</Text>
-            <Text style={styles.bootstrapErrorMessage}>
+          <View
+            style={[
+              styles.bootstrapError,
+              { backgroundColor: theme.colors.splashErrorBackground },
+            ]}
+            accessibilityRole="alert"
+          >
+            <Text
+              style={[
+                styles.bootstrapErrorTitle,
+                { color: theme.colors.splashText },
+              ]}
+            >
+              Unable to load data
+            </Text>
+            <Text
+              style={[
+                styles.bootstrapErrorMessage,
+                { color: theme.colors.splashTextSecondary },
+              ]}
+            >
               Your saved journey has not been changed. Try loading it again.
             </Text>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Retry initialization"
               onPress={() => setBootstrapAttempt(attempt => attempt + 1)}
-              style={styles.retryButton}
+              style={[
+                styles.retryButton,
+                { borderColor: theme.colors.splashBorder },
+              ]}
             >
-              <Text style={styles.retryButtonText}>Retry</Text>
+              <Text
+                style={[
+                  styles.retryButtonText,
+                  { color: theme.colors.splashText },
+                ]}
+              >
+                Retry
+              </Text>
             </Pressable>
           </View>
         )}
@@ -257,30 +291,25 @@ const styles = StyleSheet.create({
   },
   splashFill: {
     alignItems: 'center',
-    backgroundColor: '#000000',
     justifyContent: 'center',
   },
   bootstrapError: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
-    backgroundColor: '#101010',
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
   bootstrapErrorTitle: {
-    color: '#ffffff',
     fontSize: 22,
     fontWeight: '600',
   },
   bootstrapErrorMessage: {
-    color: '#d0d0d0',
     fontSize: 16,
     lineHeight: 23,
     marginTop: 12,
     textAlign: 'center',
   },
   retryButton: {
-    borderColor: '#ffffff',
     borderRadius: 4,
     borderWidth: 1,
     marginTop: 24,
@@ -288,7 +317,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   retryButtonText: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
   },

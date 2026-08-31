@@ -6,7 +6,7 @@ interface PlusIconProps {
   color?: string;
 }
 
-export default function PlusIcon({ size = 32, color = '#000' }: PlusIconProps) {
+export default function PlusIcon({ size = 32, color }: PlusIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Line

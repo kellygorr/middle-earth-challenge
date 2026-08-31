@@ -6,7 +6,7 @@ interface SyncIconProps {
   color?: string;
 }
 
-export default function SyncIcon({ size = 32, color = '#000' }: SyncIconProps) {
+export default function SyncIcon({ size = 32, color }: SyncIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       {/* Top arrow - curves from right to left with arrowhead */}

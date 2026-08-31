@@ -114,7 +114,9 @@ export default function MilesFooter() {
       {/* Divider separating the entry list from the add controls. The
           running total lives on the map screen; per-row and per-day
           totals cover local context so it isn't repeated here. */}
-      <View style={styles.dividerLine} />
+      <View
+        style={[styles.dividerLine, { backgroundColor: theme.colors.divider }]}
+      />
 
       {/* Top row: input + unit label */}
       <View style={styles.inputRow}>
@@ -181,7 +183,6 @@ const styles = StyleSheet.create({
   },
   dividerLine: {
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.08)',
     marginBottom: spacing.md,
   },
   inputRow: {

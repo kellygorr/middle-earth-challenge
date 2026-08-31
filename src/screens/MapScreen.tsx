@@ -58,6 +58,7 @@ import { useMapGestures } from '../hooks/useMapGestures';
 import { useInitialAnimation } from '../hooks/useInitialAnimation';
 import { useReactiveDimensions } from '../hooks/useReactiveDimensions';
 import { useLivePedometerDelta } from '../hooks/useLivePedometerDelta';
+import { useStepCountHighlight } from '../hooks/useStepCountHighlight';
 
 import { useUniformMapLayout } from '../hooks/useUniformMapLayout';
 import { useGameProgressAnimation } from '../hooks/useGameProgressAnimation';
@@ -193,6 +194,11 @@ export default function MapScreen() {
     testOverrideMiles !== null
       ? milesToSteps(testOverrideMiles)
       : committedSteps + liveDelta;
+  const stepCountHighlightStyle = useStepCountHighlight(
+    totalSteps,
+    theme.colors.buttonPrimaryText,
+    theme.colors.uiStepIncrease,
+  );
 
   const firstCheckpoint = checkpointsData[0];
   const rivendellCheckpoint =
@@ -601,7 +607,14 @@ export default function MapScreen() {
       {/* Black bar for notch safe area in landscape */}
       {insets.left > 0 && (
         <View
-          style={[styles.notchBar, styles.notchBarLeft, { width: insets.left }]}
+          style={[
+            styles.notchBar,
+            styles.notchBarLeft,
+            {
+              width: insets.left,
+              backgroundColor: theme.colors.mapBackgroundInverted,
+            },
+          ]}
           pointerEvents="none"
         />
       )}
@@ -681,7 +694,10 @@ export default function MapScreen() {
                   flatSide="left"
                   isLabelButton
                 >
-                  {`${totalSteps.toLocaleString()} steps`}
+                  <Animated.Text style={stepCountHighlightStyle}>
+                    {totalSteps.toLocaleString()}
+                  </Animated.Text>
+                  {' steps'}
                 </Button>
               </View>
             )}
@@ -863,7 +879,14 @@ export default function MapScreen() {
       {devMode && !showWelcome && <DevView keyboardOffset={keyboardOffset} />}
 
       {/* Loading overlay - hides map until ready */}
-      {phase === 'loading' && <View style={styles.loadingOverlay} />}
+      {phase === 'loading' && (
+        <View
+          style={[
+            styles.loadingOverlay,
+            { backgroundColor: theme.colors.mapBackgroundInverted },
+          ]}
+        />
+      )}
     </GestureHandlerRootView>
   );
 }
@@ -943,13 +966,11 @@ export const styles = StyleSheet.create({
 
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000000',
   },
   notchBar: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: '#000000',
     zIndex: 50,
   },
   notchBarLeft: {

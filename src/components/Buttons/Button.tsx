@@ -31,7 +31,7 @@ import { ButtonVariant, getButtonTextColor } from './buttonColors';
 
 export interface ButtonProps {
   onPress: () => void;
-  children: string;
+  children: ReactNode;
   variant?: ButtonVariant;
   /**
    * Visual category:
@@ -285,7 +285,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         }}
       >
         {renderIconBefore()}
-        <Text
+        <AnimatedText
           style={[
             baseTextStyle,
             { color: textColor },
@@ -293,7 +293,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
           ]}
         >
           {children}
-        </Text>
+        </AnimatedText>
         {hasCaret && (
           <AnimatedText
             style={[

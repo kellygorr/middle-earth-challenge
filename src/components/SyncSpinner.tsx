@@ -11,6 +11,7 @@ import Animated, {
 import { SyncIcon } from '../assets/icons';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { borderRadius } from '../styles/global';
+import { useTheme } from '../stores/settingsStore';
 
 interface SyncSpinnerProps {
   /** Outer diameter of the black circle. */
@@ -32,10 +33,11 @@ interface SyncSpinnerProps {
 export default function SyncSpinner({
   size = 28,
   iconSize,
-  backgroundColor = '#000000',
-  iconColor = '#FFFFFF',
+  backgroundColor,
+  iconColor,
   durationMs = 1200,
 }: SyncSpinnerProps) {
+  const theme = useTheme();
   const reduceMotionEnabled = useReduceMotion();
   const rotation = useSharedValue(0);
 
@@ -71,12 +73,16 @@ export default function SyncSpinner({
           width: size,
           height: size,
           borderRadius: borderRadius.full,
-          backgroundColor,
+          backgroundColor:
+            backgroundColor ?? theme.colors.buttonPrimaryBackground,
         },
       ]}
     >
       <Animated.View style={animatedStyle}>
-        <SyncIcon size={resolvedIconSize} color={iconColor} />
+        <SyncIcon
+          size={resolvedIconSize}
+          color={iconColor ?? theme.colors.iconInverted}
+        />
       </Animated.View>
     </View>
   );

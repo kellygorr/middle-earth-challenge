@@ -1,4 +1,5 @@
 import React from 'react';
+import { Text } from 'react-native';
 import { render, screen } from '@testing-library/react-native';
 
 import Button from '../Button';
@@ -50,5 +51,15 @@ describe('Button accessibility', () => {
     expect(
       screen.getByLabelText('Journey details').props.accessibilityState,
     ).toEqual({ disabled: false, expanded: true });
+  });
+
+  it('supports styling part of a label without changing the remaining text', async () => {
+    await render(
+      <Button onPress={jest.fn()}>
+        <Text style={{ color: '#D4AF37' }}>42</Text> steps
+      </Button>,
+    );
+
+    expect(screen.getByText('42')).toHaveStyle({ color: '#D4AF37' });
   });
 });

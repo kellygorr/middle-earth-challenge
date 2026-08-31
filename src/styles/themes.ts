@@ -28,7 +28,27 @@ export interface Theme {
     primary: string;
     secondary: string;
     accent: string;
+    uiStepIncrease: string;
+    uiWarning: string;
+    uiBadgeInProgress: string;
+    uiBadgeSuccessBackground: string;
+    uiBadgeSuccessBorder: string;
+    uiBadgeSuccessText: string;
+    uiBadgeNeutralBackground: string;
+    uiBadgeNeutralText: string;
+    progressBarActive: string;
     divider: string;
+
+    // Icon colors
+    iconPrimary: string;
+    iconInverted: string;
+
+    // Splash colors
+    splashBackground: string;
+    splashErrorBackground: string;
+    splashText: string;
+    splashTextSecondary: string;
+    splashBorder: string;
 
     // Text colors
     textPrimary: string;
@@ -131,7 +151,27 @@ export const classicTheme: Theme = {
     primary: '#6a4c34ff',
     secondary: '#A0826D',
     accent: '#6a4c34ff',
+    uiStepIncrease: '#e9df7f',
+    uiWarning: '#F4B400',
+    uiBadgeInProgress: '#F5A623',
+    uiBadgeSuccessBackground: '#E8EEE9',
+    uiBadgeSuccessBorder: '#9FADA3',
+    uiBadgeSuccessText: '#3F5947',
+    uiBadgeNeutralBackground: '#F5EFE0',
+    uiBadgeNeutralText: '#A0826D',
+    progressBarActive: '#3f321fff',
     divider: 'rgba(0, 0, 0, 0.12)',
+
+    // Icon colors
+    iconPrimary: '#3f321fff',
+    iconInverted: '#FFFFFF',
+
+    // Splash colors
+    splashBackground: '#000000',
+    splashErrorBackground: '#101010',
+    splashText: '#FFFFFF',
+    splashTextSecondary: '#D0D0D0',
+    splashBorder: '#FFFFFF',
 
     // Text colors
     textPrimary: '#3f321fff',
@@ -214,7 +254,27 @@ export const minimalistTheme: Theme = {
     primary: '#D4AF37',
     secondary: '#546E7A',
     accent: '#2C3E50',
+    uiStepIncrease: '#e9df7f',
+    uiWarning: '#F4B400',
+    uiBadgeInProgress: '#F5A623',
+    uiBadgeSuccessBackground: '#E8EEE9',
+    uiBadgeSuccessBorder: '#9FADA3',
+    uiBadgeSuccessText: '#3F5947',
+    uiBadgeNeutralBackground: '#E0E0E0',
+    uiBadgeNeutralText: '#757575',
+    progressBarActive: '#D4AF37',
     divider: 'rgba(0, 0, 0, 0.12)',
+
+    // Icon colors
+    iconPrimary: '#212121',
+    iconInverted: '#FFFFFF',
+
+    // Splash colors
+    splashBackground: '#000000',
+    splashErrorBackground: '#101010',
+    splashText: '#FFFFFF',
+    splashTextSecondary: '#D0D0D0',
+    splashBorder: '#FFFFFF',
 
     // Text colors
     textPrimary: '#212121',

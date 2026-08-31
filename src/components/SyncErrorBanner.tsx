@@ -210,8 +210,6 @@ function SyncIssueCard({
     showCatchUpHint,
   } = copy;
   const unitLabel = useMiles ? 'Miles' : 'Kilometers';
-  const accent = '#F4B400'; // matches IconButton badge color
-
   return (
     <View
       testID={`sync-issue-card-${syncErrorSlot(lastSyncError)}`}
@@ -220,7 +218,7 @@ function SyncIssueCard({
         width === undefined ? null : { width },
         {
           backgroundColor: theme.colors.surface,
-          borderLeftColor: accent,
+          borderLeftColor: theme.colors.uiWarning,
         },
       ]}
     >
@@ -332,8 +330,15 @@ function SyncIssueCard({
                 'You can estimate what you walked while tracking was stopped and add it with the '
               }
               <View style={styles.inlinePlus}>
-                <View style={styles.inlinePlusCircle}>
-                  <PlusIcon size={8} color="#fff" />
+                <View
+                  style={[
+                    styles.inlinePlusCircle,
+                    {
+                      backgroundColor: theme.colors.buttonPrimaryBackground,
+                    },
+                  ]}
+                >
+                  <PlusIcon size={8} color={theme.colors.iconInverted} />
                 </View>
               </View>
               {' button.'}
@@ -353,8 +358,13 @@ function SyncIssueCard({
           >
             {`${unitLabel} can also be logged with the `}
             <View style={styles.inlinePlus}>
-              <View style={styles.inlinePlusCircle}>
-                <PlusIcon size={8} color="#fff" />
+              <View
+                style={[
+                  styles.inlinePlusCircle,
+                  { backgroundColor: theme.colors.buttonPrimaryBackground },
+                ]}
+              >
+                <PlusIcon size={8} color={theme.colors.iconInverted} />
               </View>
             </View>
             {' button.'}
@@ -603,7 +613,6 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
   },

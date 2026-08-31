@@ -86,7 +86,7 @@ export default function JourneyProgressBar({
                 style={[
                   styles.progressBarFill,
                   {
-                    backgroundColor: theme.colors.pathProgress,
+                    backgroundColor: theme.colors.progressBarActive,
                     width: fillWidth,
                   },
                 ]}

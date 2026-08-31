@@ -107,7 +107,11 @@ export default function WelcomeModal({
                 >
                   Walk from Bag End to Mount Doom
                 </Text>
-                <Button onPress={handleDismiss} variant="brand" size="large">
+                <Button
+                  onPress={handleDismiss}
+                  variant={theme.name === 'classic' ? 'primary' : 'brand'}
+                  size="large"
+                >
                   {miles > 0 ? 'Continue journey' : 'Begin journey'}
                 </Button>
 

@@ -10,7 +10,7 @@ interface ChevronIconProps {
 export default function ChevronIcon({
   direction,
   size = 24,
-  color = '#FFFFFF',
+  color,
 }: ChevronIconProps) {
   const path =
     direction === 'left'

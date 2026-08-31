@@ -6,10 +6,7 @@ interface ChatIconProps {
   color?: string;
 }
 
-export default function ChatIcon({
-  size = 24,
-  color = '#FFFFFF',
-}: ChatIconProps) {
+export default function ChatIcon({ size = 24, color }: ChatIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path

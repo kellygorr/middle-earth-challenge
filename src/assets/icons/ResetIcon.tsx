@@ -10,10 +10,7 @@ interface ResetIconProps {
  * Counter-clockwise circular arrow used for the "reset" affordance in
  * the edit-entry modal.
  */
-export default function ResetIcon({
-  size = 24,
-  color = '#000',
-}: ResetIconProps) {
+export default function ResetIcon({ size = 24, color }: ResetIconProps) {
   const strokeWidth = Math.max(1.75, size / 14);
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
