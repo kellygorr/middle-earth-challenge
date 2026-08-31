@@ -6,10 +6,7 @@ interface RecenterIconProps {
   color?: string;
 }
 
-export default function RecenterIcon({
-  size = 24,
-  color = '#000',
-}: RecenterIconProps) {
+export default function RecenterIcon({ size = 24, color }: RecenterIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       {/* Outer circle */}

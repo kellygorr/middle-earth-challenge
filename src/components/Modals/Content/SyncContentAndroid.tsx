@@ -741,8 +741,13 @@ export default function SyncContentAndroid() {
         >
           Connecting is not required — you can add miles manually using{' '}
           <View style={styles.inlinePlus}>
-            <View style={styles.inlinePlusCircle}>
-              <PlusIcon size={8} color="#fff" />
+            <View
+              style={[
+                styles.inlinePlusCircle,
+                { backgroundColor: theme.colors.buttonPrimaryBackground },
+              ]}
+            >
+              <PlusIcon size={8} color={theme.colors.iconInverted} />
             </View>
           </View>{' '}
           from the map.
@@ -1205,7 +1210,6 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -6,10 +6,7 @@ interface LockIconProps {
   color?: string;
 }
 
-export default function LockIcon({
-  size = 24,
-  color = '#FFFFFF',
-}: LockIconProps) {
+export default function LockIcon({ size = 24, color }: LockIconProps) {
   // Lock icon: padlock shape with shackle on top
   // Viewbox is 24x24
 

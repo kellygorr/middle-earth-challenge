@@ -312,4 +312,24 @@ for TalkBack and UI automation.
 
 ---
 
+## Highlight step-count updates ✅ done
+
+When the live total changes after the Map screen mounts, only the numeric part
+of the steps chip fades to the `uiStepIncrease` pale gold (`#e9df7f`) for 200
+ms, holds for 600 ms, then fades back for 200 ms. The `steps` label retains its
+normal color, initial hydration does not trigger the cue, and another update
+restarts the one-second window so the latest change remains visible.
+
+---
+
+## Tokenize semantic UI colors ✅ done
+
+Badge states use dedicated `uiBadge*` tokens, warning indicators share
+`uiWarning`, splash/error UI uses `splash*`, and icon foregrounds resolve from
+button or `iconInverted` theme tokens instead of asset-level black/white
+defaults. The transient step increase uses `uiStepIncrease`. Structural map,
+shadow, transparency, and celebration-palette literals remain local by design.
+
+---
+
 ## Add more trivia

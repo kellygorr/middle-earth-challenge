@@ -132,7 +132,7 @@ export default function IconButton({
           width: badgeSize,
           height: badgeSize,
           borderRadius: badgeSize / 2,
-          backgroundColor: badgeColor ?? '#F4B400',
+          backgroundColor: badgeColor ?? theme.colors.uiWarning,
           borderColor: theme.colors.background,
         },
       ]}

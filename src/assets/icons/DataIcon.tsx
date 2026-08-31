@@ -9,7 +9,7 @@ interface DataIconProps {
 /**
  * DataIcon - A database/cylinder icon representing data storage
  */
-export default function DataIcon({ size = 32, color = '#000' }: DataIconProps) {
+export default function DataIcon({ size = 32, color }: DataIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       {/* Top ellipse */}

@@ -6,10 +6,7 @@ interface SettingsIconProps {
   color?: string;
 }
 
-export default function SettingsIcon({
-  size = 32,
-  color = '#000',
-}: SettingsIconProps) {
+export default function SettingsIcon({ size = 32, color }: SettingsIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Path

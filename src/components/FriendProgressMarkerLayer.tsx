@@ -20,8 +20,6 @@ import { typographyThemed } from '../styles/typography';
 import { formatDistance } from '../utils/date';
 import { mapBookMilesToPathProgress } from '../utils/pathProgress';
 
-const KELLY_MARKER_COLOR = '#D4AF37';
-
 interface ParticipantPosition extends FriendProgressMapParticipant {
   x: number;
   y: number;
@@ -89,6 +87,7 @@ function PositionedParticipantMarker({
         onPress={onPress}
         style={[
           expanded ? styles.bubble : styles.locationPin,
+          !expanded && { borderColor: theme.colors.iconInverted },
           expanded
             ? {
                 backgroundColor: theme.colors.surface,
@@ -127,9 +126,14 @@ function PositionedParticipantMarker({
             )}
           </View>
         ) : isLeader ? (
-          <StarIcon size={16} />
+          <StarIcon size={16} color={theme.colors.iconInverted} />
         ) : (
-          <View style={styles.locationPinCenter} />
+          <View
+            style={[
+              styles.locationPinCenter,
+              { backgroundColor: theme.colors.iconInverted },
+            ]}
+          />
         )}
       </Pressable>
     </Animated.View>
@@ -199,7 +203,7 @@ export default function FriendProgressMarkerLayer({
           isLeader={participant.userId === leaderUserId}
           markerColor={
             participant.dismissOnExpandedPress
-              ? KELLY_MARKER_COLOR
+              ? theme.colors.celebrationAccent
               : getFriendAffinityColor(participant.affinity, theme)
           }
           centerX={centerX}
@@ -233,7 +237,6 @@ const styles = StyleSheet.create({
   },
   locationPin: {
     alignItems: 'center',
-    borderColor: '#FFFFFF',
     borderRadius: 12,
     borderBottomLeftRadius: 2,
     borderWidth: 2,
@@ -244,7 +247,6 @@ const styles = StyleSheet.create({
     ...shadows.small,
   },
   locationPinCenter: {
-    backgroundColor: '#FFFFFF',
     borderRadius: borderRadius.full,
     height: 7,
     width: 7,

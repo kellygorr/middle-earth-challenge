@@ -7,10 +7,7 @@ interface ClockIconProps {
 }
 
 /** Clock face used for the tracking-history affordance. */
-export default function ClockIcon({
-  size = 24,
-  color = '#000',
-}: ClockIconProps) {
+export default function ClockIcon({ size = 24, color }: ClockIconProps) {
   const strokeWidth = Math.max(1.75, size / 14);
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

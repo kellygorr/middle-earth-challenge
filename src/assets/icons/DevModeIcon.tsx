@@ -6,10 +6,7 @@ interface DevModeIconProps {
   color?: string;
 }
 
-export default function DevModeIcon({
-  size = 32,
-  color = '#000',
-}: DevModeIconProps) {
+export default function DevModeIcon({ size = 32, color }: DevModeIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       {/* Left lens */}

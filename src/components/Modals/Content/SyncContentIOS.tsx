@@ -182,8 +182,13 @@ export default function SyncContentIOS() {
           Connecting your distance and steps is not required to use the app. If
           you prefer to manually add miles, use{' '}
           <View style={styles.inlinePlus}>
-            <View style={styles.inlinePlusCircle}>
-              <PlusIcon size={8} color="#fff" />
+            <View
+              style={[
+                styles.inlinePlusCircle,
+                { backgroundColor: theme.colors.buttonPrimaryBackground },
+              ]}
+            >
+              <PlusIcon size={8} color={theme.colors.iconInverted} />
             </View>
           </View>{' '}
           from the map.
@@ -272,7 +277,6 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
   },

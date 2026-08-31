@@ -6,10 +6,7 @@ interface StarIconProps {
   color?: string;
 }
 
-export default function StarIcon({
-  size = 24,
-  color = '#FFFFFF',
-}: StarIconProps) {
+export default function StarIcon({ size = 24, color }: StarIconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
