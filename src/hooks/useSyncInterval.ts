@@ -304,6 +304,14 @@ export function useSyncInterval() {
               idPrefix,
               existingEntries,
             );
+          const currentSettings = useSettingsStore.getState();
+          if (
+            currentSettings.trackingMode !== 'health-app' ||
+            !currentSettings.syncEnabled ||
+            currentSettings.syncProvider !== syncProvider
+          ) {
+            return;
+          }
           const cursor = Math.min(chunk.end.getTime(), toDate.getTime());
           const nextFormatVersion = getHealthSyncFormatForChunk(
             Platform.OS,

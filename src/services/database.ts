@@ -1072,6 +1072,25 @@ class Database {
     return this.enqueueWrite(() =>
       this.runTransaction(() => {
         if (!this.db) throw new Error('Database not initialized');
+        const ownership = this.db.executeSync(
+          `SELECT tracking_mode, sync_enabled, sync_provider
+           FROM user_settings WHERE id = ?`,
+          [DEFAULT_SAVE_ID],
+        ).rows?.[0] as
+          | {
+              tracking_mode?: string;
+              sync_enabled?: number;
+              sync_provider?: string;
+            }
+          | undefined;
+        if (
+          ownership &&
+          (ownership.tracking_mode !== 'health-app' ||
+            ownership.sync_enabled !== 1 ||
+            ownership.sync_provider === 'none')
+        ) {
+          return { applied: false };
+        }
         if (this.isSyncCursorStale(cursor)) {
           return { applied: false };
         }

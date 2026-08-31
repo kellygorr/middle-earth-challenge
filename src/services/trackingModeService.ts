@@ -130,6 +130,9 @@ async function performTrackingModeSwitch(
   await settings.updateSyncSettings({
     lastSyncTimestamp: transitionAt,
     trackingMode: mode,
+    ...(mode === 'health-app'
+      ? { healthLookbackStartTimestamp: transitionAt }
+      : {}),
     ...(cleanupRequired ? { pedometerCleanupPending: true } : {}),
     ...(mode === 'dual' && previous !== 'dual'
       ? {
