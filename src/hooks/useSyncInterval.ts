@@ -5,7 +5,6 @@ import { useProgressStore } from '../stores/progressStore';
 import { useInitializationStore } from '../stores/initializationStore';
 import type { SyncError } from '../stores/progressStore';
 import { getActiveFitnessService } from '../services/fitnessService';
-import { getBackgroundRefreshStatus } from '../services/backgroundRefreshStatus';
 import { pedometerService } from '../services/pedometerService';
 import { commitPedometerRange } from '../services/pedometerCommit';
 import { DistanceSource, HealthDistanceRecord } from '../types';
@@ -29,6 +28,8 @@ import {
   getHealthLookbackStartForChunk,
 } from '../services/healthSyncCutover';
 import { buildHealthDistanceEntryChanges } from '../services/healthDistanceEntries';
+import { readHealthChunkWithRetry } from '../services/healthChunkRead';
+import { database } from '../services/database';
 
 /**
  * Module-level handle so UI outside the hook (overlay retry button, Settings
@@ -48,29 +49,11 @@ export function isSyncRunnerMounted(): boolean {
 }
 
 /**
- * Race a promise against a timeout. Rejects with Error('chunk-timeout').
- */
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('chunk-timeout')), ms);
-    p.then(
-      v => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      e => {
-        clearTimeout(timer);
-        reject(e);
-      },
-    );
-  });
-}
-
-/**
  * Hook that manages periodic syncing from health services while the app is foregrounded.
  *
  * Sync runs in CHUNK_DAYS-wide chunks oldest -> newest. Each chunk:
- *   - races getDistanceRecordsBetween against CHUNK_TIMEOUT_MS (retried once)
+ *   - times out getDistanceRecordsBetween after CHUNK_TIMEOUT_MS
+ *   - retries one settled transient failure, but never overlaps a timed-out read
  *   - advances lastSyncTimestamp on success so resume is cheap
  *   - bumps syncStatus so the UI can decide pill vs overlay and show ETA
  *
@@ -108,6 +91,8 @@ export function useSyncInterval() {
 
   const performSync = useCallback(
     async (forceSync = false, reconcileDual = false) => {
+      if (!initReady) return;
+
       // Pedometer mode has its own, much simpler flow: read a single
       // step-count window from the native service and ingest it as one
       // entry. It does *not* require syncEnabled / syncProvider /
@@ -211,12 +196,13 @@ export function useSyncInterval() {
       // Nothing to fetch - bump timestamp and exit.
       if (chunks.length === 0) {
         const cursor = Date.now();
-        await applyHealthSyncChunk(
+        const applied = await applyHealthSyncChunk(
           [],
           cursor,
           Platform.OS === 'android' ? 1 : healthSyncFormatVersion,
           healthLookbackStartTimestamp ?? cursor,
         );
+        if (!applied) return;
         useSettingsStore.setState({
           lastSyncTimestamp: cursor,
           healthSyncFormatVersion:
@@ -246,40 +232,43 @@ export function useSyncInterval() {
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i];
 
-          // Per-chunk fetch with timeout + single retry.
+          // Per-chunk fetch with one retry for settled transient failures.
+          // A timed-out native call cannot be cancelled by either provider,
+          // so it fails immediately instead of overlapping a second read.
           let records: HealthDistanceRecord[] | null = null;
           let lastErr: unknown = null;
-          for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-              const readRecords =
-                Platform.OS === 'android' && healthSyncFormatVersion === 0
-                  ? fitness.getLegacyDistanceRecordsBetween.bind(fitness)
-                  : fitness.getDistanceRecordsBetween.bind(fitness);
-              records = await withTimeout(
-                readRecords(chunk.start, chunk.end),
-                CHUNK_TIMEOUT_MS,
-              );
-              break;
-            } catch (e) {
-              lastErr = e;
-              const msg = String(e);
-              // Permission errors: fail fast, no retry.
-              if (
-                msg.includes('SecurityException') ||
-                msg.includes('permission')
-              ) {
-                throw e;
-              }
-              // Stalled too long overall? Bail.
-              if (Date.now() - startedAt > STALL_ERROR_MS) {
-                throw e;
-              }
-              if (attempt === 0) {
-                await new Promise<void>(resolve =>
-                  setTimeout(() => resolve(), CHUNK_RETRY_DELAY_MS),
-                );
-              }
+          try {
+            const readRecords =
+              Platform.OS === 'android' && healthSyncFormatVersion === 0
+                ? fitness.getLegacyDistanceRecordsBetween.bind(fitness)
+                : fitness.getDistanceRecordsBetween.bind(fitness);
+            records = await readHealthChunkWithRetry(
+              () => readRecords(chunk.start, chunk.end),
+              {
+                timeoutMs: CHUNK_TIMEOUT_MS,
+                retryDelayMs: CHUNK_RETRY_DELAY_MS,
+                shouldRetry: error => {
+                  const msg = String(error);
+                  if (
+                    msg.includes('SecurityException') ||
+                    msg.includes('permission')
+                  ) {
+                    return false;
+                  }
+                  return Date.now() - startedAt <= STALL_ERROR_MS;
+                },
+              },
+            );
+          } catch (error) {
+            const message = String(error);
+            if (
+              message.includes('SecurityException') ||
+              message.includes('permission') ||
+              Date.now() - startedAt > STALL_ERROR_MS
+            ) {
+              throw error;
             }
+            lastErr = error;
           }
 
           if (records === null) {
@@ -303,12 +292,17 @@ export function useSyncInterval() {
             return;
           }
 
+          const entryIds = records.map(record => `${idPrefix}_${record.id}`);
+          const existingEntries = await database.getDistanceEntriesByIds(
+            'default',
+            entryIds,
+          );
           const { entries, milesChanged: milesAddedThisChunk } =
             buildHealthDistanceEntryChanges(
               records,
               healthSource,
               idPrefix,
-              useProgressStore.getState().distanceEntries,
+              existingEntries,
             );
           const cursor = Math.min(chunk.end.getTime(), toDate.getTime());
           const nextFormatVersion = getHealthSyncFormatForChunk(
@@ -325,12 +319,13 @@ export function useSyncInterval() {
             chunk.start.getTime(),
             cursor,
           );
-          await applyHealthSyncChunk(
+          const applied = await applyHealthSyncChunk(
             entries,
             cursor,
             nextFormatVersion,
             healthLookbackStartTimestamp,
           );
+          if (!applied) return;
           useSettingsStore.setState({
             lastSyncTimestamp: cursor,
             healthSyncFormatVersion: nextFormatVersion,
@@ -408,6 +403,7 @@ export function useSyncInterval() {
       applyHealthSyncChunk,
       setSyncStatus,
       updateSyncSettings,
+      initReady,
     ],
   );
 
@@ -509,43 +505,6 @@ export function useSyncInterval() {
     };
   }, [syncEnabled, liveSyncEnabled, trackingMode, initReady, performSync]);
 
-  // iOS: detect Background App Refresh being off, so we can warn the user
-  // that "live sync" won't actually happen in the background. Runs on
-  // mount, on every foreground resume, and when sync gets enabled.
-  // No-op on Android and when syncing is off.
-  useEffect(() => {
-    if (Platform.OS !== 'ios' || !syncEnabled) return;
-
-    let cancelled = false;
-    const check = async () => {
-      const status = await getBackgroundRefreshStatus();
-      if (cancelled) return;
-      const state = useProgressStore.getState();
-      const hasBackgroundIssue = state.syncIssues.some(
-        issue => issue.error.kind === 'backgroundDisabled',
-      );
-
-      if (status === 'denied' || status === 'restricted') {
-        // Its own slot, so it no longer has to yield to a source error.
-        if (!hasBackgroundIssue) {
-          state.addSyncIssue({ kind: 'backgroundDisabled' });
-        }
-      } else if (status === 'available' && hasBackgroundIssue) {
-        // User flipped the iOS Settings switch back on — condition fixed.
-        state.resolveSyncIssue('app');
-      }
-    };
-
-    check();
-    const sub = AppState.addEventListener('change', next => {
-      if (next === 'active') check();
-    });
-    return () => {
-      cancelled = true;
-      sub.remove();
-    };
-  }, [syncEnabled]);
-
   // Register/unregister this hook instance as the active sync runner.
   useEffect(() => {
     activePerformSync = performSync;
@@ -593,14 +552,17 @@ async function performPedometerSync(args: {
   // this branch is unreachable in practice. Guard anyway: skip the
   // commit and stamp `now` so subsequent ticks have a starting point.
   if (!watermark) {
-    await useProgressStore.getState().applyPedometerSyncChunk([], now);
+    const applied = await useProgressStore
+      .getState()
+      .applyPedometerSyncChunk([], now);
+    if (!applied) return;
     useSettingsStore.setState({ lastSyncTimestamp: now });
     return;
   }
 
-  // Nothing to do if no time has passed. Common on double-fires (e.g.
-  // AppState → active immediately after a scheduled 2-min tick).
-  if (now <= watermark) {
+  // Equal timestamps are a no-op. A lower timestamp means wall time moved
+  // backward and must reach commitPedometerRange's native cursor recovery.
+  if (now === watermark) {
     return;
   }
 

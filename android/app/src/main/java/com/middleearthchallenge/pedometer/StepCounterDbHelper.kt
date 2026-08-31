@@ -26,13 +26,29 @@ import android.database.sqlite.SQLiteOpenHelper
 class StepCounterDbHelper(context: Context) :
     SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
+  data class SampleCursor(
+    val sampleId: Long,
+    val timestampMs: Long,
+      val elapsedRealtimeMs: Long?,
+    val stepCount: Long,
+    val bootId: String,
+  )
+
+  data class CursorSteps(
+    val steps: Long,
+    val latestCursor: SampleCursor?,
+    val wallClockMovedBackward: Boolean,
+  )
+
   companion object {
     private const val DATABASE_NAME = "middle_earth_pedometer.db"
-    private const val DATABASE_VERSION = 1
+    private const val DATABASE_VERSION = 2
+    private const val CLOCK_SHIFT_TOLERANCE_MS = 60_000L
 
     internal const val TABLE = "step_samples"
     internal const val COL_ID = "id"
     internal const val COL_TIMESTAMP = "timestamp_ms"
+    internal const val COL_ELAPSED_REALTIME = "elapsed_realtime_ms"
     internal const val COL_STEPS = "step_count"
     internal const val COL_BOOT_ID = "boot_id"
   }
@@ -43,6 +59,7 @@ class StepCounterDbHelper(context: Context) :
         CREATE TABLE $TABLE (
           $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
           $COL_TIMESTAMP INTEGER NOT NULL,
+          $COL_ELAPSED_REALTIME INTEGER,
           $COL_STEPS INTEGER NOT NULL,
           $COL_BOOT_ID TEXT NOT NULL
         )
@@ -52,20 +69,121 @@ class StepCounterDbHelper(context: Context) :
   }
 
   override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-    // Schema v1 only; nothing to migrate yet.
+    if (oldVersion < 2) {
+      db.execSQL("ALTER TABLE $TABLE ADD COLUMN $COL_ELAPSED_REALTIME INTEGER")
+    }
   }
 
-  fun insertSample(timestampMs: Long, stepCount: Long, bootId: String) {
+  fun insertSample(
+      timestampMs: Long,
+      stepCount: Long,
+      bootId: String,
+      elapsedRealtimeMs: Long? = null,
+  ) {
     writableDatabase.use { db ->
       val values =
           ContentValues().apply {
             put(COL_TIMESTAMP, timestampMs)
+            if (elapsedRealtimeMs != null) put(COL_ELAPSED_REALTIME, elapsedRealtimeMs)
             put(COL_STEPS, stepCount)
             put(COL_BOOT_ID, bootId)
           }
       db.insertOrThrow(TABLE, null, values)
     }
   }
+
+  fun latestSampleCursorAtOrBefore(timestampMs: Long): SampleCursor? {
+    readableDatabase.use { db ->
+      return db.rawQuery(
+              "SELECT $COL_ID, $COL_TIMESTAMP, $COL_ELAPSED_REALTIME, $COL_STEPS, $COL_BOOT_ID FROM $TABLE WHERE $COL_TIMESTAMP <= ? ORDER BY $COL_ID DESC LIMIT 1",
+              arrayOf(timestampMs.toString()))
+          .use { cursor -> if (cursor.moveToNext()) cursor.toSampleCursor() else null }
+    }
+  }
+
+  /**
+   * Reads samples in insertion order after a durable cursor. Row ids are
+   * monotonic within this database, so wall-clock corrections cannot hide
+   * samples. The supplied boot/count fields preserve the starting anchor even
+   * if pruning has removed the cursor row itself.
+   */
+  fun readStepsSinceCursor(
+      sampleId: Long,
+      bootId: String,
+      stepCount: Long,
+      timestampMs: Long? = null,
+      elapsedRealtimeMs: Long? = null,
+  ): CursorSteps {
+    var total = 0L
+    var previousBootId = bootId
+    var previousStepCount = stepCount
+    var previousTimestamp = timestampMs ?: timestampForSample(sampleId)
+    var previousElapsedRealtime = elapsedRealtimeMs ?: elapsedRealtimeForSample(sampleId)
+    var latestCursor: SampleCursor? = null
+    var wallClockMovedBackward = false
+
+    readableDatabase.use { db ->
+      db.rawQuery(
+              "SELECT $COL_ID, $COL_TIMESTAMP, $COL_ELAPSED_REALTIME, $COL_STEPS, $COL_BOOT_ID FROM $TABLE WHERE $COL_ID > ? ORDER BY $COL_ID ASC",
+              arrayOf(sampleId.toString()))
+          .use { cursor ->
+            while (cursor.moveToNext()) {
+              val sample = cursor.toSampleCursor()
+              if (sample.bootId == previousBootId) {
+                val delta = sample.stepCount - previousStepCount
+                if (delta > 0) total += delta
+                val priorTimestamp = previousTimestamp
+                val priorElapsedRealtime = previousElapsedRealtime
+                if (priorTimestamp != null &&
+                    priorElapsedRealtime != null &&
+                    sample.elapsedRealtimeMs != null) {
+                  val wallDelta = sample.timestampMs - priorTimestamp
+                  val elapsedDelta = sample.elapsedRealtimeMs - priorElapsedRealtime
+                  if (kotlin.math.abs(wallDelta - elapsedDelta) > CLOCK_SHIFT_TOLERANCE_MS) {
+                    wallClockMovedBackward = wallDelta < elapsedDelta
+                  }
+                }
+              }
+              previousBootId = sample.bootId
+              previousStepCount = sample.stepCount
+              previousTimestamp = sample.timestampMs
+              previousElapsedRealtime = sample.elapsedRealtimeMs
+              latestCursor = sample
+            }
+          }
+    }
+
+    return CursorSteps(total, latestCursor, wallClockMovedBackward)
+  }
+
+  private fun timestampForSample(sampleId: Long): Long? {
+    readableDatabase.use { db ->
+      return db.rawQuery(
+              "SELECT $COL_TIMESTAMP FROM $TABLE WHERE $COL_ID = ? LIMIT 1",
+              arrayOf(sampleId.toString()))
+          .use { cursor -> if (cursor.moveToNext()) cursor.getLong(0) else null }
+    }
+  }
+
+  private fun elapsedRealtimeForSample(sampleId: Long): Long? {
+    readableDatabase.use { db ->
+      return db.rawQuery(
+              "SELECT $COL_ELAPSED_REALTIME FROM $TABLE WHERE $COL_ID = ? LIMIT 1",
+              arrayOf(sampleId.toString()))
+          .use { cursor ->
+            if (cursor.moveToNext() && !cursor.isNull(0)) cursor.getLong(0) else null
+          }
+    }
+  }
+
+  private fun android.database.Cursor.toSampleCursor() =
+      SampleCursor(
+          sampleId = getLong(0),
+          timestampMs = getLong(1),
+          elapsedRealtimeMs = if (isNull(2)) null else getLong(2),
+          stepCount = getLong(3),
+          bootId = getString(4),
+      )
 
   /**
    * Sum steps taken across [fromMs, toMs].

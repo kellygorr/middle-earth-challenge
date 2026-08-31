@@ -1,3 +1,4 @@
+import { AccessibilityInfo } from 'react-native';
 import { act, renderHook } from '@testing-library/react-native';
 import { withTiming, type SharedValue } from 'react-native-reanimated';
 
@@ -14,6 +15,7 @@ describe('useInitialAnimation path reveal', () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     (withTiming as jest.Mock).mockImplementation(toValue => toValue);
     jest.useRealTimers();
   });
@@ -127,6 +129,30 @@ describe('useInitialAnimation path reveal', () => {
       jest.runAllTimers();
     });
 
+    expect(onPathRevealComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('reveals the full path immediately when Reduce Motion is enabled', async () => {
+    jest
+      .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+      .mockResolvedValue(true);
+    const onPathRevealComplete = jest.fn();
+    const { result, rerender } = await renderHook<HookResult, HookProps>(
+      ({ showWelcome }) =>
+        useInitialAnimation({
+          showWelcome,
+          pathRevealStart: 0.25,
+          recenterOpacity: sharedValue(0),
+          originMonitorEnabled: sharedValue(true),
+          resetToOrigin: jest.fn(),
+          onPathRevealComplete,
+        }),
+      { initialProps: { showWelcome: true } },
+    );
+
+    await rerender({ showWelcome: false });
+
+    expect(result.current.initialBasePathProgress.value).toBe(1);
     expect(onPathRevealComplete).toHaveBeenCalledTimes(1);
   });
 });

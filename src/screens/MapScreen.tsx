@@ -14,6 +14,7 @@ import Animated, {
   withSequence,
   interpolateColor,
   Easing,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import {
   SafeAreaView,
@@ -62,6 +63,7 @@ import { useUniformMapLayout } from '../hooks/useUniformMapLayout';
 import { useGameProgressAnimation } from '../hooks/useGameProgressAnimation';
 import { useTooltipPositioning } from '../hooks/useTooltipPositioning';
 import { useKeyboardOffset } from '../hooks/useKeyboardOffset';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 // InfoButton visibility derived via infoStore selector
 
 // Data sets and SVG viewBox dimensions
@@ -350,8 +352,11 @@ export default function MapScreen() {
   // path (the "beam running down the wire" sync indicator). Color is
   // handled by a tight gradient shader inside the map component.
   const shimmer = useSharedValue(0);
+  const reduceMotionEnabled = useReduceMotion();
   useEffect(() => {
-    if (isSyncing) {
+    cancelAnimation(pulse);
+    cancelAnimation(shimmer);
+    if (isSyncing && !reduceMotionEnabled) {
       pulse.value = 0;
       pulse.value = withRepeat(
         withSequence(
@@ -376,11 +381,14 @@ export default function MapScreen() {
         -1,
         false,
       );
+    } else if (reduceMotionEnabled) {
+      pulse.value = 0;
+      shimmer.value = 0;
     } else {
       pulse.value = withTiming(0, { duration: 400 });
       shimmer.value = withTiming(0, { duration: 200 });
     }
-  }, [isSyncing, pulse, shimmer]);
+  }, [isSyncing, pulse, reduceMotionEnabled, shimmer]);
 
   // Animated tint color rendered inside the Skia canvas (above map
   // artwork, below the journey path) so the path and checkpoints stay
@@ -760,6 +768,7 @@ export default function MapScreen() {
                 }
                 hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
                 isLabelButton
+                accessibilityState={{ selected: showPointLabels }}
               >
                 Labels
               </Button>
@@ -784,6 +793,7 @@ export default function MapScreen() {
                   }
                   hitSlop={{ top: 8, right: 16, bottom: 8, left: 8 }}
                   isLabelButton
+                  accessibilityState={{ selected: showFriendProgress }}
                 >
                   Friends
                 </Button>

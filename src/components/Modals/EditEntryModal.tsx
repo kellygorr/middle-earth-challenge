@@ -41,9 +41,16 @@ import { CloseIcon, ResetIcon, TrashIcon } from '../../assets/icons';
 import { DistanceEntry } from '../../types';
 import { milesToSteps, stepsToMiles } from '../../utils/stride';
 import { kmToMiles, milesToKm } from '../../utils/date';
-import { validateManualEntryInput } from '../../utils/manualEntryValidation';
+import {
+  MANUAL_ENTRY_DELETE_ERROR,
+  MANUAL_ENTRY_SAVE_ERROR,
+  validateManualEntryInput,
+} from '../../utils/manualEntryValidation';
+import ManualEntryModeSelector, {
+  type ManualEntryMode,
+} from './ManualEntryModeSelector';
 
-type EditMode = 'distance' | 'steps';
+type EditMode = ManualEntryMode;
 
 /**
  * Convert a stored miles value into the string shown in the edit input,
@@ -216,9 +223,15 @@ export default function EditEntryModal() {
       source: editingEntry.source || 'manual',
     };
 
-    await addDistanceEntry(updatedEntry);
-    clearTestOverride();
-    closeModal();
+    try {
+      await addDistanceEntry(updatedEntry);
+      clearTestOverride();
+      closeModal();
+    } catch {
+      setInputError(MANUAL_ENTRY_SAVE_ERROR);
+    } finally {
+      actionLockRef.current = false;
+    }
   };
 
   const performDelete = async () => {
@@ -226,9 +239,15 @@ export default function EditEntryModal() {
     if (actionLockRef.current) return;
     actionLockRef.current = true;
 
-    await removeDistanceEntry(editingEntry.id);
-    clearTestOverride();
-    closeModal();
+    try {
+      await removeDistanceEntry(editingEntry.id);
+      clearTestOverride();
+      closeModal();
+    } catch {
+      setInputError(MANUAL_ENTRY_DELETE_ERROR);
+    } finally {
+      actionLockRef.current = false;
+    }
   };
 
   const confirmDelete = () => {
@@ -246,37 +265,6 @@ export default function EditEntryModal() {
   const visible = editingEntry !== null;
   const unitLabel = editMode === 'steps' ? 'steps' : useMiles ? 'miles' : 'km';
   const distanceLabel = useMiles ? 'Miles' : 'Km';
-
-  const renderSegment = (label: string, mode: EditMode) => {
-    const active = editMode === mode;
-    return (
-      <Pressable
-        key={mode}
-        onPress={() => switchMode(mode)}
-        style={[
-          styles.segment,
-          active && {
-            backgroundColor: theme.colors.buttonBrandBackground,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            typographyThemed(theme).captionPrimary,
-            styles.segmentText,
-            active ? styles.segmentTextActive : styles.segmentTextInactive,
-            {
-              color: active
-                ? theme.colors.buttonBrandText
-                : theme.colors.textSecondary,
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </Pressable>
-    );
-  };
 
   return (
     <Modal
@@ -384,6 +372,9 @@ export default function EditEntryModal() {
                 }
                 disableFullscreenUI={true}
                 placeholderTextColor={theme.colors.textSecondary}
+                accessibilityLabel={
+                  editMode === 'steps' ? 'Steps' : `Distance in ${unitLabel}`
+                }
               />
               <Text style={typographyThemed(theme).bodyPrimary}>
                 {unitLabel}
@@ -392,6 +383,7 @@ export default function EditEntryModal() {
 
             <Text
               testID="edit-entry-validation"
+              nativeID="edit-entry-validation"
               accessibilityLiveRegion="polite"
               accessibilityRole={inputError ? 'alert' : undefined}
               numberOfLines={1}
@@ -405,18 +397,11 @@ export default function EditEntryModal() {
 
             {/* Bottom row: mode toggle (left) · reset + save (right) */}
             <View style={styles.actionsRow}>
-              <View
-                style={[
-                  styles.toggleRow,
-                  {
-                    backgroundColor: theme.colors.surface,
-                    borderColor: theme.colors.divider,
-                  },
-                ]}
-              >
-                {renderSegment(distanceLabel, 'distance')}
-                {renderSegment('Steps', 'steps')}
-              </View>
+              <ManualEntryModeSelector
+                value={editMode}
+                distanceLabel={distanceLabel}
+                onChange={switchMode}
+              />
               <View style={styles.actionsRight}>
                 <IconButton
                   icon={
@@ -475,28 +460,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignSelf: 'flex-start',
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    padding: 2,
-  },
-  segment: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    minWidth: 72,
-  },
-  segmentText: {
-    textAlign: 'center',
-  },
-  segmentTextActive: {
-    fontWeight: '600',
-  },
-  segmentTextInactive: {
-    fontWeight: '400',
   },
   inputRow: {
     flexDirection: 'row',

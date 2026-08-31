@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dimensions, StyleSheet, AccessibilityInfo } from 'react-native';
+import { Dimensions, StyleSheet } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import Animated, {
   useSharedValue,
@@ -8,7 +8,9 @@ import Animated, {
   withRepeat,
   useAnimatedProps,
   Easing,
+  cancelAnimation,
 } from 'react-native-reanimated';
+import { useReduceMotion } from '../../hooks/useReduceMotion';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -36,34 +38,20 @@ export default function CelebrationBorder({
   opacity = 0.6,
   cycleDurationMs = 8000,
 }: CelebrationBorderProps) {
-  const [reduceMotionEnabled, setReduceMotionEnabled] = React.useState(false);
-  React.useEffect(() => {
-    let mounted = true;
-    AccessibilityInfo.isReduceMotionEnabled().then(enabled => {
-      if (mounted) setReduceMotionEnabled(enabled);
-    });
-    const sub = AccessibilityInfo.addEventListener(
-      'reduceMotionChanged',
-      setReduceMotionEnabled,
-    );
-    return () => {
-      mounted = false;
-      // @ts-ignore
-      sub?.remove?.();
-    };
-  }, []);
+  const reduceMotionEnabled = useReduceMotion();
 
   const angle = useSharedValue(0);
   const alpha = useSharedValue(0);
 
   React.useEffect(() => {
+    cancelAnimation(angle);
+    angle.value = 0;
     if (show) {
       alpha.value = withTiming(opacity, {
         duration: 240,
         easing: Easing.linear,
       });
       if (!reduceMotionEnabled) {
-        angle.value = 0;
         angle.value = withRepeat(
           withTiming(360, { duration: cycleDurationMs, easing: Easing.linear }),
           -1,

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import {
   act,
   fireEvent,
@@ -43,6 +44,7 @@ describe('EditEntryModal', () => {
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
     await act(() => {
       useUIStore.setState({ editingEntry: null, editDate: null });
     });
@@ -84,6 +86,51 @@ describe('EditEntryModal', () => {
     );
   });
 
+  it('keeps the editor open and permits retry after save fails', async () => {
+    const user = userEvent.setup();
+    addDistanceEntry
+      .mockRejectedValueOnce(new Error('disk full'))
+      .mockResolvedValueOnce(undefined);
+    openEntry(persistedEntry);
+    await render(<EditEntryModal />);
+
+    await user.press(screen.getByText('Save'));
+    expect(
+      screen.getByText('Could not save entry. Try again.'),
+    ).toBeOnTheScreen();
+    expect(useUIStore.getState().editingEntry).toEqual(persistedEntry);
+
+    await user.press(screen.getByText('Save'));
+    expect(addDistanceEntry).toHaveBeenCalledTimes(2);
+    expect(useUIStore.getState().editingEntry).toBeNull();
+  });
+
+  it('keeps the editor open and permits retry after delete fails', async () => {
+    const user = userEvent.setup();
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    removeDistanceEntry
+      .mockRejectedValueOnce(new Error('disk full'))
+      .mockResolvedValueOnce(undefined);
+    openEntry(persistedEntry);
+    await render(<EditEntryModal />);
+
+    await user.press(screen.getByLabelText('Delete entry'));
+    await act(async () => {
+      await alertSpy.mock.calls.at(-1)?.[2]?.[1]?.onPress?.();
+    });
+    expect(
+      screen.getByText('Could not delete entry. Try again.'),
+    ).toBeOnTheScreen();
+    expect(useUIStore.getState().editingEntry).toEqual(persistedEntry);
+
+    await user.press(screen.getByLabelText('Delete entry'));
+    await act(async () => {
+      await alertSpy.mock.calls.at(-1)?.[2]?.[1]?.onPress?.();
+    });
+    expect(removeDistanceEntry).toHaveBeenCalledTimes(2);
+    expect(useUIStore.getState().editingEntry).toBeNull();
+  });
+
   it('does not use persistent native reselection', async () => {
     openEntry(persistedEntry);
     await render(<EditEntryModal />);
@@ -102,6 +149,23 @@ describe('EditEntryModal', () => {
     expect(screen.getByLabelText('Previous day')).toBeOnTheScreen();
     expect(screen.getByLabelText('Next day')).toBeOnTheScreen();
     expect(screen.getByLabelText('Reset changes')).toBeOnTheScreen();
+  });
+
+  it('labels edit fields and exposes selected entry type', async () => {
+    openEntry(persistedEntry);
+    await render(<EditEntryModal />);
+
+    expect(screen.getByLabelText('Distance in miles')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Time')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Entry type').props.accessibilityRole).toBe(
+      'radiogroup',
+    );
+    expect(screen.getByLabelText('Miles').props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(screen.getByLabelText('Steps').props.accessibilityState).toEqual({
+      selected: false,
+    });
   });
 
   it('commits a typed time before Save writes the entry', async () => {

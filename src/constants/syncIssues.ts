@@ -19,7 +19,7 @@ export type SyncIssueSlot =
   | 'health-app'
   /** A single fault affecting both sources at once. */
   | 'cross'
-  /** App-level, belonging to neither source (e.g. iOS background refresh). */
+  /** App-level, belonging to neither source. */
   | 'app'
   /** Informational; never competes with a fault for a slot. */
   | 'notice';
@@ -42,8 +42,6 @@ export function syncErrorSlot(error: SyncError): SyncIssueSlot {
     case 'unavailable':
     case 'provider':
       return 'health-app';
-    case 'backgroundDisabled':
-      return 'app';
     default:
       return 'app';
   }

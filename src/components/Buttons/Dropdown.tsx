@@ -50,6 +50,7 @@ export default function Dropdown({
         size={size}
         style={styles.trigger}
         disabled={disabled}
+        isOpen={isOpen}
       >
         {labelPrefix ? `${labelPrefix} ${text}` : text}
       </Button>

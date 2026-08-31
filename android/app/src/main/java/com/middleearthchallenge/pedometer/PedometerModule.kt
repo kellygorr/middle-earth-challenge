@@ -13,6 +13,7 @@ import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -133,6 +134,13 @@ class PedometerModule(private val reactContext: ReactApplicationContext) :
     promise.resolve(StepCounterService.isRunning.get())
   }
 
+  @ReactMethod
+  fun reportBackgroundTaskResult(requestId: String, succeeded: Boolean) {
+    if (!PedometerBackgroundTaskResults.report(requestId, succeeded)) {
+      Log.w(MODULE_NAME, "Ignoring result for unknown background task: $requestId")
+    }
+  }
+
   // ---- Query ----
 
   /**
@@ -144,17 +152,65 @@ class PedometerModule(private val reactContext: ReactApplicationContext) :
   fun getStepsBetween(fromMs: Double, toMs: Double, promise: Promise) {
     try {
       val steps = dbHelper.readStepsBetween(fromMs.toLong(), toMs.toLong())
+      val latestCursor = dbHelper.latestSampleCursorAtOrBefore(toMs.toLong())
       val out: WritableMap =
           Arguments.createMap().apply {
             putDouble("steps", steps.toDouble())
             putDouble("fromMs", fromMs)
             putDouble("toMs", toMs)
+            putMap("latestCursor", latestCursor?.toWritableMap())
           }
       promise.resolve(out)
     } catch (t: Throwable) {
       promise.reject("E_QUERY_FAILED", t.message, t)
     }
   }
+
+  @ReactMethod
+  fun getSampleCursorAtOrBefore(timestampMs: Double, promise: Promise) {
+    try {
+      promise.resolve(dbHelper.latestSampleCursorAtOrBefore(timestampMs.toLong())?.toWritableMap())
+    } catch (t: Throwable) {
+      promise.reject("E_QUERY_FAILED", t.message, t)
+    }
+  }
+
+  /** Reads every inserted sample after an opaque durable cursor. */
+  @ReactMethod
+    fun getStepsSinceCursor(cursor: ReadableMap, promise: Promise) {
+    try {
+      val elapsedRealtimeMs =
+        if (cursor.hasKey("elapsedRealtimeMs") && !cursor.isNull("elapsedRealtimeMs"))
+          cursor.getDouble("elapsedRealtimeMs").toLong()
+        else null
+      val result =
+          dbHelper.readStepsSinceCursor(
+          cursor.getDouble("sampleId").toLong(),
+          cursor.getString("bootId") ?: "",
+          cursor.getDouble("stepCount").toLong(),
+          cursor.getDouble("timestampMs").toLong(),
+          elapsedRealtimeMs)
+      val out =
+          Arguments.createMap().apply {
+            putDouble("steps", result.steps.toDouble())
+            putMap("latestCursor", result.latestCursor?.toWritableMap())
+            putBoolean("wallClockMovedBackward", result.wallClockMovedBackward)
+          }
+      promise.resolve(out)
+    } catch (t: Throwable) {
+      promise.reject("E_QUERY_FAILED", t.message, t)
+    }
+  }
+
+  private fun StepCounterDbHelper.SampleCursor.toWritableMap(): WritableMap =
+      Arguments.createMap().apply {
+        putDouble("sampleId", sampleId.toDouble())
+        putDouble("timestampMs", timestampMs.toDouble())
+        if (elapsedRealtimeMs == null) putNull("elapsedRealtimeMs")
+        else putDouble("elapsedRealtimeMs", elapsedRealtimeMs.toDouble())
+        putDouble("stepCount", stepCount.toDouble())
+        putString("bootId", bootId)
+      }
 
   /**
    * Deletes raw samples older than [cutoffMs], keeping each boot's anchor.

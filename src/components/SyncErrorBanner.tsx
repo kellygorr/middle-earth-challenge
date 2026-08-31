@@ -4,8 +4,8 @@ import {
   Text,
   Pressable,
   StyleSheet,
-  Linking,
   Platform,
+  Linking,
   ScrollView,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -143,14 +143,6 @@ function getCopy(error: SyncError): {
         ...getOemBatteryGuidance(error.manufacturer),
         showAddHint: false,
         showCatchUpHint: true,
-      };
-    case 'backgroundDisabled':
-      return {
-        headline: 'Background updates are off',
-        body:
-          'iOS isn’t letting us refresh in the background, so new activity will only sync when you open the app. ' +
-          'Turn on Background App Refresh in iOS Settings to fix this.',
-        showAddHint: false,
       };
     case 'unknown':
     default:
@@ -443,23 +435,6 @@ function SyncIssueCard({
             accessibilityLabel={`Add ${unitLabel.toLowerCase()}`}
             onPress={() => pushModal({ type: 'miles' })}
           />
-        </View>
-      )}
-      {lastSyncError.kind === 'backgroundDisabled' && (
-        <View style={styles.retry}>
-          <Button
-            variant="primary"
-            size="small"
-            onPress={() => {
-              Linking.openSettings().catch(() => {
-                // openSettings can reject on simulators or if no Settings
-                // entry exists yet; nothing useful to do here besides
-                // swallow so we don't crash the banner.
-              });
-            }}
-          >
-            Open iOS Settings
-          </Button>
         </View>
       )}
     </View>

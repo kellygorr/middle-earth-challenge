@@ -41,9 +41,9 @@ import { StatusBadge } from '../../StatusBadge';
 import { useLivePedometerDelta } from '../../../hooks/useLivePedometerDelta';
 import { getDistanceSourceLabel } from '../../../constants/distanceSources';
 import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
+import { database } from '../../../services/database';
 
-// Number of days to load at a time
-const DAYS_PER_PAGE = 30;
+const ENTRIES_PER_PAGE = 200;
 
 // Sentinel id for the synthetic pedometer "live" row shown at the top of
 // today's group when the user is in pedometer mode and steps have
@@ -117,14 +117,33 @@ export default function DistanceContent() {
   const useMiles = useSettingsStore(state => state.useMiles);
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
 
-  // Store state
-  const distanceEntries = useProgressStore(state => state.distanceEntries);
+  const progressMiles = useProgressStore(state => state.miles);
+  const progressSteps = useProgressStore(state => state.steps);
+  const committedEntries = useProgressStore(state => state.distanceEntries);
+  const [distanceEntries, setDistanceEntries] = useState<DistanceEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<{
+    date: number;
+    id: string;
+  } | null>(null);
 
   const setEditingEntry = useUIStore(state => state.setEditingEntry);
 
-  // Pagination state
-  const [visibleDaysCount, setVisibleDaysCount] = useState(DAYS_PER_PAGE);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    database
+      .getDistanceEntryPage(DEFAULT_SAVE_ID, null, ENTRIES_PER_PAGE)
+      .then(page => {
+        if (cancelled) return;
+        setDistanceEntries(page.entries);
+        setNextCursor(page.nextCursor);
+      })
+      .catch(error => console.error('Failed to load distance history:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [committedEntries, progressMiles, progressSteps]);
 
   // Group ALL entries by day (newest first) with total miles / steps
   const allDayGroups = useMemo(() => {
@@ -173,12 +192,8 @@ export default function DistanceContent() {
       );
   }, [distanceEntries]);
 
-  // Paginated day groups (only show visibleDaysCount)
-  const dayGroups = useMemo(() => {
-    return allDayGroups.slice(0, visibleDaysCount);
-  }, [allDayGroups, visibleDaysCount]);
-
-  const hasMoreDays = allDayGroups.length > visibleDaysCount;
+  const dayGroups = allDayGroups;
+  const hasMoreDays = nextCursor !== null;
 
   // Pedometer live delta — steps accumulated since the last commit but
   // not yet rolled up into a persisted range. Shown as a synthetic
@@ -327,26 +342,23 @@ export default function DistanceContent() {
     });
   };
 
-  // Load more days when scrolling up
-  const loadMoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (loadMoreTimerRef.current) clearTimeout(loadMoreTimerRef.current);
-    };
-  }, []);
-
-  const loadMoreDays = useCallback(() => {
-    if (hasMoreDays && !isLoadingMore) {
-      setIsLoadingMore(true);
-      // Show loading indicator for at least 1 second
-      loadMoreTimerRef.current = setTimeout(() => {
-        loadMoreTimerRef.current = null;
-        setVisibleDaysCount(prev => prev + DAYS_PER_PAGE);
-        setIsLoadingMore(false);
-      }, 1000);
+  const loadMoreDays = useCallback(async () => {
+    if (!nextCursor || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const page = await database.getDistanceEntryPage(
+        DEFAULT_SAVE_ID,
+        nextCursor,
+        ENTRIES_PER_PAGE,
+      );
+      setDistanceEntries(current => [...current, ...page.entries]);
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      console.error('Failed to load more distance history:', error);
+    } finally {
+      setIsLoadingMore(false);
     }
-  }, [hasMoreDays, isLoadingMore]);
+  }, [isLoadingMore, nextCursor]);
 
   // Editing delegates to a separate overlay, leaving this list untouched.
   const startEditing = (item: DistanceEntry) => {

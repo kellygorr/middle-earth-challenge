@@ -1,6 +1,7 @@
 module.exports = {
   root: true,
   extends: '@react-native',
+  ignorePatterns: ['android/**/build/**', 'coverage/**'],
   overrides: [
     {
       // Disallow hardcoded `fontSize:` numeric literals in component / screen
@@ -42,4 +43,3 @@ module.exports = {
     },
   ],
 };
-

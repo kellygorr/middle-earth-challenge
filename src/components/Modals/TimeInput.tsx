@@ -157,6 +157,7 @@ const TimeInput = forwardRef<TimeInputHandle, TimeInputProps>(
           autoCorrect={false}
           placeholder="10:45 AM"
           placeholderTextColor={theme.colors.textSecondary}
+          accessibilityLabel="Time"
         />
       </View>
     );

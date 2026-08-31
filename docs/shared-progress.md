@@ -22,7 +22,7 @@ journey total before anything is published.
 ## Goals
 
 - Let a private, invite-only group see one another's journey progress.
-  *(Deferred — currently one implicit group.)*
+  _(Deferred — currently one implicit group.)_
 - Keep sharing optional and off by default.
 - Share only the minimum data needed for the experience.
 - Continue treating local progress as the app's source of truth.
@@ -193,7 +193,7 @@ Implemented in `src/hooks/useFriendProgressSync.ts`. While opted in:
 Designed but **not implemented**:
 
 - App entering the background: publish once if distance changed. The AppState
-  listener only fires a sync on the transition *to* active.
+  listener only fires a sync on the transition _to_ active.
 - Android pedometer background commit: best-effort publish after the
   WorkManager commit. `pedometerBackgroundTask` does not touch friend progress.
 - Shared-progress view: manual pull-to-refresh. There is no `RefreshControl`;
@@ -407,8 +407,8 @@ must never be merged into the current user's local journey progress.
 4. Implement opt-in, display-name editing, and opt-out.
 5. Implement idempotent absolute-distance publishing.
 6. Implement launch/resume and two-minute foreground triggers.
-   *(Background-transition and Android pedometer-background triggers deferred.)*
-7. Implement participant fetching and caching. *(Pull-to-refresh deferred.)*
+   _(Background-transition and Android pedometer-background triggers deferred.)_
+7. Implement participant fetching and caching. _(Pull-to-refresh deferred.)_
 8. Display participants along the map path.
 9. Add offline/error/privacy states and device tests.
 
@@ -427,10 +427,10 @@ must never be merged into the current user's local journey progress.
 - A reduced local total replaces the larger cloud total.
 - Launch/resume and two-minute foreground cycles publish then fetch.
 - Concurrent cycles do not overlap.
-- Background transition publishes changed distance once. *(Deferred — trigger
-  not implemented.)*
+- Background transition publishes changed distance once. _(Deferred — trigger
+  not implemented.)_
 - Android background pedometer commit triggers best-effort publishing.
-  *(Deferred — trigger not implemented.)*
+  _(Deferred — trigger not implemented.)_
 - Opt-out stops publish/fetch requests and deletes the cloud row.
 - A failed opt-out deletion is retried without publishing or fetching progress.
 - Delete shared data from Data Management performs the same confirmed opt-out

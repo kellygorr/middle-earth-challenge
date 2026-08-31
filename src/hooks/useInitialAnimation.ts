@@ -9,6 +9,7 @@ import {
   runOnJS,
 } from 'react-native-reanimated';
 import { motion } from '../styles/motion';
+import { useReduceMotion } from './useReduceMotion';
 
 const PATH_REVEAL_WATCHDOG_BUFFER_MS = 1000;
 
@@ -53,6 +54,7 @@ export function useInitialAnimation({
   onStartupReady,
   onPathRevealComplete,
 }: UseInitialAnimationOptions): UseInitialAnimationReturn {
+  const reduceMotionEnabled = useReduceMotion();
   // Mirror `isSyncing` into a ref so changes don't retrigger the dismissal
   // effect; we only need its value at the moment welcome dismisses.
   const isSyncingRef = useRef(isSyncing);
@@ -114,6 +116,18 @@ export function useInitialAnimation({
     }
   }, [completePathReveal]);
 
+  useEffect(() => {
+    if (reduceMotionEnabled && !showWelcome) {
+      cancelAnimation(initialBasePathProgress);
+      completePathReveal();
+    }
+  }, [
+    completePathReveal,
+    initialBasePathProgress,
+    reduceMotionEnabled,
+    showWelcome,
+  ]);
+
   // Animated styles for buttons
   const settingsEnterStyle = useAnimatedStyle(() => ({
     opacity: settingsOpacity.value,
@@ -164,7 +178,7 @@ export function useInitialAnimation({
       // on top of the bg pulse + shimmer animations.
       if (!hasPathRevealed.value) {
         hasPathRevealed.value = true;
-        if (isSyncingRef.current) {
+        if (isSyncingRef.current || reduceMotionEnabled) {
           completePathReveal();
         } else {
           pathRevealWatchdogRef.current = setTimeout(
@@ -269,6 +283,7 @@ export function useInitialAnimation({
     hasStartupSignaled,
     clearPathRevealWatchdog,
     completePathReveal,
+    reduceMotionEnabled,
     onStartupReady,
   ]);
 

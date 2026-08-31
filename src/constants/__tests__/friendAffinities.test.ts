@@ -42,9 +42,9 @@ describe('friend affinity cross-layer parity', () => {
     }
 
     // Each row is [name, affinity, miles]; the affinity is the second literal.
-    const seedAffinities = [...block[1].matchAll(/\[[^\]]*?,\s*'([^']+)'/g)].map(
-      m => m[1],
-    );
+    const seedAffinities = [
+      ...block[1].matchAll(/\[[^\]]*?,\s*'([^']+)'/g),
+    ].map(m => m[1]);
 
     expect(seedAffinities.length).toBeGreaterThan(0);
     expect([...new Set(seedAffinities)].sort()).toEqual(
@@ -64,5 +64,11 @@ describe('friend affinity cross-layer parity', () => {
     expect(ruleFields.sort()).toEqual(
       ['affinity', 'displayName', 'distanceMiles', 'updatedAt'].sort(),
     );
+  });
+
+  it('requires a nonblank display name after trimming whitespace', () => {
+    const rules = readRepoFile('firestore.rules');
+
+    expect(rules).toContain('data.displayName.trim().size() > 0');
   });
 });

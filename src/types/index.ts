@@ -81,6 +81,14 @@ export type SyncProvider = 'none' | 'health-connect' | 'apple-health';
  */
 export type TrackingMode = 'health-app' | 'pedometer' | 'dual';
 
+export interface PedometerCursor {
+  sampleId: number;
+  timestampMs: number;
+  elapsedRealtimeMs: number | null;
+  stepCount: number;
+  bootId: string;
+}
+
 export type { FriendAffinity } from '../constants/friendAffinities';
 
 export interface UserSettings {
@@ -98,6 +106,7 @@ export interface UserSettings {
   syncProvider: SyncProvider; // Which fitness service to sync with
   syncStartDate: number | null; // Unix timestamp when sync was enabled
   lastSyncTimestamp: number | null; // Last successful sync timestamp
+  pedometerCursor: PedometerCursor | null; // Durable native sample position
   healthSyncFormatVersion: number; // Android HC entry-ID format; 0=LIVE raw, 1=aggregate
   healthLookbackStartTimestamp: number | null; // Earliest range safe to replay with aggregate IDs
   lastHealthReconciledThrough: number | null; // Exclusive local-midnight boundary for dual mode

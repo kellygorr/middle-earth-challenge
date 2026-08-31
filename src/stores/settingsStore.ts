@@ -23,7 +23,10 @@ interface SettingsStore extends UserSettings {
     updates: Partial<
       Pick<
         UserSettings,
-        'syncStartDate' | 'lastSyncTimestamp' | 'lastHealthReconciledThrough'
+        | 'syncStartDate'
+        | 'lastSyncTimestamp'
+        | 'pedometerCursor'
+        | 'lastHealthReconciledThrough'
       >
     >,
   ) => Promise<void>;
@@ -35,6 +38,7 @@ interface SettingsStore extends UserSettings {
         | 'syncProvider'
         | 'syncStartDate'
         | 'lastSyncTimestamp'
+        | 'pedometerCursor'
         | 'healthSyncFormatVersion'
         | 'healthLookbackStartTimestamp'
         | 'lastHealthReconciledThrough'
@@ -83,6 +87,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   syncProvider: 'none',
   syncStartDate: null,
   lastSyncTimestamp: null,
+  pedometerCursor: null,
   healthSyncFormatVersion: 0,
   healthLookbackStartTimestamp: null,
   lastHealthReconciledThrough: null,
@@ -189,6 +194,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
       syncProvider: settings.syncProvider ?? 'none',
       syncStartDate: settings.syncStartDate ?? null,
       lastSyncTimestamp: settings.lastSyncTimestamp ?? null,
+      pedometerCursor: settings.pedometerCursor ?? null,
       healthSyncFormatVersion: settings.healthSyncFormatVersion ?? 0,
       healthLookbackStartTimestamp:
         settings.healthLookbackStartTimestamp ?? null,

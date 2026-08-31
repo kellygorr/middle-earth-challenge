@@ -144,9 +144,7 @@ export default function IconButton({
     return (
       <View
         style={[
-          isTransparent
-            ? styles.centered
-            : { ...baseStyle, backgroundColor },
+          isTransparent ? styles.centered : { ...baseStyle, backgroundColor },
           style,
         ]}
       >

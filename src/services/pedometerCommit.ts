@@ -37,6 +37,8 @@ export interface PedometerCommitResult {
   entryWritten: boolean;
 }
 
+let commitQueue: Promise<void> = Promise.resolve();
+
 /**
  * Materialize a single pedometer `DistanceEntry` for [fromMs, toMs).
  *
@@ -44,56 +46,107 @@ export interface PedometerCommitResult {
  * returns zero. Read or persistence failures reject without advancing the
  * watermark.
  */
-export async function commitPedometerRange(
+export function commitPedometerRange(
   fromMs: number,
   toMs: number,
 ): Promise<PedometerCommitResult> {
+  const commit = commitQueue.then(() =>
+    commitPedometerRangeSerialized(fromMs, toMs),
+  );
+  commitQueue = commit.then(
+    () => undefined,
+    () => undefined,
+  );
+  return commit;
+}
+
+async function commitPedometerRangeSerialized(
+  requestedFromMs: number,
+  toMs: number,
+): Promise<PedometerCommitResult> {
+  const currentWatermark = useSettingsStore.getState().lastSyncTimestamp;
+  let fromMs = requestedFromMs;
+  if (currentWatermark !== null && currentWatermark !== requestedFromMs) {
+    if (toMs <= currentWatermark) {
+      return { steps: 0, miles: 0, entryWritten: false };
+    }
+    fromMs = currentWatermark;
+  }
+
   // Guard against inverted / degenerate windows — a mode-switch or
   // AppState double-fire can produce toMs === fromMs, and older callers
   // could plausibly pass toMs < fromMs. Treat both as no-ops so we
   // don't feed nonsense timestamps into the native module.
-  if (toMs <= fromMs) {
+  const expectedCursor = useSettingsStore.getState().pedometerCursor;
+  let readCursor = expectedCursor;
+  if (toMs === fromMs && !readCursor) {
     return { steps: 0, miles: 0, entryWritten: false };
   }
 
-  const segments: Array<{ fromMs: number; toMs: number }> = [];
-  let segmentStart = fromMs;
-  while (segmentStart < toMs) {
-    const nextMidnight = new Date(segmentStart);
-    nextMidnight.setHours(24, 0, 0, 0);
-    const segmentEnd = Math.min(toMs, nextMidnight.getTime());
-    segments.push({ fromMs: segmentStart, toMs: segmentEnd });
-    segmentStart = segmentEnd;
+  if (toMs < fromMs && !readCursor) {
+    readCursor = await pedometerService.getSampleCursorAtOrBefore(fromMs);
+    if (!readCursor) {
+      return { steps: 0, miles: 0, entryWritten: false };
+    }
   }
 
   const entries: DistanceEntry[] = [];
   let steps = 0;
-  for (const segment of segments) {
-    try {
-      const window = await pedometerService.getStepsBetween(
-        segment.fromMs,
-        segment.toMs,
-      );
-      const segmentSteps = Math.max(0, Math.floor(window.steps));
-      steps += segmentSteps;
-      if (segmentSteps > 0) {
-        entries.push({
-          id: `pedo_${segment.fromMs}`,
-          saveId: DEFAULT_SAVE_ID,
-          date:
-            segment.fromMs + Math.floor((segment.toMs - segment.fromMs) / 2),
-          miles: stepsToMiles(segmentSteps),
-          steps: segmentSteps,
-          source: 'pedometer',
-        });
-      }
-    } catch (error) {
-      console.warn('[pedometer] commit read failed', {
-        fromMs: segment.fromMs,
-        toMs: segment.toMs,
-        error,
+  let latestCursor = readCursor;
+
+  if (readCursor && toMs < fromMs) {
+    const window = await pedometerService.getStepsSinceCursor(readCursor);
+    steps = Math.max(0, Math.floor(window.steps));
+    latestCursor = window.latestCursor ?? readCursor;
+    if (steps > 0) {
+      entries.push({
+        id: `pedo_cursor_${readCursor.sampleId}_${latestCursor.sampleId}`,
+        saveId: DEFAULT_SAVE_ID,
+        date: latestCursor.timestampMs,
+        miles: stepsToMiles(steps),
+        steps,
+        source: 'pedometer',
       });
-      throw error;
+    }
+  } else {
+    const segments: Array<{ fromMs: number; toMs: number }> = [];
+    let segmentStart = fromMs;
+    while (segmentStart < toMs) {
+      const nextMidnight = new Date(segmentStart);
+      nextMidnight.setHours(24, 0, 0, 0);
+      const segmentEnd = Math.min(toMs, nextMidnight.getTime());
+      segments.push({ fromMs: segmentStart, toMs: segmentEnd });
+      segmentStart = segmentEnd;
+    }
+
+    for (const segment of segments) {
+      try {
+        const window = await pedometerService.getStepsBetween(
+          segment.fromMs,
+          segment.toMs,
+        );
+        const segmentSteps = Math.max(0, Math.floor(window.steps));
+        latestCursor = window.latestCursor ?? latestCursor;
+        steps += segmentSteps;
+        if (segmentSteps > 0) {
+          entries.push({
+            id: `pedo_${segment.fromMs}`,
+            saveId: DEFAULT_SAVE_ID,
+            date:
+              segment.fromMs + Math.floor((segment.toMs - segment.fromMs) / 2),
+            miles: stepsToMiles(segmentSteps),
+            steps: segmentSteps,
+            source: 'pedometer',
+          });
+        }
+      } catch (error) {
+        console.warn('[pedometer] commit read failed', {
+          fromMs: segment.fromMs,
+          toMs: segment.toMs,
+          error,
+        });
+        throw error;
+      }
     }
   }
 
@@ -105,8 +158,21 @@ export async function commitPedometerRange(
   // in this window. Must be read before `addDistanceEntries` mutates
   // the store.
   const milesBefore = progress.miles ?? 0;
-  await progress.applyPedometerSyncChunk(entries, toMs);
-  useSettingsStore.setState({ lastSyncTimestamp: toMs });
+  const applied = latestCursor
+    ? await progress.applyPedometerSyncChunk(
+        entries,
+        toMs,
+        expectedCursor,
+        latestCursor,
+      )
+    : await progress.applyPedometerSyncChunk(entries, toMs);
+  if (!applied) {
+    return { steps: 0, miles: 0, entryWritten: false };
+  }
+  useSettingsStore.setState({
+    lastSyncTimestamp: toMs,
+    pedometerCursor: latestCursor,
+  });
 
   // Only safe once the watermark has advanced past this window.
   await pruneCommittedSamples(toMs);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { useProgressStore } from '../../../stores/progressStore';
@@ -14,6 +14,10 @@ import {
   isSyncedDistanceSource,
   MANUAL_DISTANCE_SOURCES,
 } from '../../../constants/distanceSources';
+import { resetDistanceData } from '../../../services/distanceDataReset';
+import { database } from '../../../services/database';
+import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
+import type { DistanceSource } from '../../../types';
 
 /**
  * DataContent - Content component for the Data modal.
@@ -23,15 +27,24 @@ import {
 export default function DataContent() {
   const theme = useTheme();
 
-  // Distance entries
-  const distanceEntries = useProgressStore(state => state.distanceEntries);
-  const hasSyncedData = distanceEntries.some(e =>
-    isSyncedDistanceSource(e.source),
-  );
-  const hasManualData = distanceEntries.some(e =>
-    isManualDistanceSource(e.source),
-  );
-  const hasAnyData = distanceEntries.length > 0;
+  const progressMiles = useProgressStore(state => state.miles);
+  const committedEntries = useProgressStore(state => state.distanceEntries);
+  const [sources, setSources] = useState<DistanceSource[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    database
+      .getDistanceSourcePresence(DEFAULT_SAVE_ID)
+      .then(nextSources => {
+        if (!cancelled) setSources(nextSources);
+      })
+      .catch(error => console.error('Failed to load data sources:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [committedEntries, progressMiles]);
+  const hasSyncedData = sources.some(isSyncedDistanceSource);
+  const hasManualData = sources.some(isManualDistanceSource);
+  const hasAnyData = sources.length > 0;
   const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
   const sharingProvisioningPending = useSettingsStore(
     state => state.sharingProvisioningPending,
@@ -103,26 +116,12 @@ export default function DataContent() {
           style: 'destructive',
           onPress: async () => {
             const syncedSources = [
-              ...new Set(
-                distanceEntries
-                  .filter(entry => isSyncedDistanceSource(entry.source))
-                  .map(entry => entry.source),
-              ),
+              ...new Set(sources.filter(isSyncedDistanceSource)),
             ];
-            // Bulk-remove in a single store/DB write so the UI doesn't
-            // freeze when there are hundreds of chunked-sync entries.
-            await useProgressStore
-              .getState()
-              .removeDistanceEntriesBySource(syncedSources);
-
-            // Reset sync bookmarks so the next sync's fromDate falls back
-            // to syncStartDate (now) instead of the pre-reset lastSync-
-            // Timestamp, which would silently re-import the deleted data.
-            const settings = useSettingsStore.getState();
-            await settings.updateSyncBookmarks({
-              syncStartDate: Date.now(),
-              lastSyncTimestamp: null,
-            });
+            await resetDistanceData({ removeSources: syncedSources });
+            setSources(current =>
+              current.filter(source => !isSyncedDistanceSource(source)),
+            );
           },
         },
       ],
@@ -143,6 +142,9 @@ export default function DataContent() {
             await useProgressStore
               .getState()
               .removeDistanceEntriesBySource(MANUAL_DISTANCE_SOURCES);
+            setSources(current =>
+              current.filter(source => !isManualDistanceSource(source)),
+            );
           },
         },
       ],
@@ -173,19 +175,8 @@ export default function DataContent() {
               }
             }
 
-            // resetProgress() does a single setState + one SQL DELETE +
-            // one miles snapshot write — no per-entry looping.
-            await useProgressStore.getState().resetProgress();
+            await resetDistanceData({ clearAll: true });
             clearAllSyncIssues();
-
-            // Reset sync bookmarks so the next sync's fromDate falls back
-            // to syncStartDate (now) instead of the pre-reset lastSync-
-            // Timestamp, which would silently re-import the deleted data.
-            const settings = useSettingsStore.getState();
-            await settings.updateSyncBookmarks({
-              syncStartDate: Date.now(),
-              lastSyncTimestamp: null,
-            });
           },
         },
       ],

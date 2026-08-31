@@ -7,6 +7,7 @@ import {
   type FitnessServiceInterface,
 } from './fitnessService';
 import { METERS_TO_MILES } from '../utils/stride';
+import { database } from './database';
 
 const RECONCILIATION_PREFIX = 'health_reconciliation_';
 
@@ -62,9 +63,10 @@ export async function reconcileCompletedDualTrackingDays(
 
   const initialCursor = settings.lastHealthReconciledThrough;
   if (initialCursor === null) {
-    await useProgressStore
+    const applied = await useProgressStore
       .getState()
       .applyHealthReconciliationDay({}, todayStart);
+    if (!applied) return { daysReconciled: 0, milesAdded: 0 };
     useSettingsStore.setState({ lastHealthReconciledThrough: todayStart });
     return { daysReconciled: 0, milesAdded: 0 };
   }
@@ -95,14 +97,17 @@ export async function reconcileCompletedDualTrackingDays(
       0,
     );
 
+    const dayEntries = await database.getDistanceEntriesBetween(
+      DEFAULT_SAVE_ID,
+      cursor,
+      dayEnd,
+    );
     const progress = useProgressStore.getState();
-    const creditedTrackedEntries = progress.distanceEntries.filter(
+    const creditedTrackedEntries = dayEntries.filter(
       entry =>
-        (entry.source === 'pedometer' ||
-          entry.source === 'health-connect' ||
-          entry.source === 'apple-health') &&
-        entry.date >= cursor &&
-        entry.date < dayEnd,
+        entry.source === 'pedometer' ||
+        entry.source === 'health-connect' ||
+        entry.source === 'apple-health',
     );
     const creditedTrackedMiles = creditedTrackedEntries.reduce(
       (sum, entry) => sum + entry.miles,
@@ -115,9 +120,7 @@ export async function reconcileCompletedDualTrackingDays(
     const topUpMiles = calculateHealthTopUp(healthMiles, creditedTrackedMiles);
     const topUpSteps = calculateHealthTopUp(healthSteps, creditedTrackedSteps);
     const entryId = reconciliationEntryId(cursor);
-    const existing = progress.distanceEntries.find(
-      entry => entry.id === entryId,
-    );
+    const existing = dayEntries.find(entry => entry.id === entryId);
 
     const changes: { upsert?: DistanceEntry[]; removeIds?: string[] } = {};
     if (topUpMiles > 0 || topUpSteps > 0) {
@@ -141,7 +144,11 @@ export async function reconcileCompletedDualTrackingDays(
     }
 
     cursor = dayEnd;
-    await progress.applyHealthReconciliationDay(changes, cursor);
+    const applied = await progress.applyHealthReconciliationDay(
+      changes,
+      cursor,
+    );
+    if (!applied) return { daysReconciled, milesAdded };
     useSettingsStore.setState({ lastHealthReconciledThrough: cursor });
     daysReconciled += 1;
   }

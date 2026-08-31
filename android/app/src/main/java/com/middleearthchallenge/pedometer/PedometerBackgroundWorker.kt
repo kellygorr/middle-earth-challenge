@@ -17,6 +17,7 @@ import com.facebook.react.jstasks.HeadlessJsTaskConfig
 import com.facebook.react.jstasks.HeadlessJsTaskContext
 import com.facebook.react.jstasks.HeadlessJsTaskEventListener
 import java.util.concurrent.TimeUnit
+import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
@@ -56,9 +57,16 @@ class PedometerBackgroundWorker(context: Context, params: WorkerParameters) :
       return Result.success()
     }
 
+    val requestId = UUID.randomUUID().toString()
+    val reportedResult = PedometerBackgroundTaskResults.register(requestId)
+
     return try {
-      withTimeout(TASK_TIMEOUT_MS) { runHeadlessTask() }
-      Result.success()
+      val outcome =
+          withTimeout(TASK_TIMEOUT_MS) {
+            runHeadlessTask(requestId)
+            reportedResult.await()
+          }
+      workResultFor(outcome)
     } catch (t: TimeoutCancellationException) {
       Log.w(TAG, "PedometerSweep timed out", t)
       Result.retry()
@@ -67,10 +75,12 @@ class PedometerBackgroundWorker(context: Context, params: WorkerParameters) :
     } catch (t: Throwable) {
       Log.w(TAG, "PedometerSweep did not complete: ${t.message}", t)
       Result.retry()
+    } finally {
+      PedometerBackgroundTaskResults.remove(requestId, reportedResult)
     }
   }
 
-  private suspend fun runHeadlessTask(): Unit =
+  private suspend fun runHeadlessTask(requestId: String): Unit =
       suspendCancellableCoroutine { continuation ->
         val application = applicationContext.applicationContext as? ReactApplication
         if (application == null) {
@@ -124,7 +134,7 @@ class PedometerBackgroundWorker(context: Context, params: WorkerParameters) :
                 context.startTask(
                     HeadlessJsTaskConfig(
                         TASK_NAME,
-                        Arguments.createMap(),
+                        Arguments.createMap().apply { putString("requestId", requestId) },
                         0L,
                         true,
                     ))
@@ -163,6 +173,12 @@ class PedometerBackgroundWorker(context: Context, params: WorkerParameters) :
     private const val TASK_NAME = "PedometerSweep"
     private const val TASK_TIMEOUT_MS = 60_000L
     const val WORK_NAME = "middleearth.pedometer.background.sweep"
+
+    internal fun workResultFor(outcome: PedometerBackgroundTaskOutcome): Result =
+        when (outcome) {
+          PedometerBackgroundTaskOutcome.SUCCESS -> Result.success()
+          PedometerBackgroundTaskOutcome.RETRY -> Result.retry()
+        }
 
     /**
      * Enqueue the periodic worker (idempotent — `KEEP` policy leaves any

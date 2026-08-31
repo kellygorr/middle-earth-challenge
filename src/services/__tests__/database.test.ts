@@ -62,6 +62,22 @@ describe('database initialization', () => {
     );
   });
 
+  it('indexes history reads by save and date', async () => {
+    const mockDb = createMockDatabase();
+    mockOpen.mockReturnValue(mockDb as never);
+
+    await database.init();
+
+    expect(mockDb.executeSync).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'CREATE INDEX IF NOT EXISTS idx_distance_entries_save_date',
+      ),
+    );
+    expect(mockDb.executeSync).toHaveBeenCalledWith(
+      expect.stringContaining('ON distance_entries (save_id, date)'),
+    );
+  });
+
   it('moves existing health adjustments to the end of their local day', async () => {
     const mockDb = createMockDatabase();
     mockDb.executeSync.mockImplementation((sql: string) => {
@@ -103,6 +119,33 @@ describe('database initialization', () => {
     expect(mockOpen).toHaveBeenCalledTimes(2);
     expect(failedDb.close).toHaveBeenCalledTimes(1);
     expect(retryDb.close).not.toHaveBeenCalled();
+  });
+
+  it('retries the legacy steps backfill after the column was added', async () => {
+    const failedDb = createMockDatabase();
+    failedDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE distance_entries')) {
+        throw new Error('backfill interrupted');
+      }
+      return { rows: [] };
+    });
+    const retryDb = createMockDatabase();
+    retryDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('ALTER TABLE distance_entries ADD COLUMN steps')) {
+        throw new Error('duplicate column name: steps');
+      }
+      return { rows: [] };
+    });
+    mockOpen
+      .mockReturnValueOnce(failedDb as never)
+      .mockReturnValueOnce(retryDb as never);
+
+    await expect(database.init()).rejects.toThrow('backfill interrupted');
+    await expect(database.init()).resolves.toBeUndefined();
+
+    expect(retryDb.executeSync).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE distance_entries'),
+    );
   });
 
   it('rebuilds a LIVE snapshot once, then reads the versioned cache', async () => {
@@ -148,6 +191,81 @@ describe('database initialization', () => {
         String(sql).includes('SELECT COALESCE(SUM(miles)'),
       ),
     ).toHaveLength(1);
+    expect(
+      mockDb.executeSync.mock.calls.some(([sql]) =>
+        String(sql).includes('ORDER BY date ASC'),
+      ),
+    ).toBe(false);
+  });
+
+  it('pages history with a stable date and id cursor', async () => {
+    const mockDb = createMockDatabase();
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+    mockDb.executeSync.mockReturnValue({
+      rows: [
+        {
+          id: 'c',
+          saveId: 'default',
+          date: 30,
+          miles: 3,
+          steps: 6000,
+          source: 'pedometer',
+        },
+        {
+          id: 'b',
+          saveId: 'default',
+          date: 20,
+          miles: 2,
+          steps: 4000,
+          source: 'manual-distance',
+        },
+        {
+          id: 'a',
+          saveId: 'default',
+          date: 10,
+          miles: 1,
+          steps: 2000,
+          source: 'manual-distance',
+        },
+      ],
+    });
+
+    await expect(
+      database.getDistanceEntryPage('default', null, 2),
+    ).resolves.toMatchObject({
+      entries: [{ id: 'c' }, { id: 'b' }],
+      nextCursor: { date: 20, id: 'b' },
+    });
+    expect(mockDb.executeSync).toHaveBeenCalledWith(
+      expect.stringContaining('ORDER BY date DESC, id DESC LIMIT ?'),
+      ['default', 3],
+    );
+
+    await database.getDistanceEntryPage('default', { date: 20, id: 'b' }, 2);
+    expect(mockDb.executeSync).toHaveBeenLastCalledWith(
+      expect.stringContaining('date < ? OR (date = ? AND id < ?)'),
+      ['default', 20, 20, 'b', 3],
+    );
+  });
+
+  it('loads statistics as database-aggregated daily rows', async () => {
+    const mockDb = createMockDatabase();
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+    mockDb.executeSync.mockReturnValue({
+      rows: [{ date: 10, miles: 4.5, steps: 9000 }],
+    });
+
+    await expect(database.getDistanceDaySummaries('default')).resolves.toEqual([
+      { date: 10, miles: 4.5, steps: 9000 },
+    ]);
+    expect(mockDb.executeSync).toHaveBeenCalledWith(
+      expect.stringContaining("GROUP BY strftime('%Y-%m-%d'"),
+      ['default'],
+    );
   });
 
   it('rolls back health entries when cursor and format persistence fails', async () => {
@@ -251,6 +369,101 @@ describe('database initialization', () => {
     expect(mockDb.executeSync).not.toHaveBeenCalledWith('COMMIT');
   });
 
+  it('rolls back distance deletion when bookmark reset fails', async () => {
+    const mockDb = createMockDatabase();
+    mockDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('SET sync_start_date')) {
+        throw new Error('bookmark reset failed');
+      }
+      return { rows: [] };
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+
+    await expect(
+      database.resetDistanceData('default', { clearAll: true }, 2_000, 1_000),
+    ).rejects.toThrow('bookmark reset failed');
+
+    expect(mockDb.executeSync).toHaveBeenCalledWith('BEGIN TRANSACTION');
+    expect(mockDb.executeSync).toHaveBeenCalledWith(
+      'DELETE FROM distance_entries WHERE save_id = ?',
+      ['default'],
+    );
+    expect(mockDb.executeSync).toHaveBeenCalledWith('ROLLBACK');
+    expect(mockDb.executeSync).not.toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('rejects sync writes at or before the reset boundary', async () => {
+    const mockDb = createMockDatabase();
+    mockDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('SELECT sync_start_date as syncStartDate')) {
+        return { rows: [{ syncStartDate: 2_000 }] };
+      }
+      if (
+        sql.includes(
+          'SELECT last_health_reconciled_through as lastHealthReconciledThrough',
+        )
+      ) {
+        return { rows: [{ lastHealthReconciledThrough: 1_000 }] };
+      }
+      return { rows: [] };
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+
+    const staleEntry = {
+      id: 'stale-sync-entry',
+      saveId: 'default',
+      date: 1_500,
+      miles: 1,
+      steps: 2_000,
+      source: 'health-connect' as const,
+    };
+    const health = await database.applyHealthSyncChunk(
+      'default',
+      [staleEntry],
+      2_000,
+      1,
+      2_000,
+    );
+    const pedometer = await database.applyPedometerSyncChunk(
+      'default',
+      [{ ...staleEntry, source: 'pedometer' }],
+      2_000,
+    );
+    const reconciliation = await database.applyHealthReconciliationDay(
+      'default',
+      { upsert: [{ ...staleEntry, source: 'health-reconciliation' }] },
+      1_000,
+    );
+
+    expect(health.applied).toBe(false);
+    expect(pedometer.applied).toBe(false);
+    expect(reconciliation.applied).toBe(false);
+    expect(
+      mockDb.executeSync.mock.calls.some(([sql]) =>
+        String(sql).includes('INSERT OR REPLACE INTO distance_entries'),
+      ),
+    ).toBe(false);
+    expect(
+      mockDb.executeSync.mock.calls.some(([sql]) =>
+        String(sql).includes('SELECT COALESCE(SUM(miles)'),
+      ),
+    ).toBe(false);
+    expect(
+      mockDb.executeSync.mock.calls.some(([sql]) =>
+        String(sql).includes('SELECT id, save_id as saveId'),
+      ),
+    ).toBe(false);
+    expect(
+      mockDb.executeSync.mock.calls.some(([sql]) =>
+        String(sql).includes('INSERT OR REPLACE INTO progress_snapshot'),
+      ),
+    ).toBe(false);
+  });
+
   it('leaves persisted and in-memory progress unchanged when recalculation fails', async () => {
     const originalEntry = {
       id: 'manual-1',
@@ -300,6 +513,55 @@ describe('database initialization', () => {
       miles: 2,
       steps: 4000,
     });
+  });
+
+  it('updates a valid snapshot from only the affected rows', async () => {
+    const replacedEntry = {
+      id: 'manual-1',
+      saveId: 'default',
+      date: 1,
+      miles: 2,
+      steps: 4000,
+      source: 'manual-distance' as const,
+    };
+    const unrelatedEntries = Array.from({ length: 1000 }, (_, index) => ({
+      id: `unrelated-${index}`,
+      saveId: 'default',
+      date: index + 2,
+      miles: 0.01,
+      steps: 20,
+      source: 'pedometer' as const,
+    }));
+    const mockDb = createTransactionalProgressDb({
+      entries: [replacedEntry, ...unrelatedEntries],
+      snapshot: { miles: 12, steps: 24_000, cacheVersion: 1 },
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+
+    await expect(
+      database.applyDistanceEntryChanges('default', {
+        upsert: [{ ...replacedEntry, miles: 5, steps: 10_000 }],
+      }),
+    ).resolves.toMatchObject({ miles: 15, steps: 30_000 });
+
+    const readQueries = mockDb.executeSync.mock.calls.filter(([sql]) =>
+      String(sql).includes('SELECT id, save_id as saveId'),
+    );
+    expect(readQueries).toHaveLength(1);
+    expect(readQueries[0][0]).toEqual(expect.stringContaining('id IN (?)'));
+    expect(readQueries[0][1]).toEqual(['default', 'manual-1']);
+    expect(
+      mockDb.executeSync.mock.calls.some(([sql]) =>
+        String(sql).includes('SELECT COALESCE(SUM(miles)'),
+      ),
+    ).toBe(false);
+    expect(
+      mockDb.executeSync.mock.calls.some(([sql]) =>
+        String(sql).includes('ORDER BY date ASC'),
+      ),
+    ).toBe(false);
   });
 
   it('repairs an unversioned snapshot from persisted entries', async () => {

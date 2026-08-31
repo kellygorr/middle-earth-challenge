@@ -197,7 +197,8 @@ export const createFriendProgressService = (
 ) => {
   let signInInFlight: Promise<string> | null = null;
 
-  const getExistingUserId = (): string => {
+  const getExistingUserId = async (): Promise<string> => {
+    await client.waitForAuthState();
     const userId = client.getCurrentUserId();
     if (!userId) {
       throw new Error('No anonymous sharing session exists');
@@ -246,7 +247,9 @@ export const createFriendProgressService = (
       throw new Error('Distance must be a nonnegative number');
     }
 
-    await client.updateParticipant(getExistingUserId(), { distanceMiles });
+    await client.updateParticipant(await getExistingUserId(), {
+      distanceMiles,
+    });
   };
 
   const updateFriendProfile = async (
@@ -259,7 +262,7 @@ export const createFriendProgressService = (
       throw new Error('Display name is required');
     }
 
-    await client.updateParticipant(getExistingUserId(), {
+    await client.updateParticipant(await getExistingUserId(), {
       displayName: normalizedName,
       affinity,
     });
@@ -267,12 +270,14 @@ export const createFriendProgressService = (
 
   const fetchFriendProgressPage = async (
     cursor: string | null = null,
-  ): Promise<FriendProgressPage> =>
-    client.fetchParticipantPage(
-      getExistingUserId(),
+  ): Promise<FriendProgressPage> => {
+    const userId = await getExistingUserId();
+    return client.fetchParticipantPage(
+      userId,
       FRIEND_PROGRESS_PARTICIPANT_LIMIT,
       cursor,
     );
+  };
 
   const fetchFriendProgress = async (): Promise<FriendProgressParticipant[]> =>
     (await fetchFriendProgressPage()).participants;
