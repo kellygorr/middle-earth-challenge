@@ -30,6 +30,7 @@ const mockSettings: {
   lastSyncTimestamp: number | null;
   syncEnabled: boolean;
   syncProvider: 'none' | 'health-connect';
+  healthLookbackStartTimestamp: number | null;
   pedometerCleanupPending: boolean;
   updateSyncSettings: typeof mockUpdateSyncSettings;
 } = {
@@ -37,6 +38,7 @@ const mockSettings: {
   lastSyncTimestamp: 100,
   syncEnabled: true,
   syncProvider: 'none',
+  healthLookbackStartTimestamp: null,
   pedometerCleanupPending: false,
   updateSyncSettings: mockUpdateSyncSettings,
 };
@@ -134,6 +136,7 @@ describe('tracking mode pedometer flush boundary', () => {
       lastSyncTimestamp: 100,
       syncEnabled: true,
       syncProvider: 'none',
+      healthLookbackStartTimestamp: null,
       pedometerCleanupPending: false,
     });
     mockUpdateSyncSettings.mockImplementation(async updates => {
@@ -160,6 +163,22 @@ describe('tracking mode pedometer flush boundary', () => {
       trackingMode: 'pedometer',
       lastSyncTimestamp: 100,
     });
+  });
+
+  it('anchors health lookback when switching to Health Connect only', async () => {
+    mockCommitPedometerRange.mockResolvedValue(undefined);
+    mockStopTracking.mockResolvedValue(true);
+
+    await switchTrackingMode('health-app');
+
+    expect(mockUpdateSyncSettings).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        trackingMode: 'health-app',
+        lastSyncTimestamp: 200,
+        healthLookbackStartTimestamp: 200,
+      }),
+    );
   });
 
   it('persists failed native cleanup and clears it on foreground retry', async () => {

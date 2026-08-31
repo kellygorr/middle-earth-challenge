@@ -48,9 +48,20 @@ const ENTRIES_PER_PAGE = 200;
 // Sentinel id for the synthetic pedometer "live" row shown at the top of
 // today's group when the user is in pedometer mode and steps have
 // accumulated since the last commit. Rendered via `renderEntry`'s
-// in-progress branch so it shares layout with the health-sync
-// in-progress row.
-const LIVE_ENTRY_ID = '__live__';
+// in-progress branch so it shares the standard row layout.
+export const LIVE_ENTRY_ID = '__live__';
+
+export function isCurrentPedometerEntry(
+  entry: DistanceEntry,
+  index: number,
+  entries: DistanceEntry[],
+): boolean {
+  return (
+    entry.source === 'pedometer' &&
+    entry.id === LIVE_ENTRY_ID &&
+    index === entries.length - 1
+  );
+}
 
 /**
  * Convert a stored miles value into the string shown in the edit input,
@@ -244,13 +255,11 @@ export default function DistanceContent() {
     return groups;
   }, [dayGroups, showLiveRow, liveSteps, liveMiles]);
 
-  // The health-sync ingest path can amend the most-recent row of a
-  // health source with fresh totals ([useSyncInterval.ts] ingestRecords).
-  // To prevent that from clobbering a user edit, we lock the latest
-  // today-row of each health source: no edit button, "In progress"
-  // label — same treatment as the pedometer live row. Older rows and
-  // yesterday's rows remain editable.
-  const inProgressHealthIds = useMemo(() => {
+  // The health-sync ingest path can amend the most-recent row of a health
+  // source with fresh totals. Keep those rows locked against edits, but do not
+  // label them "In progress": that status belongs only to the synthetic,
+  // uncommitted pedometer row.
+  const lockedHealthIds = useMemo(() => {
     const ids = new Set<string>();
     const todayKey = getStartOfDay(Date.now());
     const todayGroup = dayGroups.find(g => g.dayKey === todayKey);
@@ -439,19 +448,19 @@ export default function DistanceContent() {
     );
   }
 
-  // Synthetic pedometer "live" row and the latest today-row of a
-  // health source are both rendered as "In progress" via `renderEntry`
-  // below — no edit button, source label caption, real miles/steps on
-  // the right. The only per-source difference is the caption text.
-  const renderEntry = (item: DistanceEntry) => {
-    const isLivePedometer = item.id === LIVE_ENTRY_ID;
-    const inProgress = isLivePedometer || inProgressHealthIds.has(item.id);
+  const renderEntry = (
+    item: DistanceEntry,
+    index: number,
+    entries: DistanceEntry[],
+  ) => {
+    const isLivePedometer = isCurrentPedometerEntry(item, index, entries);
+    const isLocked = isLivePedometer || lockedHealthIds.has(item.id);
     const isHealthAdjustment = item.source === 'health-reconciliation';
     const sourceLabel = getDistanceSourceLabel(item.source);
     return (
       <View key={item.id}>
         <View style={styles.listItem}>
-          {inProgress ? (
+          {isLocked ? (
             // Uneditable: sync may still amend this row today. Spacer
             // keeps columns aligned with edit-capable rows.
             <View style={styles.liveIconSpacer} />
@@ -477,7 +486,7 @@ export default function DistanceContent() {
             />
           )}
           <View style={styles.listItemLeft}>
-            {inProgress ? (
+            {isLivePedometer ? (
               <StatusBadge
                 label="In progress"
                 inProgress
@@ -493,7 +502,7 @@ export default function DistanceContent() {
             <Text
               style={[
                 typographyThemed(theme).captionSecondary,
-                inProgress ? styles.liveCaption : styles.entryCaption,
+                isLivePedometer ? styles.liveCaption : styles.entryCaption,
               ]}
             >
               {sourceLabel}
@@ -508,7 +517,7 @@ export default function DistanceContent() {
                 // In-progress rows report feet/meters even at 0 and even
                 // after crossing a full unit, so a walker sees numbers
                 // move meaningfully instead of "0 mi" holding forever.
-                forceSmallUnit: inProgress,
+                forceSmallUnit: isLivePedometer,
               })}
             </Text>
             <Text
@@ -584,7 +593,7 @@ export default function DistanceContent() {
             {item.entries.map((entry, index) => (
               <View key={entry.id}>
                 {index > 0 && <View style={styles.separator} />}
-                {renderEntry(entry)}
+                {renderEntry(entry, index, item.entries)}
               </View>
             ))}
           </View>

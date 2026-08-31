@@ -303,6 +303,52 @@ describe('database initialization', () => {
     expect(mockDb.executeSync).not.toHaveBeenCalledWith('COMMIT');
   });
 
+  it('rejects additive health entries when persisted mode is dual', async () => {
+    const mockDb = createMockDatabase();
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+    mockDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('SELECT tracking_mode, sync_enabled, sync_provider')) {
+        return {
+          rows: [
+            {
+              tracking_mode: 'dual',
+              sync_enabled: 1,
+              sync_provider: 'health-connect',
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    await expect(
+      database.applyHealthSyncChunk(
+        'default',
+        [
+          {
+            id: 'late-health-row',
+            saveId: 'default',
+            date: 1,
+            miles: 1,
+            steps: 2,
+            source: 'health-connect',
+          },
+        ],
+        2,
+        1,
+        1,
+      ),
+    ).resolves.toEqual({ applied: false });
+
+    expect(
+      mockDb.executeSync.mock.calls.some(([sql]) =>
+        String(sql).includes('INSERT OR REPLACE INTO distance_entries'),
+      ),
+    ).toBe(false);
+  });
+
   it('rolls back pedometer entries when cursor persistence fails', async () => {
     const mockDb = createMockDatabase();
     mockDb.executeSync.mockImplementation((sql: string) => {

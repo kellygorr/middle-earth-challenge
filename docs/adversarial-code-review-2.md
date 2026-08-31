@@ -1786,9 +1786,29 @@ unless the boundary requires a physical device or external system.
   permission and long-history reads, and test foreground/resume, force-quit,
   clock/timezone, and modal lifecycle on physical hardware. Do not describe
   background Apple Health sync unless a real execution path is implemented.
-- **Android:** Exercise backward clock changes, reboot/process death,
-  WorkManager retry, foreground-service startup, permission revocation, and OEM
-  battery restrictions on physical devices.
+- **Android:** Pixel 6 physical-device validation (Android 17/API 37, Debug,
+  2026-08-31) passed persisted-state startup, background/foreground refresh,
+  ongoing notification and service continuity, Activity Recognition
+  revoke/warning/explicit re-enable, force-stop/reopen recovery, reboot recovery
+  with boot identity advancement, a two-hour backward wall-clock transition,
+  a UTC-to-local timezone transition, and two forced WorkManager sweeps that
+  completed and rescheduled. Distance remained monotonic and the live chip
+  recovered throughout. The device's stock battery-optimization exemption was
+  also confirmed. A controlled Worker failure-to-retry run, OEM-restricted
+  battery behavior, foreground-service denial conditions, and a release-build
+  sweep remain open.
+- **Android post-review source transition (2026-08-31):** Permission testing
+  intentionally moved dual tracking through Health Connect-only and back to
+  dual, leaving a legitimate committed Health Connect row for that interval.
+  The Distance modal incorrectly labeled that historical row `In progress`.
+  That status is now reserved for the synthetic, latest pedometer row; all
+  persisted pedometer and health rows are completed records. Source ownership
+  is also enforced below the presentation layer: an in-flight additive health
+  result is discarded after an ownership change, the database rejects additive
+  health writes unless persisted mode is Health Connect-only, and entering
+  Health Connect-only anchors its lookback at the transition boundary. Focused
+  source-transition and row-status regressions, TypeScript, ESLint, formatting,
+  and all 367 Jest tests pass.
 - **Accessibility:** Validate VoiceOver and TalkBack focus/order/actions,
   Reduce Motion before launch and at runtime, Dynamic Type, keyboard/rotation,
   and safe areas on supported phone/tablet form factors.

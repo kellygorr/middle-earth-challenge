@@ -17,6 +17,7 @@ import * as fitnessServiceModule from '../../services/fitnessService';
 import { pedometerService } from '../../services/pedometerService';
 import * as pedometerCommitModule from '../../services/pedometerCommit';
 import { database } from '../../services/database';
+import type { HealthDistanceRecord } from '../../types';
 import {
   CHUNK_RETRY_DELAY_MS,
   CHUNK_TIMEOUT_MS,
@@ -170,6 +171,36 @@ describe('useSyncInterval lifecycle', () => {
       await jest.advanceTimersByTimeAsync(0);
     });
     await waitFor(() => expect(persistMilesSnapshot).toHaveBeenCalledTimes(1));
+  });
+
+  it('discards a health result when ownership switches to dual mode', async () => {
+    const pendingRead = deferred<HealthDistanceRecord[]>();
+    readRecords.mockReturnValue(pendingRead.promise);
+    useInitializationStore.setState({ phase: 'ready' });
+
+    await renderHook(() => useSyncInterval());
+    await waitFor(() => expect(readRecords).toHaveBeenCalledTimes(1));
+
+    await act(() => {
+      useSettingsStore.setState({ trackingMode: 'dual' });
+    });
+    await act(async () => {
+      pendingRead.resolve([
+        {
+          id: 'late-health-row',
+          startTime: new Date(NOW - 1_000).toISOString(),
+          endTime: new Date(NOW).toISOString(),
+          distanceMeters: 2,
+          steps: 3,
+        },
+      ]);
+      await pendingRead.promise;
+    });
+
+    await waitFor(() =>
+      expect(database.getDistanceEntriesByIds).toHaveBeenCalledTimes(1),
+    );
+    expect(applyHealthSyncChunk).not.toHaveBeenCalled();
   });
 
   it('times out without retrying or advancing the cursor', async () => {
