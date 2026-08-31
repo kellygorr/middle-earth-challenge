@@ -1,24 +1,23 @@
 import React, { useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  Keyboard,
-  Pressable,
-} from 'react-native';
+import { View, Text, StyleSheet, TextInput, Keyboard } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
-import { spacing, borderRadius } from '../../../styles/global';
+import { spacing } from '../../../styles/global';
 import Button from '../../Buttons';
 import { useProgressStore } from '../../../stores/progressStore';
 import { DistanceEntry } from '../../../types';
 import { milesToSteps, stepsToMiles } from '../../../utils/stride';
 import { kmToMiles } from '../../../utils/date';
 import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
-import { validateManualEntryInput } from '../../../utils/manualEntryValidation';
+import {
+  MANUAL_ENTRY_SAVE_ERROR,
+  validateManualEntryInput,
+} from '../../../utils/manualEntryValidation';
+import ManualEntryModeSelector, {
+  type ManualEntryMode,
+} from '../ManualEntryModeSelector';
 
-type AddMode = 'distance' | 'steps';
+type AddMode = ManualEntryMode;
 
 /**
  * MilesFooter - Footer content for the Miles modal.
@@ -89,6 +88,8 @@ export default function MilesFooter() {
       setAddInput('');
       inputRef.current?.blur();
       Keyboard.dismiss();
+    } catch {
+      setInputError(MANUAL_ENTRY_SAVE_ERROR);
     } finally {
       addLockRef.current = false;
     }
@@ -107,37 +108,6 @@ export default function MilesFooter() {
   const distanceLabel = useMiles ? 'Miles' : 'Km';
   const isSteps = addMode === 'steps';
   const unitLabel = isSteps ? 'steps' : useMiles ? 'miles' : 'km';
-
-  const renderSegment = (label: string, mode: AddMode) => {
-    const active = addMode === mode;
-    return (
-      <Pressable
-        key={mode}
-        onPress={() => switchMode(mode)}
-        style={[
-          styles.segment,
-          active && {
-            backgroundColor: theme.colors.buttonBrandBackground,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            typographyThemed(theme).captionPrimary,
-            styles.segmentText,
-            active ? styles.segmentTextActive : styles.segmentTextInactive,
-            {
-              color: active
-                ? theme.colors.buttonBrandText
-                : theme.colors.textSecondary,
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </Pressable>
-    );
-  };
 
   return (
     <View style={styles.container}>
@@ -170,12 +140,14 @@ export default function MilesFooter() {
           onFocus={() => setIsInputFocused(true)}
           onBlur={() => setIsInputFocused(false)}
           placeholderTextColor={theme.colors.textSecondary}
+          accessibilityLabel={isSteps ? 'Steps' : `Distance in ${unitLabel}`}
         />
         <Text style={typographyThemed(theme).bodyPrimary}>{unitLabel}</Text>
       </View>
 
       <Text
         testID="add-entry-validation"
+        nativeID="add-entry-validation"
         accessibilityLiveRegion="polite"
         accessibilityRole={inputError ? 'alert' : undefined}
         numberOfLines={1}
@@ -189,18 +161,11 @@ export default function MilesFooter() {
 
       {/* Bottom row: mode toggle (left) · add button (right) */}
       <View style={styles.controlsRow}>
-        <View
-          style={[
-            styles.toggleRow,
-            {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.divider,
-            },
-          ]}
-        >
-          {renderSegment(distanceLabel, 'distance')}
-          {renderSegment('Steps', 'steps')}
-        </View>
+        <ManualEntryModeSelector
+          value={addMode}
+          distanceLabel={distanceLabel}
+          onChange={switchMode}
+        />
         <Button onPress={handleAdd} variant="brand" size="default">
           Add
         </Button>
@@ -218,27 +183,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(0,0,0,0.08)',
     marginBottom: spacing.md,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    padding: 2,
-  },
-  segment: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    minWidth: 72,
-  },
-  segmentText: {
-    textAlign: 'center',
-  },
-  segmentTextActive: {
-    fontWeight: '600',
-  },
-  segmentTextInactive: {
-    fontWeight: '400',
   },
   inputRow: {
     flexDirection: 'row',

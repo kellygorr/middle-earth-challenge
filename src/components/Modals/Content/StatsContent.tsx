@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useStatsStore, Stats } from '../../../stores/statsStore';
@@ -12,6 +12,8 @@ import Section from '../Section';
 import StatRow from '../StatRow';
 import TwoColumnRow from '../TwoColumnRow';
 import StatsContentInactive from './StatsContentInactive';
+import { database, type DistanceDaySummary } from '../../../services/database';
+import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
 
 /**
  * StatsContent - Inner content for the Stats modal.
@@ -24,20 +26,33 @@ import StatsContentInactive from './StatsContentInactive';
 export default function StatsContent() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
-  const distanceEntries = useProgressStore(state => state.distanceEntries);
   const realMiles = useProgressStore(state => state.miles);
   const realSteps = useProgressStore(state => state.steps);
+  const committedEntries = useProgressStore(state => state.distanceEntries);
   const testOverrideMiles = useProgressStore(state => state.testOverrideMiles);
   const miles = testOverrideMiles ?? realMiles;
   const steps =
     testOverrideMiles === null ? realSteps : milesToSteps(testOverrideMiles);
+  const [daySummaries, setDaySummaries] = useState<DistanceDaySummary[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    database
+      .getDistanceDaySummaries(DEFAULT_SAVE_ID)
+      .then(summaries => {
+        if (!cancelled) setDaySummaries(summaries);
+      })
+      .catch(error => console.error('Failed to load progress stats:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [committedEntries, realMiles, realSteps]);
   const hasEnoughData = useStatsStore(state => state.hasEnoughDataForStats)(
-    distanceEntries,
+    daySummaries,
   );
   const getStats = useStatsStore(state => state.getStats);
 
   const stats: Stats | null = hasEnoughData
-    ? getStats(distanceEntries, miles, steps)
+    ? getStats(daySummaries, miles, steps)
     : null;
 
   if (!stats) {

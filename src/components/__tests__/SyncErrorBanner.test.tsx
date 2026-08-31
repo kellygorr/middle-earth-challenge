@@ -36,8 +36,12 @@ const fallbackIssue: SyncIssue = {
   resolvedAt: null,
 };
 
-const backgroundIssue: SyncIssue = {
-  error: { kind: 'backgroundDisabled' },
+const providerIssue: SyncIssue = {
+  error: {
+    kind: 'provider',
+    provider: 'apple-health',
+    message: 'HealthKit unavailable',
+  },
   at: stoppedIssue.at,
   dismissedAt: null,
   resolvedAt: null,
@@ -88,7 +92,7 @@ describe('SyncErrorBanner', () => {
 
   it('sizes and snaps multiple cards while dismissing only the chosen slot', async () => {
     useProgressStore.setState({
-      syncIssues: [stoppedIssue, fallbackIssue, backgroundIssue],
+      syncIssues: [stoppedIssue, fallbackIssue, providerIssue],
     });
 
     await render(<SyncErrorBanner bleed={24} />);
@@ -98,7 +102,7 @@ describe('SyncErrorBanner', () => {
 
     expect(screen.getByText('Step counting stopped')).toBeOnTheScreen();
     expect(screen.getByText('Switched to Health Connect')).toBeOnTheScreen();
-    expect(screen.getByText('Background updates are off')).toBeOnTheScreen();
+    expect(screen.getByText('Health sync failed')).toBeOnTheScreen();
 
     const pedometerCard = screen.getByTestId('sync-issue-card-pedometer');
     expect(StyleSheet.flatten(pedometerCard.props.style).width).toBe(304);

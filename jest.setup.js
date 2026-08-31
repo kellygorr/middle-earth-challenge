@@ -65,6 +65,7 @@ jest.mock('react-native-reanimated', () => ({
 // Mock op-sqlite
 jest.mock('@op-engineering/op-sqlite', () => ({
   open: jest.fn(() => ({
+    executeSync: jest.fn(() => ({ rows: [] })),
     executeAsync: jest.fn(() => Promise.resolve({ rows: [] })),
     close: jest.fn(),
   })),

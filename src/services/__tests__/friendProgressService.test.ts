@@ -235,6 +235,29 @@ describe('friendProgressService', () => {
     );
   });
 
+  it('waits for auth hydration before fetching participants', async () => {
+    let resolveAuthState: (() => void) | undefined;
+    mockWaitForAuthState.mockReturnValue(
+      new Promise<void>(resolve => {
+        resolveAuthState = resolve;
+      }),
+    );
+    mockGetCurrentUserId.mockReturnValue(null);
+
+    const fetch = createService().fetchFriendProgress();
+    await Promise.resolve();
+    expect(mockFetchParticipantPage).not.toHaveBeenCalled();
+
+    mockGetCurrentUserId.mockReturnValue('restored-user');
+    resolveAuthState?.();
+    await expect(fetch).resolves.toEqual([]);
+    expect(mockFetchParticipantPage).toHaveBeenCalledWith(
+      'restored-user',
+      FRIEND_PROGRESS_PARTICIPANT_LIMIT,
+      null,
+    );
+  });
+
   it('returns a continuation cursor for an explicitly requested page', async () => {
     mockFetchParticipantPage.mockResolvedValue({
       participants: [],
@@ -254,6 +277,7 @@ describe('friendProgressService', () => {
   it('builds a stable bounded Firestore query for a continuation page', async () => {
     (getAuth as jest.Mock).mockReturnValue({
       currentUser: { uid: 'user-1' },
+      authStateReady: jest.fn().mockResolvedValue(undefined),
     });
     (documentId as jest.Mock).mockReturnValue('__name__');
     (getDocs as jest.Mock).mockResolvedValue({ docs: [] });

@@ -9,6 +9,7 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import { SyncIcon } from '../assets/icons';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import { borderRadius } from '../styles/global';
 
 interface SyncSpinnerProps {
@@ -35,10 +36,14 @@ export default function SyncSpinner({
   iconColor = '#FFFFFF',
   durationMs = 1200,
 }: SyncSpinnerProps) {
+  const reduceMotionEnabled = useReduceMotion();
   const rotation = useSharedValue(0);
 
   useEffect(() => {
+    cancelAnimation(rotation);
     rotation.value = 0;
+    if (reduceMotionEnabled) return;
+
     rotation.value = withRepeat(
       withTiming(360, {
         duration: durationMs,
@@ -50,7 +55,7 @@ export default function SyncSpinner({
     return () => {
       cancelAnimation(rotation);
     };
-  }, [rotation, durationMs]);
+  }, [rotation, durationMs, reduceMotionEnabled]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],

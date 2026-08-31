@@ -115,7 +115,11 @@ export default function DevView({
       unavailableSource: 'health-app',
       activeSource: 'pedometer',
     });
-    addSyncIssue({ kind: 'backgroundDisabled' });
+    addSyncIssue({
+      kind: 'provider',
+      provider: 'apple-health',
+      message: 'forced provider error for testing',
+    });
   };
   const pushFakeError = (error: SyncError) => {
     if (fakeSyncActive) {
@@ -189,10 +193,6 @@ export default function DevView({
           chunksDone: 3,
           chunksTotal: 8,
         }),
-    },
-    {
-      label: 'bg off (iOS)',
-      apply: () => pushFakeError({ kind: 'backgroundDisabled' }),
     },
     {
       label: 'pedometer service stopped',

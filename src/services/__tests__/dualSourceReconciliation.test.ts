@@ -15,6 +15,17 @@ jest.mock('../../stores/progressStore', () => ({
   useProgressStore: { getState: () => mockProgressState.ref },
 }));
 
+jest.mock('../database', () => ({
+  database: {
+    getDistanceEntriesBetween: jest.fn(
+      async (_saveId: string, start: number, end: number) =>
+        mockProgressState.ref.distanceEntries.filter(
+          (entry: any) => entry.date >= start && entry.date < end,
+        ),
+    ),
+  },
+}));
+
 import {
   reconcileCompletedDualTrackingDays,
   reconciliationEntryId,
@@ -79,6 +90,7 @@ function resetState(cursor: number, entries: any[] = []) {
         progress.miles = progress.getTotalMiles();
         progress.steps = progress.getTotalSteps();
         settings.lastHealthReconciledThrough = committedCursor;
+        return true;
       },
     ),
   };

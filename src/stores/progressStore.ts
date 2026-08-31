@@ -11,7 +11,11 @@ import {
 } from '../constants/gameConstants';
 import checkpointsRaw from '../constants/checkpoints.json';
 import triviaRaw from '../constants/trivia.json';
-import { database } from '../services/database';
+import {
+  database,
+  type DistanceEntryChanges,
+  type ProgressMutation,
+} from '../services/database';
 import {
   LONG_SYNC_CHUNK_THRESHOLD,
   LONG_SYNC_TIME_THRESHOLD_MS,
@@ -29,6 +33,37 @@ const checkpoints = checkpointsRaw as PointType[];
 const trivia = triviaRaw as PointType[];
 
 const SAVE_ID = DEFAULT_SAVE_ID;
+
+export function applyCommittedEntryChanges(
+  entries: DistanceEntry[],
+  changes: DistanceEntryChanges,
+): DistanceEntry[] {
+  const removeIds = new Set(changes.removeIds ?? []);
+  const removeSources = new Set(changes.removeSources ?? []);
+  const byId = new Map(
+    (changes.clearAll ? [] : entries)
+      .filter(
+        entry => !removeIds.has(entry.id) && !removeSources.has(entry.source),
+      )
+      .map(entry => [entry.id, entry]),
+  );
+  for (const entry of changes.upsert ?? []) byId.set(entry.id, entry);
+  return [...byId.values()].sort((left, right) => left.date - right.date);
+}
+
+const publishProgressMutation = (
+  set: (updater: (state: ProgressStore) => Partial<ProgressStore>) => void,
+  progress: ProgressMutation,
+) => {
+  set(state => ({
+    distanceEntries: applyCommittedEntryChanges(
+      state.distanceEntries,
+      progress.changes,
+    ),
+    miles: progress.miles,
+    steps: progress.steps,
+  }));
+};
 
 /**
  * Discriminated error kinds surfaced by the sync pipeline.
@@ -83,12 +118,6 @@ export type SyncError =
       staleForMs: number;
       manufacturer: string;
     }
-  // iOS-only: HealthKit permission is granted but the OS won't let us
-  // refresh in the background (Settings → General → Background App Refresh
-  // is off, either globally or for this app). Detection requires a native
-  // bridge to UIApplication.backgroundRefreshStatus — not wired yet, but
-  // the type + banner + dev toggle are in place so the UX is ready.
-  | { kind: 'backgroundDisabled' }
   | { kind: 'unknown'; message: string };
 
 export interface SyncStatus {
@@ -205,8 +234,6 @@ interface ProgressStore {
   initFromDatabase: () => Promise<void>;
 
   // Actions (persist to database automatically)
-  setMiles: (miles: number) => void;
-  setSteps: (steps: number) => void;
   setTestMiles: (miles: number) => void;
   clearTestOverride: () => void;
   setTriviaUnlocks: (unlocks: TriviaUnlock[]) => void;
@@ -222,19 +249,20 @@ interface ProgressStore {
     cursor: number,
     healthSyncFormatVersion: number,
     healthLookbackStartTimestamp: number | null,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   applyPedometerSyncChunk: (
     entries: DistanceEntry[],
     cursor: number,
-  ) => Promise<void>;
+    expectedPedometerCursor?: import('../types').PedometerCursor | null,
+    nextPedometerCursor?: import('../types').PedometerCursor | null,
+  ) => Promise<boolean>;
   applyHealthReconciliationDay: (
     changes: { upsert?: DistanceEntry[]; removeIds?: string[] },
     cursor: number,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   updateDistanceEntry: (entry: DistanceEntry) => Promise<void>;
   removeDistanceEntry: (id: string) => Promise<void>;
   removeDistanceEntriesBySource: (sources: DistanceSource[]) => Promise<void>;
-  setDistanceEntries: (entries: DistanceEntry[]) => void;
   setLastSyncDate: (date: string) => void;
   setSyncStatus: (
     status: SyncStatus | ((prev: SyncStatus) => SyncStatus),
@@ -318,8 +346,6 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   },
 
   // Actions
-  setMiles: miles => set({ miles }),
-  setSteps: steps => set({ steps: Math.max(0, Math.round(steps)) }),
   setTestMiles: miles => set({ testOverrideMiles: miles }),
   clearTestOverride: () => set({ testOverrideMiles: null }),
 
@@ -334,11 +360,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
       upsert: [entry],
     });
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    publishProgressMutation(set, progress);
   },
 
   /**
@@ -351,20 +373,12 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
       upsert: entries,
     });
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    publishProgressMutation(set, progress);
   },
 
   applyDistanceEntryChanges: async changes => {
     const progress = await database.applyDistanceEntryChanges(SAVE_ID, changes);
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    publishProgressMutation(set, progress);
   },
 
   applyHealthSyncChunk: async (
@@ -380,24 +394,25 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       healthSyncFormatVersion,
       healthLookbackStartTimestamp,
     );
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    if (progress.applied) publishProgressMutation(set, progress);
+    return progress.applied;
   },
 
-  applyPedometerSyncChunk: async (entries, cursor) => {
+  applyPedometerSyncChunk: async (
+    entries,
+    cursor,
+    expectedPedometerCursor,
+    nextPedometerCursor,
+  ) => {
     const progress = await database.applyPedometerSyncChunk(
       SAVE_ID,
       entries,
       cursor,
+      expectedPedometerCursor,
+      nextPedometerCursor,
     );
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    if (progress.applied) publishProgressMutation(set, progress);
+    return progress.applied;
   },
 
   applyHealthReconciliationDay: async (changes, cursor) => {
@@ -406,33 +421,22 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       changes,
       cursor,
     );
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    if (progress.applied) publishProgressMutation(set, progress);
+    return progress.applied;
   },
 
   updateDistanceEntry: async entry => {
     const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
       upsert: [entry],
     });
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    publishProgressMutation(set, progress);
   },
 
   removeDistanceEntry: async id => {
     const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
       removeIds: [id],
     });
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    publishProgressMutation(set, progress);
   },
 
   /**
@@ -446,14 +450,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
       removeSources: sources,
     });
-    set({
-      distanceEntries: progress.entries,
-      miles: progress.miles,
-      steps: progress.steps,
-    });
+    publishProgressMutation(set, progress);
   },
-
-  setDistanceEntries: entries => set({ distanceEntries: entries }),
 
   setLastSyncDate: date => set({ lastSyncDate: date }),
 
@@ -556,7 +554,6 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   persistMilesSnapshot: async () => {
     const progress = await database.reconcileProgress(SAVE_ID);
     set({
-      distanceEntries: progress.entries,
       miles: progress.miles,
       steps: progress.steps,
     });
@@ -566,16 +563,19 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
       clearAll: true,
     });
-    set({
+    set(state => ({
       miles: progress.miles,
       steps: progress.steps,
       triviaUnlocks: [],
-      distanceEntries: progress.entries,
+      distanceEntries: applyCommittedEntryChanges(
+        state.distanceEntries,
+        progress.changes,
+      ),
       lastSyncDate: null,
       syncStatus: initialSyncStatus,
       syncIssues: [],
       testOverrideMiles: null,
-    });
+    }));
   },
 
   // Selectors / derived values

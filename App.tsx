@@ -22,6 +22,7 @@ import SharedModal from './src/screens/SharedModal';
 import { useSettingsStore } from './src/stores/settingsStore';
 import { useSyncInterval } from './src/hooks/useSyncInterval';
 import { useFriendProgressSync } from './src/hooks/useFriendProgressSync';
+import { useLivePedometerDeltaOwner } from './src/hooks/useLivePedometerDelta';
 
 import { useInitializationStore } from './src/stores/initializationStore';
 import { database } from './src/services/database';
@@ -32,14 +33,32 @@ import { initializeFirebaseAppCheck } from './src/services/firebaseAppCheck';
 
 const Stack = createStackNavigator();
 
-// Splash overlay - root level, fades out when loading completes
-export function SplashOverlay({ loading }: { loading: boolean }) {
+type BootstrapStatus = 'loading' | 'ready' | 'error';
+
+export async function runRecoverableBootstrapStep(
+  name: string,
+  operation: () => void | Promise<void>,
+): Promise<void> {
+  try {
+    await operation();
+    console.log(`[App] initApp: ${name} ready`);
+  } catch (error) {
+    console.warn(`[App] initApp: ${name} failed:`, error);
+  }
+}
+
+// Splash overlay - root level, fades out only after successful hydration
+export function SplashOverlay({ status }: { status: BootstrapStatus }) {
   const [visible, setVisible] = useState(true);
   const [showSpinner, setShowSpinner] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
+  const activeAnimation = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    if (loading) {
+    activeAnimation.current?.stop();
+    activeAnimation.current = null;
+
+    if (status === 'loading') {
       setVisible(true);
       setShowSpinner(false);
       opacity.setValue(1);
@@ -47,19 +66,38 @@ export function SplashOverlay({ loading }: { loading: boolean }) {
       return () => clearTimeout(spinnerTimer);
     }
 
-    Animated.timing(opacity, {
+    if (status === 'error') {
+      setVisible(false);
+      return;
+    }
+
+    const animation = Animated.timing(opacity, {
       toValue: 0,
       duration: 400,
       delay: 200,
       useNativeDriver: true,
-    }).start(() => setVisible(false));
-  }, [loading, opacity]);
+    });
+    activeAnimation.current = animation;
+    animation.start(({ finished }) => {
+      if (finished) {
+        setVisible(false);
+      }
+    });
+
+    return () => {
+      animation.stop();
+      if (activeAnimation.current === animation) {
+        activeAnimation.current = null;
+      }
+    };
+  }, [status, opacity]);
 
   if (!visible) return null;
 
   return (
     <Animated.View
-      pointerEvents="none"
+      pointerEvents="auto"
+      testID="splash-overlay"
       style={[StyleSheet.absoluteFillObject, styles.splashFill, { opacity }]}
     >
       {showSpinner && (
@@ -74,9 +112,8 @@ export function SplashOverlay({ loading }: { loading: boolean }) {
 }
 
 function App(): React.JSX.Element {
-  const [bootstrapStatus, setBootstrapStatus] = useState<
-    'loading' | 'ready' | 'error'
-  >('loading');
+  const [bootstrapStatus, setBootstrapStatus] =
+    useState<BootstrapStatus>('loading');
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const setPhase = useInitializationStore(state => state.setPhase);
 
@@ -87,6 +124,7 @@ function App(): React.JSX.Element {
   // Set up periodic sync when health sync is enabled
   useSyncInterval();
   useFriendProgressSync();
+  useLivePedometerDeltaOwner();
 
   const initFromDatabase = useProgressStore(state => state.initFromDatabase);
 
@@ -97,9 +135,12 @@ function App(): React.JSX.Element {
       console.log('[App] initApp: start');
       setBootstrapStatus('loading');
       setPhase('loading');
+
+      await runRecoverableBootstrapStep('Firebase App Check', () =>
+        initializeFirebaseAppCheck(),
+      );
+
       try {
-        initializeFirebaseAppCheck();
-        console.log('[App] initApp: Firebase App Check ready');
         await database.init();
         console.log('[App] initApp: db ready');
         await loadSettings();
@@ -107,23 +148,27 @@ function App(): React.JSX.Element {
         // Initialize progress store from database (single source of truth)
         await initFromDatabase();
         console.log('[App] initApp: progress loaded');
-        // Dev-only: if DEV_MOCK_LONG_SYNC is on, swap in mock fitness data
-        // before useSyncInterval's initial sync runs.
-        await setupDevMockLongSyncIfEnabled();
-        console.log('[App] initApp: dev mock setup done');
-        // If the user previously chose pedometer mode, make sure the
-        // Android foreground service is (re)started after cold boot.
-        await ensureTrackingModeRunning();
-        console.log('[App] initApp: tracking mode ready');
-        if (!cancelled) {
-          setPhase('ready');
-          setBootstrapStatus('ready');
-        }
       } catch (error) {
         console.error('Failed to initialize app:', error);
         if (!cancelled) {
           setBootstrapStatus('error');
         }
+        return;
+      }
+
+      // These services can be repaired or retried after the user's saved
+      // state is safe to render, so they must not turn hydration into a
+      // blocking startup failure.
+      await runRecoverableBootstrapStep('dev mock setup', () =>
+        setupDevMockLongSyncIfEnabled(),
+      );
+      await runRecoverableBootstrapStep('tracking mode', () =>
+        ensureTrackingModeRunning(),
+      );
+
+      if (!cancelled) {
+        setPhase('ready');
+        setBootstrapStatus('ready');
       }
     };
 
@@ -168,7 +213,7 @@ function App(): React.JSX.Element {
         </NavigationContainer>
 
         {/* Global Modals */}
-        {showWelcome && (
+        {bootstrapStatus === 'ready' && showWelcome && (
           <WelcomeModal
             visible={showWelcome}
             onDismiss={() => {
@@ -200,7 +245,7 @@ function App(): React.JSX.Element {
         )}
 
         {/* Splash - rendered LAST, hides everything until loading completes */}
-        <SplashOverlay loading={bootstrapStatus === 'loading'} />
+        <SplashOverlay status={bootstrapStatus} />
       </View>
     </SafeAreaProvider>
   );

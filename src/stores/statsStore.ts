@@ -1,19 +1,21 @@
 import { create } from 'zustand';
-import { DistanceEntry } from '../types';
+import type { DistanceEntry } from '../types';
 import { getStartOfDay, differenceInCalendarDays } from '../utils/date';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 
 interface StatsStore {
-  // Selectors (computed values from distanceEntries)
+  // Selectors computed from one aggregate row per active day.
   getStats: (
-    distanceEntries: DistanceEntry[],
+    distanceEntries: DistanceSummary[],
     miles: number,
     steps: number,
   ) => Stats | null;
-  hasEnoughDataForStats: (distanceEntries: DistanceEntry[]) => boolean;
-  getDateStarted: (distanceEntries: DistanceEntry[]) => Date | null;
+  hasEnoughDataForStats: (distanceEntries: DistanceSummary[]) => boolean;
+  getDateStarted: (distanceEntries: DistanceSummary[]) => Date | null;
 }
+
+type DistanceSummary = Pick<DistanceEntry, 'date' | 'miles' | 'steps'>;
 
 export interface Stats {
   // Journey Progress
@@ -57,7 +59,7 @@ export interface Stats {
 
 // Helper: Calculate streaks from sorted entries
 const calculateStreaks = (
-  entries: DistanceEntry[],
+  entries: DistanceSummary[],
 ): { current: number; longest: number } => {
   if (entries.length === 0) return { current: 0, longest: 0 };
 
@@ -109,7 +111,7 @@ const calculateStreaks = (
 
 // Helper: Get miles within a date range
 const getMilesInRange = (
-  entries: DistanceEntry[],
+  entries: DistanceSummary[],
   startDate: Date,
   endDate: Date,
 ): number => {
@@ -121,7 +123,7 @@ const getMilesInRange = (
 };
 
 const getStepsInRange = (
-  entries: DistanceEntry[],
+  entries: DistanceSummary[],
   startDate: Date,
   endDate: Date,
 ): number => {
@@ -147,11 +149,11 @@ const getStartOfMonth = (date: Date): Date => {
 };
 
 export const useStatsStore = create<StatsStore>(() => ({
-  hasEnoughDataForStats: (distanceEntries: DistanceEntry[]): boolean => {
+  hasEnoughDataForStats: (distanceEntries: DistanceSummary[]): boolean => {
     return distanceEntries.length > 0;
   },
 
-  getDateStarted: (distanceEntries: DistanceEntry[]): Date | null => {
+  getDateStarted: (distanceEntries: DistanceSummary[]): Date | null => {
     if (distanceEntries.length === 0) return null;
     const oldest = distanceEntries.reduce((min, entry) =>
       entry.date < min.date ? entry : min,
@@ -160,7 +162,7 @@ export const useStatsStore = create<StatsStore>(() => ({
   },
 
   getStats: (
-    distanceEntries: DistanceEntry[],
+    distanceEntries: DistanceSummary[],
     miles: number,
     steps: number,
   ): Stats | null => {

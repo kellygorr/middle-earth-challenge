@@ -150,10 +150,7 @@ export default function FriendProgressContent() {
     setAffinity(selectedAffinity);
   };
 
-  const runAction = async (
-    action: () => Promise<void>,
-    errorTitle: string,
-  ) => {
+  const runAction = async (action: () => Promise<void>, errorTitle: string) => {
     // The disabling state only takes effect on the next render, so a second
     // tap in the same frame would otherwise publish or delete twice.
     if (actionInFlightRef.current) return;
@@ -190,17 +187,14 @@ export default function FriendProgressContent() {
 
   const handleStartSharing = async () => {
     setIsEnablingSharing(true);
-    await runAction(
-      async () => {
-        await friendProgressWorkflow.enableSharing(
-          displayName,
-          totalMiles,
-          affinity,
-        );
-        showKelly();
-      },
-      'Sharing could not be started',
-    );
+    await runAction(async () => {
+      await friendProgressWorkflow.enableSharing(
+        displayName,
+        totalMiles,
+        affinity,
+      );
+      showKelly();
+    }, 'Sharing could not be started');
     setIsEnablingSharing(false);
   };
 

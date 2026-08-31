@@ -15,7 +15,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    FirebaseApp.configure()
+    if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
+      FirebaseApp.configure()
+    } else {
+#if DEBUG
+      print("[AppDelegate] Firebase is disabled: Debug GoogleService-Info.plist is not configured")
+#else
+      fatalError("Missing GoogleService-Info.plist in a non-Debug build")
+#endif
+    }
 
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)

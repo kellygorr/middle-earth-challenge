@@ -682,7 +682,7 @@ tests, and CI schema parity checks.
 
 ### High: "Friends" data is globally enumerable and easy to quota-amplify
 
-- **Status:** Resolved by decision plus mitigation, with one verification open.
+- **Status:** Resolved by decision, mitigation, and production verification.
   Global visibility is now an explicit product decision: the app serves a single
   community, so `allow read: if request.auth != null` is the intended contract
   and the private-group design is deferred. The quota-amplification half is
@@ -691,9 +691,9 @@ tests, and CI schema parity checks.
   Firestore, and participant reads are capped at 50 per request with stable
   document-ID cursor pagination. Real-device attestation passed for the release
   build via Play Integrity and for the debug build via a registered debug token.
-  Open: one enable/stop sharing cycle under enforcement. iOS has never shipped,
-  so enforcement is not gated on iOS; App Attest must be verified before any
-  future iOS release.
+  An enable/stop sharing cycle also passed under enforcement. iOS has never
+  shipped, so enforcement is not gated on iOS; App Attest must be verified
+  before any future iOS release.
   Residual accepted risk: App Check authenticates the app binary, not the
   viewer, so anyone who obtains the APK can still read the full participant
   list. That is the intended sharing model at this audience size.
@@ -701,13 +701,12 @@ tests, and CI schema parity checks.
 - **Files:** `firestore.rules:4-15`,
   `src/services/friendProgressService.ts:18,84-111`,
   `docs/shared-progress.md:52-54,188-194`
-- **Impact:** Any party can use the public Firebase configuration to create an
-  anonymous account, then page through every production participant. Private
-  groups and membership-gated rules are designed but not implemented, and App
-  Check is not yet enforced. This makes the user-facing "friends" set
-  effectively the global opted-in set and allows scripted anonymous
-  accounts/documents to amplify reads and exhaust the shared Spark quota for
-  both debug and release.
+- **Impact:** Without the mitigation, any party could use the public Firebase
+  configuration to create an anonymous account, then page through every
+  production participant. Private groups and membership-gated rules are
+  designed but not implemented. The user-facing "friends" set remains the
+  global opted-in set by product decision; enforced App Check now limits
+  scripted access to attested app instances.
 - **Suggested fix:** Decide whether global community visibility is truly the
   product contract. For friends-only privacy, add group/invite membership to
   documents and rules. Independently enable App Check, cap/paginate reads, and

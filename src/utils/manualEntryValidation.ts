@@ -1,4 +1,6 @@
 export const MAX_MANUAL_ENTRY_VALUE = 5_000_000;
+export const MANUAL_ENTRY_SAVE_ERROR = 'Could not save entry. Try again.';
+export const MANUAL_ENTRY_DELETE_ERROR = 'Could not delete entry. Try again.';
 
 export type ManualEntryValidation =
   | { value: number; error: null }

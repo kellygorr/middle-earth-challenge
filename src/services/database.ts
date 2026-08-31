@@ -16,6 +16,34 @@ import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
 const CURRENT_PROGRESS_CACHE_VERSION = 1;
 export const CURRENT_HEALTH_SYNC_FORMAT_VERSION = 1;
 
+export interface DistanceEntryChanges {
+  upsert?: DistanceEntry[];
+  removeIds?: string[];
+  removeSources?: DistanceSource[];
+  clearAll?: boolean;
+}
+
+export interface ProgressMutation {
+  miles: number;
+  steps: number;
+  changes: DistanceEntryChanges;
+}
+
+type AppliedProgressMutation =
+  | (ProgressMutation & { applied: true })
+  | { applied: false };
+
+export interface DistanceEntryPage {
+  entries: DistanceEntry[];
+  nextCursor: { date: number; id: string } | null;
+}
+
+export interface DistanceDaySummary {
+  date: number;
+  miles: number;
+  steps: number;
+}
+
 // SQLite raises a generic error for "duplicate column" from ALTER TABLE
 // ADD COLUMN when the column already exists. There's no dedicated error
 // code we can rely on across engines, so we string-match. Any other
@@ -124,6 +152,7 @@ class Database {
         sync_provider TEXT NOT NULL DEFAULT 'none',
         sync_start_date INTEGER,
         last_sync_timestamp INTEGER,
+        pedometer_cursor TEXT,
         health_sync_format_version INTEGER NOT NULL DEFAULT ${CURRENT_HEALTH_SYNC_FORMAT_VERSION},
         health_lookback_start_timestamp INTEGER,
         last_health_reconciled_through INTEGER,
@@ -156,6 +185,14 @@ class Database {
     `);
 
     // Migration: add text_size column for installs that pre-date it.
+    try {
+      this.db.executeSync(
+        `ALTER TABLE user_settings ADD COLUMN pedometer_cursor TEXT`,
+      );
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+    }
+
     try {
       this.db.executeSync(
         `ALTER TABLE user_settings ADD COLUMN text_size TEXT NOT NULL DEFAULT 'medium'`,
@@ -272,6 +309,10 @@ class Database {
         source TEXT NOT NULL DEFAULT 'manual' -- 'manual' | 'health-connect' | 'apple-health' | 'pedometer'
       )
     `);
+    this.db.executeSync(
+      `CREATE INDEX IF NOT EXISTS idx_distance_entries_save_date
+       ON distance_entries (save_id, date)`,
+    );
 
     // Add `steps` column to existing installs. Backfills from `miles`
     // using the stride constants so legacy rows still contribute a
@@ -280,19 +321,17 @@ class Database {
       this.db.executeSync(
         `ALTER TABLE distance_entries ADD COLUMN steps INTEGER NOT NULL DEFAULT 0`,
       );
-      // Backfill any rows that just got the default 0 — round miles back
-      // through the stride equation. Constants imported from
-      // src/utils/stride.ts so they can never drift out of sync with
-      // the runtime stepsToMiles / milesToSteps helpers.
-      const strideFactor = AVERAGE_STRIDE_METERS * METERS_TO_MILES;
-      this.db.executeSync(
-        `UPDATE distance_entries
-         SET steps = CAST(ROUND(miles / ${strideFactor}) AS INTEGER)
-         WHERE steps = 0 AND miles > 0`,
-      );
     } catch (error) {
       if (!isDuplicateColumnError(error)) throw error;
     }
+    // Keep the idempotent backfill outside the ALTER try/catch so an
+    // interrupted migration is retried after the column already exists.
+    const entryStrideFactor = AVERAGE_STRIDE_METERS * METERS_TO_MILES;
+    this.db.executeSync(
+      `UPDATE distance_entries
+       SET steps = CAST(ROUND(miles / ${entryStrideFactor}) AS INTEGER)
+       WHERE steps = 0 AND miles > 0`,
+    );
 
     const reconciliationRows = this.db.executeSync(
       `SELECT id, date FROM distance_entries
@@ -407,6 +446,9 @@ class Database {
       syncProvider: ((row as any).sync_provider as SyncProvider) ?? 'none',
       syncStartDate: (row as any).sync_start_date ?? null,
       lastSyncTimestamp: (row as any).last_sync_timestamp ?? null,
+      pedometerCursor: (row as any).pedometer_cursor
+        ? JSON.parse((row as any).pedometer_cursor as string)
+        : null,
       healthSyncFormatVersion:
         Number((row as any).health_sync_format_version) || 0,
       healthLookbackStartTimestamp:
@@ -491,6 +533,14 @@ class Database {
     if (updates.lastSyncTimestamp !== undefined) {
       fields.push('last_sync_timestamp = ?');
       values.push(updates.lastSyncTimestamp);
+    }
+    if (updates.pedometerCursor !== undefined) {
+      fields.push('pedometer_cursor = ?');
+      values.push(
+        updates.pedometerCursor === null
+          ? null
+          : JSON.stringify(updates.pedometerCursor),
+      );
     }
     if (updates.healthSyncFormatVersion !== undefined) {
       fields.push('health_sync_format_version = ?');
@@ -635,29 +685,95 @@ class Database {
     }
   }
 
-  async getDistanceEntries(saveId: string): Promise<
-    {
-      id: string;
-      saveId: string;
-      date: number;
-      miles: number;
-      steps: number;
-      source: DistanceSource;
-    }[]
-  > {
+  async getDistanceEntriesByIds(
+    saveId: string,
+    ids: string[],
+  ): Promise<DistanceEntry[]> {
+    if (!this.db) throw new Error('Database not initialized');
+    if (ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(', ');
+    const result = this.db.executeSync(
+      `SELECT id, save_id as saveId, date, miles, steps, source
+       FROM distance_entries
+       WHERE save_id = ? AND id IN (${placeholders})`,
+      [saveId, ...ids],
+    );
+    return this.mapDistanceEntryRows(result.rows ?? []);
+  }
+
+  async getDistanceEntriesBetween(
+    saveId: string,
+    startInclusive: number,
+    endExclusive: number,
+  ): Promise<DistanceEntry[]> {
     if (!this.db) throw new Error('Database not initialized');
     const result = this.db.executeSync(
-      `SELECT id, save_id as saveId, date, miles, steps, source FROM distance_entries WHERE save_id = ? ORDER BY date ASC`,
+      `SELECT id, save_id as saveId, date, miles, steps, source
+       FROM distance_entries
+       WHERE save_id = ? AND date >= ? AND date < ?
+       ORDER BY date ASC, id ASC`,
+      [saveId, startInclusive, endExclusive],
+    );
+    return this.mapDistanceEntryRows(result.rows ?? []);
+  }
+
+  async getDistanceEntryPage(
+    saveId: string,
+    cursor: { date: number; id: string } | null,
+    limit: number,
+  ): Promise<DistanceEntryPage> {
+    if (!this.db) throw new Error('Database not initialized');
+    const boundedLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+    const result = cursor
+      ? this.db.executeSync(
+          `SELECT id, save_id as saveId, date, miles, steps, source
+           FROM distance_entries
+           WHERE save_id = ? AND (date < ? OR (date = ? AND id < ?))
+           ORDER BY date DESC, id DESC LIMIT ?`,
+          [saveId, cursor.date, cursor.date, cursor.id, boundedLimit + 1],
+        )
+      : this.db.executeSync(
+          `SELECT id, save_id as saveId, date, miles, steps, source
+           FROM distance_entries
+           WHERE save_id = ?
+           ORDER BY date DESC, id DESC LIMIT ?`,
+          [saveId, boundedLimit + 1],
+        );
+    const rows = this.mapDistanceEntryRows(result.rows ?? []);
+    const hasMore = rows.length > boundedLimit;
+    const entries = rows.slice(0, boundedLimit);
+    const last = entries[entries.length - 1];
+    return {
+      entries,
+      nextCursor: hasMore && last ? { date: last.date, id: last.id } : null,
+    };
+  }
+
+  async getDistanceSourcePresence(saveId: string): Promise<DistanceSource[]> {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.executeSync(
+      `SELECT DISTINCT source FROM distance_entries WHERE save_id = ?`,
       [saveId],
     );
-    const rows = result.rows || [];
-    return rows.map((r: any) => ({
-      id: String(r.id),
-      saveId: String(r.saveId),
-      date: Number(r.date),
-      miles: Number(r.miles),
-      steps: Number(r.steps ?? 0),
-      source: (r.source || 'manual') as DistanceSource,
+    return (result.rows ?? []).map(
+      row => String((row as any).source || 'manual') as DistanceSource,
+    );
+  }
+
+  async getDistanceDaySummaries(saveId: string): Promise<DistanceDaySummary[]> {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.executeSync(
+      `SELECT MIN(date) AS date, SUM(miles) AS miles, SUM(steps) AS steps
+       FROM distance_entries
+       WHERE save_id = ?
+       GROUP BY strftime('%Y-%m-%d', date / 1000, 'unixepoch', 'localtime')
+       ORDER BY date ASC`,
+      [saveId],
+    );
+    return (result.rows ?? []).map(row => ({
+      date: Number((row as any).date),
+      miles: Number((row as any).miles),
+      steps: Number((row as any).steps ?? 0),
     }));
   }
 
@@ -810,7 +926,6 @@ class Database {
   async reconcileProgress(id: string): Promise<{
     miles: number;
     steps: number;
-    entries: DistanceEntry[];
   }> {
     return this.enqueueWrite(() =>
       this.runTransaction(() => this.recalculateProgress(id)),
@@ -842,27 +957,26 @@ class Database {
           return {
             miles,
             steps: Math.max(0, Math.round(steps)),
-            entries: this.readDistanceEntries(id),
+            entries: [],
           };
         }
 
-        return this.recalculateProgress(id);
+        return {
+          ...this.recalculateProgress(id),
+          entries: [],
+        };
       }),
     );
   }
 
   async applyDistanceEntryChanges(
     id: string,
-    changes: {
-      upsert?: DistanceEntry[];
-      removeIds?: string[];
-      removeSources?: DistanceSource[];
-      clearAll?: boolean;
-    },
-  ): Promise<{ miles: number; steps: number; entries: DistanceEntry[] }> {
+    changes: DistanceEntryChanges,
+  ): Promise<ProgressMutation> {
     return this.enqueueWrite(() =>
       this.runTransaction(() => {
         if (!this.db) throw new Error('Database not initialized');
+        const progress = this.calculateProgressAfterChanges(id, changes);
 
         if (changes.clearAll) {
           this.db.executeSync(
@@ -901,7 +1015,49 @@ class Database {
           );
         }
 
-        return this.recalculateProgress(id);
+        this.writeProgressSnapshot(id, progress.miles, progress.steps);
+        return { ...progress, changes };
+      }),
+    );
+  }
+
+  async resetDistanceData(
+    id: string,
+    changes: { removeSources?: DistanceSource[]; clearAll?: boolean },
+    resetAt: number,
+    reconciliationBoundary: number,
+  ): Promise<ProgressMutation> {
+    return this.enqueueWrite(() =>
+      this.runTransaction(() => {
+        if (!this.db) throw new Error('Database not initialized');
+        const progress = this.calculateProgressAfterChanges(id, changes);
+
+        if (changes.clearAll) {
+          this.db.executeSync(
+            'DELETE FROM distance_entries WHERE save_id = ?',
+            [id],
+          );
+        } else if (changes.removeSources && changes.removeSources.length > 0) {
+          const placeholders = changes.removeSources.map(() => '?').join(', ');
+          this.db.executeSync(
+            `DELETE FROM distance_entries
+             WHERE save_id = ? AND source IN (${placeholders})`,
+            [id, ...changes.removeSources],
+          );
+        }
+
+        this.db.executeSync(
+          `UPDATE user_settings
+           SET sync_start_date = ?, last_sync_timestamp = NULL,
+               pedometer_cursor = NULL,
+               health_lookback_start_timestamp = ?,
+               last_health_reconciled_through = ?
+           WHERE id = ?`,
+          [resetAt, resetAt, reconciliationBoundary, DEFAULT_SAVE_ID],
+        );
+
+        this.writeProgressSnapshot(id, progress.miles, progress.steps);
+        return { ...progress, changes };
       }),
     );
   }
@@ -912,10 +1068,15 @@ class Database {
     cursor: number,
     healthSyncFormatVersion: number,
     healthLookbackStartTimestamp: number | null,
-  ): Promise<{ miles: number; steps: number; entries: DistanceEntry[] }> {
+  ): Promise<AppliedProgressMutation> {
     return this.enqueueWrite(() =>
       this.runTransaction(() => {
         if (!this.db) throw new Error('Database not initialized');
+        if (this.isSyncCursorStale(cursor)) {
+          return { applied: false };
+        }
+        const changes = { upsert: entries };
+        const progress = this.calculateProgressAfterChanges(id, changes);
 
         for (const entry of entries) {
           this.db.executeSync(
@@ -944,7 +1105,8 @@ class Database {
           ],
         );
 
-        return this.recalculateProgress(id);
+        this.writeProgressSnapshot(id, progress.miles, progress.steps);
+        return { ...progress, changes, applied: true };
       }),
     );
   }
@@ -953,10 +1115,30 @@ class Database {
     id: string,
     entries: DistanceEntry[],
     cursor: number,
-  ): Promise<{ miles: number; steps: number; entries: DistanceEntry[] }> {
+    expectedPedometerCursor?: import('../types').PedometerCursor | null,
+    nextPedometerCursor?: import('../types').PedometerCursor | null,
+  ): Promise<AppliedProgressMutation> {
     return this.enqueueWrite(() =>
       this.runTransaction(() => {
         if (!this.db) throw new Error('Database not initialized');
+        const storedCursorResult = this.db.executeSync(
+          `SELECT pedometer_cursor as pedometerCursor
+           FROM user_settings WHERE id = ? LIMIT 1`,
+          [DEFAULT_SAVE_ID],
+        );
+        const storedCursor =
+          (storedCursorResult.rows?.[0] as any)?.pedometerCursor ?? null;
+        const expectedCursorJson = expectedPedometerCursor
+          ? JSON.stringify(expectedPedometerCursor)
+          : null;
+        if (
+          storedCursor !== expectedCursorJson ||
+          (expectedPedometerCursor == null && this.isSyncCursorStale(cursor))
+        ) {
+          return { applied: false };
+        }
+        const changes = { upsert: entries };
+        const progress = this.calculateProgressAfterChanges(id, changes);
 
         for (const entry of entries) {
           this.db.executeSync(
@@ -973,11 +1155,17 @@ class Database {
         }
 
         this.db.executeSync(
-          `UPDATE user_settings SET last_sync_timestamp = ? WHERE id = ?`,
-          [cursor, DEFAULT_SAVE_ID],
+          `UPDATE user_settings
+           SET last_sync_timestamp = ?, pedometer_cursor = ? WHERE id = ?`,
+          [
+            cursor,
+            nextPedometerCursor ? JSON.stringify(nextPedometerCursor) : null,
+            DEFAULT_SAVE_ID,
+          ],
         );
 
-        return this.recalculateProgress(id);
+        this.writeProgressSnapshot(id, progress.miles, progress.steps);
+        return { ...progress, changes, applied: true };
       }),
     );
   }
@@ -986,10 +1174,22 @@ class Database {
     id: string,
     changes: { upsert?: DistanceEntry[]; removeIds?: string[] },
     cursor: number,
-  ): Promise<{ miles: number; steps: number; entries: DistanceEntry[] }> {
+  ): Promise<AppliedProgressMutation> {
     return this.enqueueWrite(() =>
       this.runTransaction(() => {
         if (!this.db) throw new Error('Database not initialized');
+        if (this.isReconciliationCursorStale(cursor)) {
+          return { applied: false };
+        }
+        const progress = this.calculateProgressAfterChanges(id, changes);
+
+        if (changes.removeIds && changes.removeIds.length > 0) {
+          const placeholders = changes.removeIds.map(() => '?').join(', ');
+          this.db.executeSync(
+            `DELETE FROM distance_entries WHERE save_id = ? AND id IN (${placeholders})`,
+            [id, ...changes.removeIds],
+          );
+        }
 
         for (const entry of changes.upsert ?? []) {
           this.db.executeSync(
@@ -1005,23 +1205,40 @@ class Database {
           );
         }
 
-        if (changes.removeIds && changes.removeIds.length > 0) {
-          const placeholders = changes.removeIds.map(() => '?').join(', ');
-          this.db.executeSync(
-            `DELETE FROM distance_entries WHERE save_id = ? AND id IN (${placeholders})`,
-            [id, ...changes.removeIds],
-          );
-        }
-
         this.db.executeSync(
           `UPDATE user_settings
            SET last_health_reconciled_through = ? WHERE id = ?`,
           [cursor, DEFAULT_SAVE_ID],
         );
 
-        return this.recalculateProgress(id);
+        this.writeProgressSnapshot(id, progress.miles, progress.steps);
+        return { ...progress, changes, applied: true };
       }),
     );
+  }
+
+  private isSyncCursorStale(cursor: number): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.executeSync(
+      `SELECT sync_start_date as syncStartDate
+       FROM user_settings WHERE id = ? LIMIT 1`,
+      [DEFAULT_SAVE_ID],
+    );
+    const syncStartDate = Number((result.rows?.[0] as any)?.syncStartDate);
+    return Number.isFinite(syncStartDate) && cursor <= syncStartDate;
+  }
+
+  private isReconciliationCursorStale(cursor: number): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.executeSync(
+      `SELECT last_health_reconciled_through as lastHealthReconciledThrough
+       FROM user_settings WHERE id = ? LIMIT 1`,
+      [DEFAULT_SAVE_ID],
+    );
+    const boundary = Number(
+      (result.rows?.[0] as any)?.lastHealthReconciledThrough,
+    );
+    return Number.isFinite(boundary) && cursor <= boundary;
   }
 
   private enqueueWrite<T>(operation: () => T): Promise<T> {
@@ -1050,7 +1267,6 @@ class Database {
   private recalculateProgress(id: string): {
     miles: number;
     steps: number;
-    entries: DistanceEntry[];
   } {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -1067,25 +1283,123 @@ class Database {
       Math.round(Number((totalsRow as any)?.steps ?? 0)),
     );
 
+    this.writeProgressSnapshot(id, miles, steps);
+
+    return { miles, steps };
+  }
+
+  private calculateProgressAfterChanges(
+    id: string,
+    changes: DistanceEntryChanges,
+  ): { miles: number; steps: number } {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const snapshotResult = this.db.executeSync(
+      `SELECT miles, steps, cache_version
+       FROM progress_snapshot WHERE id = ? LIMIT 1`,
+      [id],
+    );
+    const snapshot = snapshotResult.rows?.[0] as any;
+    let miles = Number(snapshot?.miles);
+    let steps = Number(snapshot?.steps);
+    if (
+      snapshot?.cache_version !== CURRENT_PROGRESS_CACHE_VERSION ||
+      !Number.isFinite(miles) ||
+      !Number.isFinite(steps)
+    ) {
+      const repaired = this.recalculateProgress(id);
+      miles = repaired.miles;
+      steps = repaired.steps;
+    }
+
+    const upserts = changes.upsert ?? [];
+    if (changes.clearAll) {
+      miles = 0;
+      steps = 0;
+    }
+
+    const affectedIds = new Set([
+      ...(changes.removeIds ?? []),
+      ...upserts.map(entry => entry.id),
+    ]);
+    const removeSources = new Set(changes.removeSources ?? []);
+    const conditions: string[] = [];
+    const params: string[] = [id];
+    if (!changes.clearAll && affectedIds.size > 0) {
+      conditions.push(`id IN (${[...affectedIds].map(() => '?').join(', ')})`);
+      params.push(...affectedIds);
+    }
+    if (!changes.clearAll && removeSources.size > 0) {
+      conditions.push(
+        `source IN (${[...removeSources].map(() => '?').join(', ')})`,
+      );
+      params.push(...removeSources);
+    }
+
+    const affectedEntries = new Map<string, DistanceEntry>();
+    if (conditions.length > 0) {
+      const result = this.db.executeSync(
+        `SELECT id, save_id as saveId, date, miles, steps, source
+         FROM distance_entries
+         WHERE save_id = ? AND (${conditions.join(' OR ')})`,
+        params,
+      );
+      for (const row of result.rows ?? []) {
+        affectedEntries.set(String((row as any).id), {
+          id: String((row as any).id),
+          saveId: String((row as any).saveId),
+          date: Number((row as any).date),
+          miles: Number((row as any).miles),
+          steps: Number((row as any).steps ?? 0),
+          source: ((row as any).source || 'manual') as DistanceSource,
+        });
+      }
+    }
+
+    const subtract = (entry: DistanceEntry) => {
+      miles -= entry.miles;
+      steps -= entry.steps;
+      affectedEntries.delete(entry.id);
+    };
+    for (const removeId of changes.removeIds ?? []) {
+      const existing = affectedEntries.get(removeId);
+      if (existing) subtract(existing);
+    }
+    if (removeSources.size > 0) {
+      for (const existing of [...affectedEntries.values()]) {
+        if (removeSources.has(existing.source)) subtract(existing);
+      }
+    }
+    for (const entry of upserts) {
+      const existing = affectedEntries.get(entry.id);
+      if (existing) subtract(existing);
+      miles += entry.miles;
+      steps += entry.steps;
+      affectedEntries.set(entry.id, entry);
+    }
+
+    return {
+      miles: Math.max(0, miles),
+      steps: Math.max(0, Math.round(steps)),
+    };
+  }
+
+  private writeProgressSnapshot(
+    id: string,
+    miles: number,
+    steps: number,
+  ): void {
+    if (!this.db) throw new Error('Database not initialized');
     this.db.executeSync(
       `INSERT OR REPLACE INTO progress_snapshot
         (id, miles, steps, cache_version, last_updated)
         VALUES (?, ?, ?, ?, ?)`,
       [id, miles, steps, CURRENT_PROGRESS_CACHE_VERSION, Date.now()],
     );
-
-    return { miles, steps, entries: this.readDistanceEntries(id) };
   }
 
-  private readDistanceEntries(id: string): DistanceEntry[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const entriesResult = this.db.executeSync(
-      `SELECT id, save_id as saveId, date, miles, steps, source
-       FROM distance_entries WHERE save_id = ? ORDER BY date ASC`,
-      [id],
-    );
-    const entries = (entriesResult.rows ?? []).map((row: any) => ({
+  private mapDistanceEntryRows(rows: readonly unknown[]): DistanceEntry[] {
+    return rows.map((row: any) => ({
       id: String(row.id),
       saveId: String(row.saveId),
       date: Number(row.date),
@@ -1093,8 +1407,6 @@ class Database {
       steps: Number(row.steps ?? 0),
       source: (row.source || 'manual') as DistanceSource,
     }));
-
-    return entries;
   }
 }
 

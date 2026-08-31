@@ -27,19 +27,28 @@ interface StoreState {
 }
 
 const mockGetStepsBetween = jest.fn();
+const mockGetStepsSinceCursor = jest.fn();
+const mockGetSampleCursorAtOrBefore = jest.fn();
 const mockPruneSamplesBefore = jest.fn();
 const mockCheckAndFireMilestones = jest.fn();
 const mockStoreState: { ref: StoreState } = { ref: null as any };
-const mockSettingsState: { lastSyncTimestamp: number | null } = {
+const mockSettingsState: {
+  lastSyncTimestamp: number | null;
+  pedometerCursor: Record<string, unknown> | null;
+} = {
   lastSyncTimestamp: null,
+  pedometerCursor: null,
 };
 
 jest.mock('../pedometerService', () => ({
   pedometerService: {
     getStepsBetween: (fromMs: number, toMs: number) =>
       mockGetStepsBetween(fromMs, toMs),
-    pruneSamplesBefore: (cutoffMs: number) =>
-      mockPruneSamplesBefore(cutoffMs),
+    getStepsSinceCursor: (cursor: Record<string, unknown>) =>
+      mockGetStepsSinceCursor(cursor),
+    getSampleCursorAtOrBefore: (timestampMs: number) =>
+      mockGetSampleCursorAtOrBefore(timestampMs),
+    pruneSamplesBefore: (cutoffMs: number) => mockPruneSamplesBefore(cutoffMs),
   },
 }));
 
@@ -56,6 +65,7 @@ jest.mock('../../stores/progressStore', () => ({
 
 jest.mock('../../stores/settingsStore', () => ({
   useSettingsStore: {
+    getState: () => mockSettingsState,
     setState: (updates: Partial<typeof mockSettingsState>) =>
       Object.assign(mockSettingsState, updates),
   },
@@ -78,6 +88,7 @@ function resetStore(initial: Partial<StoreState> = {}) {
       state.distanceEntries = [...state.distanceEntries, ...newEntries];
       state.miles = state.getTotalMiles();
       state.steps = state.getTotalSteps();
+      return true;
     }),
     getTotalMiles: () =>
       state.distanceEntries.reduce((sum, e) => sum + (e.miles ?? 0), 0),
@@ -88,13 +99,24 @@ function resetStore(initial: Partial<StoreState> = {}) {
   return state;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(resolvePromise => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   mockGetStepsBetween.mockReset();
+  mockGetStepsSinceCursor.mockReset();
+  mockGetSampleCursorAtOrBefore.mockReset();
   mockPruneSamplesBefore.mockReset();
   mockPruneSamplesBefore.mockResolvedValue(0);
   mockCheckAndFireMilestones.mockReset();
   mockCheckAndFireMilestones.mockResolvedValue(undefined);
   mockSettingsState.lastSyncTimestamp = null;
+  mockSettingsState.pedometerCursor = null;
   resetStore();
 });
 
@@ -108,6 +130,125 @@ describe('commitPedometerRange', () => {
     expect(result).toEqual({ steps: 0, miles: 0, entryWritten: false });
     expect(mockGetStepsBetween).not.toHaveBeenCalled();
     expect(mockStoreState.ref.applyPedometerSyncChunk).not.toHaveBeenCalled();
+  });
+
+  it('recovers steps from the monotonic cursor when wall time moves backward', async () => {
+    const previousCursor = {
+      sampleId: 10,
+      timestampMs: 10_000,
+      elapsedRealtimeMs: 20_000,
+      stepCount: 1_000,
+      bootId: 'boot-a',
+    };
+    const latestCursor = {
+      sampleId: 12,
+      timestampMs: 5_100,
+      elapsedRealtimeMs: 90_100,
+      stepCount: 1_090,
+      bootId: 'boot-a',
+    };
+    mockSettingsState.pedometerCursor = previousCursor;
+    mockGetStepsSinceCursor.mockResolvedValue({
+      steps: 90,
+      latestCursor,
+      wallClockMovedBackward: true,
+    });
+
+    const result = await commitPedometerRange(10_000, 5_100);
+
+    expect(result.steps).toBe(90);
+    expect(mockGetStepsSinceCursor).toHaveBeenCalledWith(previousCursor);
+    expect(mockStoreState.ref.applyPedometerSyncChunk).toHaveBeenCalledWith(
+      expect.any(Array),
+      5_100,
+      previousCursor,
+      latestCursor,
+    );
+    expect(mockSettingsState.lastSyncTimestamp).toBe(5_100);
+    expect(mockSettingsState.pedometerCursor).toEqual(latestCursor);
+  });
+
+  it('bootstraps an upgraded install after wall time has already moved backward', async () => {
+    const legacyAnchor = {
+      sampleId: 10,
+      timestampMs: 10_000,
+      elapsedRealtimeMs: null,
+      stepCount: 1_000,
+      bootId: 'boot-a',
+    };
+    mockGetSampleCursorAtOrBefore.mockResolvedValue(legacyAnchor);
+    mockGetStepsSinceCursor.mockResolvedValue({
+      steps: 90,
+      latestCursor: { ...legacyAnchor, sampleId: 12, stepCount: 1_090 },
+      wallClockMovedBackward: false,
+    });
+
+    const result = await commitPedometerRange(10_000, 5_100);
+
+    expect(result.steps).toBe(90);
+    expect(mockGetSampleCursorAtOrBefore).toHaveBeenCalledWith(10_000);
+    expect(mockGetStepsSinceCursor).toHaveBeenCalledWith(legacyAnchor);
+    expect(mockStoreState.ref.applyPedometerSyncChunk).toHaveBeenCalledWith(
+      expect.any(Array),
+      5_100,
+      null,
+      expect.objectContaining({ sampleId: 12 }),
+    );
+  });
+
+  it('serializes overlapping commits and rebases a later flush', async () => {
+    const initialCursor = {
+      sampleId: 10,
+      timestampMs: 100,
+      elapsedRealtimeMs: 1_000,
+      stepCount: 1_000,
+      bootId: 'boot-a',
+    };
+    const liveCursor = { ...initialCursor, sampleId: 11, timestampMs: 200 };
+    const flushCursor = { ...initialCursor, sampleId: 12, timestampMs: 300 };
+    mockSettingsState.lastSyncTimestamp = 100;
+    mockSettingsState.pedometerCursor = initialCursor;
+    const liveRead = deferred<{
+      steps: number;
+      latestCursor: typeof liveCursor;
+    }>();
+    mockGetStepsBetween
+      .mockReturnValueOnce(liveRead.promise)
+      .mockResolvedValueOnce({ steps: 50, latestCursor: flushCursor });
+
+    const liveCommit = commitPedometerRange(100, 200);
+    const staleShorterCommit = commitPedometerRange(100, 150);
+    const transitionFlush = commitPedometerRange(100, 300);
+
+    await Promise.resolve();
+    expect(mockGetStepsBetween).toHaveBeenCalledTimes(1);
+    liveRead.resolve({ steps: 40, latestCursor: liveCursor });
+    await liveCommit;
+    await expect(staleShorterCommit).resolves.toEqual({
+      steps: 0,
+      miles: 0,
+      entryWritten: false,
+    });
+    await transitionFlush;
+
+    expect(mockGetStepsBetween).toHaveBeenNthCalledWith(1, 100, 200);
+    expect(mockGetStepsBetween).toHaveBeenNthCalledWith(2, 200, 300);
+    expect(mockSettingsState.lastSyncTimestamp).toBe(300);
+    expect(mockSettingsState.pedometerCursor).toEqual(flushCursor);
+  });
+
+  it('does not publish or prune when a stale commit is rejected', async () => {
+    mockGetStepsBetween.mockResolvedValue({ steps: 100 });
+    mockStoreState.ref.applyPedometerSyncChunk.mockResolvedValue(false);
+
+    await expect(commitPedometerRange(1_000, 2_000)).resolves.toEqual({
+      steps: 0,
+      miles: 0,
+      entryWritten: false,
+    });
+
+    expect(mockSettingsState.lastSyncTimestamp).toBeNull();
+    expect(mockPruneSamplesBefore).not.toHaveBeenCalled();
   });
 
   it('returns a no-op result when the native read reports zero steps', async () => {
@@ -174,6 +315,8 @@ describe('commitPedometerRange', () => {
     )[0].id;
 
     resetStore();
+    mockSettingsState.lastSyncTimestamp = null;
+    mockSettingsState.pedometerCursor = null;
     await commitPedometerRange(12345, 12500);
     const second = (
       mockStoreState.ref.applyPedometerSyncChunk.mock.calls[0][0] as any[]

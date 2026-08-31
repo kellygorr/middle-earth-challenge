@@ -1,4 +1,5 @@
 import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
+import type { PedometerCursor } from '../types';
 
 /**
  * Pedometer service — Android-only for now.
@@ -41,6 +42,23 @@ export interface StepsWindow {
   steps: number;
   fromMs: number;
   toMs: number;
+  latestCursor?: PedometerCursor | null;
+}
+
+export interface CursorStepsWindow {
+  steps: number;
+  latestCursor: PedometerCursor | null;
+  wallClockMovedBackward: boolean;
+}
+
+export function reportPedometerBackgroundTaskResult(
+  requestId: string,
+  succeeded: boolean,
+): void {
+  NativeModules.PedometerModule.reportBackgroundTaskResult(
+    requestId,
+    succeeded,
+  );
 }
 
 export interface PedometerService {
@@ -64,6 +82,12 @@ export interface PedometerService {
    * Returns 0 for empty/inverted ranges or when nothing is recorded.
    */
   getStepsBetween(fromMs: number, toMs: number): Promise<StepsWindow>;
+  /** Finds the latest insertion at or before a legacy wall watermark. */
+  getSampleCursorAtOrBefore(
+    timestampMs: number,
+  ): Promise<PedometerCursor | null>;
+  /** Reads samples by insertion order, independent of wall-clock changes. */
+  getStepsSinceCursor(cursor: PedometerCursor): Promise<CursorStepsWindow>;
   /**
    * Deletes raw step samples older than `cutoffMs`, keeping each boot's
    * anchor sample so later windows still compute correct deltas. Resolves the
@@ -126,6 +150,12 @@ const AndroidPedometer: PedometerService = {
 
   getStepsBetween: (fromMs, toMs) =>
     NativeModules.PedometerModule.getStepsBetween(fromMs, toMs),
+
+  getSampleCursorAtOrBefore: timestampMs =>
+    NativeModules.PedometerModule.getSampleCursorAtOrBefore(timestampMs),
+
+  getStepsSinceCursor: cursor =>
+    NativeModules.PedometerModule.getStepsSinceCursor(cursor),
 
   pruneSamplesBefore: cutoffMs =>
     NativeModules.PedometerModule.pruneSamplesBefore(cutoffMs),
@@ -201,6 +231,13 @@ const IosPedometer: PedometerService = {
   isServiceRunning: () => Promise.resolve(false),
   getStepsBetween: (fromMs, toMs) =>
     Promise.resolve({ steps: 0, fromMs, toMs }),
+  getSampleCursorAtOrBefore: () => Promise.resolve(null),
+  getStepsSinceCursor: () =>
+    Promise.resolve({
+      steps: 0,
+      latestCursor: null,
+      wallClockMovedBackward: false,
+    }),
   pruneSamplesBefore: () => Promise.resolve(0),
   getEnvironment: () =>
     Promise.resolve({

@@ -104,6 +104,7 @@ export default function SettingsContent() {
             onPress={() => setTheme('minimalist')}
             variant={currentTheme === 'minimalist' ? 'brand' : 'outline'}
             size={isLandscape ? 'default' : 'large'}
+            accessibilityState={{ selected: currentTheme === 'minimalist' }}
           >
             Minimal
           </Button>
@@ -113,6 +114,7 @@ export default function SettingsContent() {
             onPress={() => setTheme('classic')}
             variant={currentTheme === 'classic' ? 'brand' : 'outline'}
             size={isLandscape ? 'default' : 'large'}
+            accessibilityState={{ selected: currentTheme === 'classic' }}
           >
             Classic
           </Button>
@@ -142,6 +144,8 @@ export default function SettingsContent() {
                 onPress={() => setLabelSize(size)}
                 variant={labelSize === size ? 'brand' : 'outline'}
                 size="xs"
+                accessibilityLabel={`${size} map label size`}
+                accessibilityState={{ selected: labelSize === size }}
               >
                 {size === 'small' ? 'S' : size === 'medium' ? 'M' : 'L'}
               </Button>
@@ -168,6 +172,8 @@ export default function SettingsContent() {
                 onPress={() => setTextSize(size)}
                 variant={textSize === size ? 'brand' : 'outline'}
                 size="xs"
+                accessibilityLabel={`${size} text size`}
+                accessibilityState={{ selected: textSize === size }}
               >
                 {size === 'small' ? 'S' : size === 'medium' ? 'M' : 'L'}
               </Button>

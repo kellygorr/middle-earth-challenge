@@ -17,9 +17,6 @@ export interface FitnessServiceInterface {
   initialize(provider?: SyncProvider): Promise<void>;
   requestPermissions(provider?: SyncProvider): Promise<boolean>;
   disconnect(): Promise<void>;
-  getDistanceToday(): Promise<number>;
-  getDistanceSince(startDate: Date): Promise<number>;
-  getDistanceRecordsSince(startDate: Date): Promise<HealthDistanceRecord[]>;
   getDistanceRecordsBetween(
     startDate: Date,
     endDate: Date,
@@ -28,8 +25,6 @@ export interface FitnessServiceInterface {
     startDate: Date,
     endDate: Date,
   ): Promise<HealthDistanceRecord[]>;
-  startRealTimeUpdates(callback: (distance: number) => void): void;
-  stopRealTimeUpdates(): void;
   isAvailable(): Promise<boolean>;
   checkSdkStatus(): Promise<{
     available: boolean;
@@ -346,8 +341,6 @@ export async function getLegacyAndroidDistanceRecords(
 class FitnessService implements FitnessServiceInterface {
   private isInitialized = false;
   private currentProvider: SyncProvider = 'none';
-  private realTimeCallback: ((distance: number) => void) | null = null;
-  private realTimeInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Check SDK status for Health Connect (Android only)
@@ -576,8 +569,8 @@ class FitnessService implements FitnessServiceInterface {
   }
 
   /**
-   * Disconnect from the health service in-app (stop real-time updates
-   * and reset internal state). Does NOT revoke OS-level permissions —
+   * Disconnect from the health service in-app and reset internal state.
+   * Does NOT revoke OS-level permissions —
    * use {@link revokePermissions} for that.
    *
    * The split lets us differentiate "user turned syncing off" (which
@@ -586,7 +579,6 @@ class FitnessService implements FitnessServiceInterface {
    */
   async disconnect(): Promise<void> {
     try {
-      this.stopRealTimeUpdates();
       this.isInitialized = false;
       this.currentProvider = 'none';
     } catch (error) {
@@ -688,177 +680,6 @@ class FitnessService implements FitnessServiceInterface {
   }
 
   /**
-   * Get total distance walked/run today (in miles)
-   */
-  async getDistanceToday(): Promise<number> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    return this.getDistanceSince(today);
-  }
-
-  /**
-   * Get total distance walked/run since a specific date (in miles)
-   * @param startDate Start date for distance calculation
-   */
-  async getDistanceSince(startDate: Date): Promise<number> {
-    try {
-      if (!this.isInitialized) {
-        console.warn('[FitnessService] Fitness service not initialized');
-        return 0;
-      }
-
-      if (Platform.OS === 'ios') {
-        return await this.getDistanceSinceIOS(startDate);
-      } else if (Platform.OS === 'android') {
-        return await this.getDistanceSinceAndroid(startDate);
-      }
-
-      return 0;
-    } catch (error) {
-      console.error('[FitnessService] Get distance error:', error);
-      return 0;
-    }
-  }
-
-  /**
-   * iOS-specific distance query
-   */
-  private async getDistanceSinceIOS(startDate: Date): Promise<number> {
-    const appleHealth = await getAppleHealthModule();
-    if (!appleHealth) {
-      console.error('[FitnessService] iOS: Apple Health module not available');
-      return 0;
-    }
-
-    const options = {
-      startDate: startDate.toISOString(),
-      endDate: new Date().toISOString(),
-      // Pin the unit explicitly. react-native-health's default for distance
-      // happens to be miles, but relying on that is fragile — pinning
-      // guarantees the value we receive matches our internal model.
-      unit: appleHealth.default.Constants.Units.mile,
-    };
-    // Step queries take the same time range but no distance unit; strip it
-    // so we don't accidentally send a distance unit to a count query.
-    const stepOptions = {
-      startDate: options.startDate,
-      endDate: options.endDate,
-    };
-
-    let distanceMiles = 0;
-    let stepsMiles = 0;
-
-    // Get walking/running distance
-    try {
-      const distance = await new Promise<number>((resolve, reject) => {
-        appleHealth.default.getDistanceWalkingRunning(
-          options,
-          (err: string, results: { value: number }) => {
-            if (err) {
-              reject(err);
-            } else {
-              // Distance is in miles (requested via options.unit above)
-              resolve(results?.value || 0);
-            }
-          },
-        );
-      });
-      distanceMiles = distance;
-    } catch {
-      // Distance not available
-    }
-
-    // Get steps and convert to miles
-    try {
-      const steps = await new Promise<number>((resolve, reject) => {
-        appleHealth.default.getStepCount(
-          stepOptions,
-          (err: string, results: { value: number }) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(results?.value || 0);
-            }
-          },
-        );
-      });
-
-      if (steps > 0) {
-        stepsMiles = this.stepsToMiles(steps);
-      }
-    } catch {
-      // Steps not available
-    }
-
-    // Return the higher value to capture all activity
-    return Math.max(distanceMiles, stepsMiles);
-  }
-
-  /**
-   * Android-specific distance query
-   */
-  private async getDistanceSinceAndroid(startDate: Date): Promise<number> {
-    const hc = await getHealthConnectModule();
-    if (!hc) return 0;
-
-    let distanceMiles = 0;
-    let stepsMiles = 0;
-
-    // Get distance data
-    try {
-      const distanceResult = await hc.readRecords('Distance', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDate.toISOString(),
-          endTime: new Date().toISOString(),
-        },
-      });
-      const totalMeters = distanceResult.records.reduce(
-        (sum, record) => sum + (record.distance?.inMeters || 0),
-        0,
-      );
-      distanceMiles = this.metersToMiles(totalMeters);
-    } catch {
-      // Distance data not available
-    }
-
-    // Get steps and convert to miles
-    try {
-      const stepsResult = await hc.readRecords('Steps', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDate.toISOString(),
-          endTime: new Date().toISOString(),
-        },
-      });
-      const totalSteps = stepsResult.records.reduce(
-        (sum, record) => sum + (record.count || 0),
-        0,
-      );
-      if (totalSteps > 0) {
-        stepsMiles = this.stepsToMiles(totalSteps);
-      }
-    } catch {
-      // Steps data not available
-    }
-
-    // Return the higher value to capture all activity
-    return Math.max(distanceMiles, stepsMiles);
-  }
-
-  /**
-   * Get individual distance records since a specific date
-   * Returns an array of records with timestamps for storing as individual entries
-   * @param startDate Start date for distance calculation
-   */
-  async getDistanceRecordsSince(
-    startDate: Date,
-  ): Promise<HealthDistanceRecord[]> {
-    return this.getDistanceRecordsBetween(startDate, new Date());
-  }
-
-  /**
    * Get individual distance records between two dates.
    * @param startDate inclusive start
    * @param endDate exclusive end
@@ -923,7 +744,7 @@ class FitnessService implements FitnessServiceInterface {
     };
     const distanceOptions = {
       ...options,
-      // Pin the distance unit explicitly (see getDistanceSinceIOS for rationale).
+      // Pin the unit explicitly so HealthKit values match our miles model.
       unit: appleHealth.default.Constants.Units.mile,
     };
 
@@ -968,62 +789,12 @@ class FitnessService implements FitnessServiceInterface {
     }
     return getAggregatedAndroidDistanceRecords(hc, startDate, endDate);
   }
-
-  /**
-   * Start real-time distance updates
-   * Useful for tracking progress during active workouts
-   * @param callback Function to call with updated distance
-   */
-  startRealTimeUpdates(callback: (distance: number) => void): void {
-    this.realTimeCallback = callback;
-
-    // Poll for updates every 10 seconds
-    this.realTimeInterval = setInterval(async () => {
-      if (this.realTimeCallback) {
-        const distance = await this.getDistanceToday();
-        this.realTimeCallback(distance);
-      }
-    }, 10000); // 10 seconds
-  }
-
-  /**
-   * Stop real-time distance updates
-   */
-  stopRealTimeUpdates(): void {
-    if (this.realTimeInterval) {
-      clearInterval(this.realTimeInterval);
-      this.realTimeInterval = null;
-    }
-    this.realTimeCallback = null;
-  }
-
-  /**
-   * Convert meters to miles
-   */
-  private metersToMiles(meters: number): number {
-    return metersToMiles(meters);
-  }
-
-  /**
-   * Convert steps to miles using average stride length
-   */
-  private stepsToMiles(steps: number): number {
-    return stepsToMiles(steps);
-  }
-
-  /**
-   * Convert miles to meters
-   */
-  private milesToMeters(miles: number): number {
-    return milesToMeters(miles);
-  }
 }
 
 // Export singleton instance
 export const fitnessService = new FitnessService();
 export class MockFitnessService implements FitnessServiceInterface {
   private mockDistance = 0;
-  private mockInterval: ReturnType<typeof setInterval> | null = null;
   /**
    * Synthetic distance records. Each entry is one HealthKit/Health-Connect
    * sample (typically 1-5 minutes wide, fractions of a mile). Real devices
@@ -1160,26 +931,7 @@ export class MockFitnessService implements FitnessServiceInterface {
   }
 
   async disconnect(): Promise<void> {
-    this.stopRealTimeUpdates();
     this.mockDistance = 0;
-  }
-
-  async getDistanceToday(): Promise<number> {
-    return this.mockDistance;
-  }
-
-  async getDistanceSince(startDate: Date): Promise<number> {
-    // Simulate some distance based on time elapsed
-    const daysElapsed = Math.floor(
-      (Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    return Math.min(daysElapsed * 2.5, this.mockDistance); // 2.5 miles per day
-  }
-
-  async getDistanceRecordsSince(
-    startDate: Date,
-  ): Promise<HealthDistanceRecord[]> {
-    return this.getDistanceRecordsBetween(startDate, new Date());
   }
 
   async getDistanceRecordsBetween(
@@ -1222,20 +974,6 @@ export class MockFitnessService implements FitnessServiceInterface {
     endDate: Date,
   ): Promise<HealthDistanceRecord[]> {
     return this.getDistanceRecordsBetween(startDate, endDate);
-  }
-
-  startRealTimeUpdates(callback: (distance: number) => void): void {
-    this.mockInterval = setInterval(() => {
-      this.mockDistance += 0.1; // Add 0.1 mile every interval
-      callback(this.mockDistance);
-    }, 5000); // Every 5 seconds
-  }
-
-  stopRealTimeUpdates(): void {
-    if (this.mockInterval) {
-      clearInterval(this.mockInterval);
-      this.mockInterval = null;
-    }
   }
 
   // Dev helper to manually set distance

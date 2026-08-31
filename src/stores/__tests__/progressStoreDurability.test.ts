@@ -1,6 +1,6 @@
 import { database } from '../../services/database';
 import type { DistanceEntry } from '../../types';
-import { useProgressStore } from '../progressStore';
+import { applyCommittedEntryChanges, useProgressStore } from '../progressStore';
 
 const entry: DistanceEntry = {
   id: 'manual-1',
@@ -36,11 +36,22 @@ describe('progressStore durability', () => {
     });
   });
 
+  it('does not expose mutators that bypass database persistence', () => {
+    const store = useProgressStore.getState() as unknown as Record<
+      string,
+      unknown
+    >;
+
+    expect(store).not.toHaveProperty('setMiles');
+    expect(store).not.toHaveProperty('setSteps');
+    expect(store).not.toHaveProperty('setDistanceEntries');
+  });
+
   it('publishes committed database state after an entry write', async () => {
     applyChanges.mockResolvedValue({
       miles: 12,
       steps: 24_000,
-      entries: [entry],
+      changes: { upsert: [entry] },
     });
 
     await useProgressStore.getState().addDistanceEntry(entry);
@@ -50,6 +61,27 @@ describe('progressStore durability', () => {
       steps: 24_000,
       distanceEntries: [entry],
     });
+  });
+
+  it('applies committed entry changes in database order', () => {
+    const replacement = { ...entry, date: 3, miles: 4 };
+    const newest = { ...entry, id: 'manual-2', date: 4 };
+
+    expect(
+      applyCommittedEntryChanges(
+        [entry, { ...entry, id: 'health-1', source: 'health-connect' }],
+        {
+          removeSources: ['health-connect'],
+          upsert: [newest, replacement],
+        },
+      ),
+    ).toEqual([replacement, newest]);
+    expect(
+      applyCommittedEntryChanges([entry], {
+        clearAll: true,
+        upsert: [newest],
+      }),
+    ).toEqual([newest]);
   });
 
   it('does not mutate memory when the database transaction fails', async () => {

@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 import { useTheme } from '../stores/settingsStore';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import { spacing } from '../styles/global';
 import { typographyThemed } from '../styles/typography';
 
@@ -32,10 +33,11 @@ export function StatusBadge({
   style,
 }: StatusBadgeProps) {
   const theme = useTheme();
+  const reduceMotionEnabled = useReduceMotion();
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!inProgress || !visible) {
+    if (!inProgress || !visible || reduceMotionEnabled) {
       pulse.setValue(0);
       return;
     }
@@ -56,7 +58,7 @@ export function StatusBadge({
     );
     loop.start();
     return () => loop.stop();
-  }, [inProgress, pulse, visible]);
+  }, [inProgress, pulse, reduceMotionEnabled, visible]);
 
   if (!visible && !reserveSpace) return null;
 

@@ -71,6 +71,57 @@ class StepCounterDbHelperTest {
     assertEquals(110, helper.readStepsBetween(fromMs = 300, toMs = 500))
   }
 
+  @Test
+  fun sampleCursorRecoversStepsWhenWallClockMovesBackward() {
+    helper.insertSample(
+      timestampMs = 10_000,
+      stepCount = 1_000,
+      bootId = "boot-a",
+      elapsedRealtimeMs = 20_000)
+    val cursor = helper.latestSampleCursorAtOrBefore(timestampMs = 10_000)!!
+
+    helper.insertSample(
+      timestampMs = 5_000,
+      stepCount = 1_040,
+      bootId = "boot-a",
+      elapsedRealtimeMs = 90_000)
+    helper.insertSample(
+      timestampMs = 5_100,
+      stepCount = 1_090,
+      bootId = "boot-a",
+      elapsedRealtimeMs = 90_100)
+
+    val recovered =
+        helper.readStepsSinceCursor(
+            sampleId = cursor.sampleId,
+            bootId = cursor.bootId,
+            stepCount = cursor.stepCount)
+
+    assertEquals(90, recovered.steps)
+    assertEquals(5_100, recovered.latestCursor!!.timestampMs)
+    assertEquals(1_090, recovered.latestCursor!!.stepCount)
+    assertEquals(true, recovered.wallClockMovedBackward)
+  }
+
+  @Test
+  fun sampleCursorDoesNotSubtractCountersAcrossReboots() {
+    helper.insertSample(timestampMs = 10_000, stepCount = 5_000, bootId = "boot-a")
+    val cursor = helper.latestSampleCursorAtOrBefore(timestampMs = 10_000)!!
+
+    helper.insertSample(timestampMs = 11_000, stepCount = 20, bootId = "boot-b")
+    helper.insertSample(timestampMs = 12_000, stepCount = 75, bootId = "boot-b")
+
+    val recovered =
+        helper.readStepsSinceCursor(
+            sampleId = cursor.sampleId,
+            bootId = cursor.bootId,
+            stepCount = cursor.stepCount)
+
+    assertEquals(55, recovered.steps)
+    assertEquals("boot-b", recovered.latestCursor!!.bootId)
+    assertEquals(false, recovered.wallClockMovedBackward)
+  }
+
   private fun readSamples(): List<Triple<String, Long, Long>> {
     return helper.readableDatabase
         .rawQuery(

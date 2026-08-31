@@ -70,6 +70,11 @@ function Point({
 
   // Center the 24x24 hitbox on the coordinate for both types
   const centerOffset = 12;
+  const pointTypeLabel = type === 'checkpoint' ? 'Checkpoint' : 'Trivia';
+  const accessibilityLabel =
+    type === 'checkpoint'
+      ? `${name}, ${pointTypeLabel}, ${isActive ? 'reached' : 'locked'}`
+      : `${name}, ${pointTypeLabel}`;
 
   return (
     <View
@@ -88,6 +93,9 @@ function Point({
       <TouchableOpacity
         style={styles.circleContainer}
         onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={`Opens ${pointTypeLabel.toLowerCase()} details`}
         activeOpacity={0.7}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
@@ -118,6 +126,8 @@ function Point({
             labelAnimatedStyle,
           ]}
           pointerEvents={showLabel ? 'auto' : 'none'}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
         >
           <Button
             onPress={onPress as any}

@@ -36,4 +36,12 @@ class StepSamplePersistenceTest {
     assertFalse(persistence.persistIfDue(count = 101, now = 20_001) {})
     assertTrue(persistence.persistIfDue(count = 105, now = 20_002) {})
   }
+
+  @Test
+  fun monotonicThrottleAllowsIntervalWriteAcrossWallClockRollback() {
+    val persistence = StepSamplePersistence(minStepDelta = 5, minWriteIntervalMs = 10_000)
+
+    assertTrue(persistence.persistIfDue(count = 100, now = 20_000) {})
+    assertTrue(persistence.persistIfDue(count = 101, now = 30_000) {})
+  }
 }

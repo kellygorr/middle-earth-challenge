@@ -13,9 +13,7 @@ interface State {
 }
 
 const cloneState = (state: State): State => ({
-  entries: new Map(
-    [...state.entries].map(([id, entry]) => [id, { ...entry }]),
-  ),
+  entries: new Map([...state.entries].map(([id, entry]) => [id, { ...entry }])),
   snapshot: state.snapshot ? { ...state.snapshot } : null,
   lastSyncTimestamp: state.lastSyncTimestamp,
 });
@@ -108,9 +106,23 @@ export function createTransactionalProgressDb(initial?: {
 
     if (normalized.startsWith('SELECT id, save_id as saveId')) {
       const saveId = String(params[0]);
+      const idPlaceholders = normalized.match(/id IN \(([^)]*)\)/)?.[1];
+      const idCount = idPlaceholders?.split(',').length ?? 0;
+      const ids = new Set(params.slice(1, 1 + idCount).map(String));
+      const sourcePlaceholders = normalized.match(/source IN \(([^)]*)\)/)?.[1];
+      const sourceCount = sourcePlaceholders?.split(',').length ?? 0;
+      const sources = new Set(
+        params.slice(1 + idCount, 1 + idCount + sourceCount).map(String),
+      );
       return {
         rows: [...state.entries.values()]
-          .filter(entry => entry.saveId === saveId)
+          .filter(
+            entry =>
+              entry.saveId === saveId &&
+              (idCount + sourceCount === 0 ||
+                ids.has(entry.id) ||
+                sources.has(entry.source)),
+          )
           .sort((left, right) => Number(left.date) - Number(right.date)),
       };
     }
