@@ -140,7 +140,7 @@ export const initialSyncStatus: SyncStatus = {
   error: null,
 };
 
-export interface SyncIssue {
+export interface TroubleshootingIssue {
   error: SyncError;
   /** Wall-clock time the issue was last observed. */
   at: number;
@@ -163,9 +163,9 @@ export interface SyncIssue {
  * logging rather than an awaited transactional command: a failed write must
  * not break a sync or block the UI, and the worst case is a lost history row.
  */
-const persistSyncIssues = (issues: SyncIssue[]): void => {
+const persistSyncIssues = (issues: TroubleshootingIssue[]): void => {
   database
-    .saveSyncIssues(
+    .saveTroubleshootingIssues(
       issues.map(issue => ({
         slot: syncErrorSlot(issue.error),
         error: issue.error,
@@ -179,7 +179,10 @@ const persistSyncIssues = (issues: SyncIssue[]): void => {
     });
 };
 
-const mergeSyncIssue = (issues: SyncIssue[], error: SyncError): SyncIssue[] => {
+const mergeSyncIssue = (
+  issues: TroubleshootingIssue[],
+  error: SyncError,
+): TroubleshootingIssue[] => {
   const replaced = supersededSlots(error);
   const slot = syncErrorSlot(error);
   const previous = issues.find(issue => syncErrorSlot(issue.error) === slot);
@@ -226,7 +229,7 @@ interface ProgressStore {
    * failures cascade within a subsystem but are independent across them --
    * see `src/constants/syncIssues.ts`.
    */
-  syncIssues: SyncIssue[];
+  syncIssues: TroubleshootingIssue[];
   // Dev/test override state
   testOverrideMiles: number | null;
 
@@ -338,8 +341,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     // Advisory data, so a failure here must not block hydration of the
     // journey itself.
     try {
-      const stored = await database.loadSyncIssues();
-      set({ syncIssues: stored as SyncIssue[] });
+      const stored = await database.loadTroubleshootingIssues();
+      set({ syncIssues: stored as TroubleshootingIssue[] });
     } catch (error) {
       console.warn('[progress] could not load tracking issue history', error);
     }

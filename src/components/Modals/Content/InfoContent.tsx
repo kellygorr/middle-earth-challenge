@@ -35,8 +35,11 @@ const checkpointImages: Record<string, any> = {
 const triviaImages: Record<string, any> = {
   'the-old-forest.jpg': require('../../../assets/trivia/the-old-forest.jpg'),
   'weathertop.jpg': require('../../../assets/trivia/weathertop.jpg'),
+  'oregon-trail.jpg': require('../../../assets/trivia/oregon-trail.jpg'),
+  'caradhras.jpg': require('../../../assets/trivia/caradhras.jpg'),
   'hollin-gate.jpg': require('../../../assets/trivia/hollin-gate.jpg'),
   'khazad-dum.jpg': require('../../../assets/trivia/khazad-dum.jpg'),
+  'lembas-bread.jpg': require('../../../assets/trivia/lembas-bread.jpg'),
   'the-argonath.jpg': require('../../../assets/trivia/the-argonath.jpg'),
   'emyn-muil.jpg': require('../../../assets/trivia/emyn-muil.jpg'),
   'dead-marshes.jpg': require('../../../assets/trivia/dead-marshes.jpg'),

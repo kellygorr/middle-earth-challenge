@@ -175,7 +175,7 @@ class Database {
     // Tracking issues the user can review in Settings. Keyed by slot so a
     // repeat fault updates in place rather than accumulating duplicates.
     this.db.executeSync(`
-      CREATE TABLE IF NOT EXISTS sync_issues (
+      CREATE TABLE IF NOT EXISTS troubleshooting_issues (
         slot TEXT PRIMARY KEY,
         error TEXT NOT NULL,
         at INTEGER NOT NULL,
@@ -844,7 +844,7 @@ class Database {
    * the process, and a source fallback fires only once at switch time.
    * Without this, closing the app erases the evidence without fixing it.
    */
-  async loadSyncIssues(): Promise<
+  async loadTroubleshootingIssues(): Promise<
     Array<{
       error: unknown;
       at: number;
@@ -854,7 +854,7 @@ class Database {
   > {
     if (!this.db) throw new Error('Database not initialized');
     const result = this.db.executeSync(
-      `SELECT error, at, dismissed_at, resolved_at FROM sync_issues ORDER BY at ASC`,
+      `SELECT error, at, dismissed_at, resolved_at FROM troubleshooting_issues ORDER BY at ASC`,
     );
     const rows = result.rows ?? [];
     const issues = [];
@@ -875,7 +875,7 @@ class Database {
     return issues;
   }
 
-  async saveSyncIssues(
+  async saveTroubleshootingIssues(
     issues: Array<{
       slot: string;
       error: unknown;
@@ -887,10 +887,10 @@ class Database {
     return this.enqueueWrite(() =>
       this.runTransaction(() => {
         if (!this.db) throw new Error('Database not initialized');
-        this.db.executeSync(`DELETE FROM sync_issues`);
+        this.db.executeSync(`DELETE FROM troubleshooting_issues`);
         for (const issue of issues) {
           this.db.executeSync(
-            `INSERT OR REPLACE INTO sync_issues (slot, error, at, dismissed_at, resolved_at) VALUES (?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO troubleshooting_issues (slot, error, at, dismissed_at, resolved_at) VALUES (?, ?, ?, ?, ?)`,
             [
               issue.slot,
               JSON.stringify(issue.error),

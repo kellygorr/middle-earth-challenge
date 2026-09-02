@@ -14,11 +14,14 @@ const entry: DistanceEntry = {
 describe('progressStore durability', () => {
   const applyChanges = jest.spyOn(database, 'applyDistanceEntryChanges');
   const reconcileProgress = jest.spyOn(database, 'reconcileProgress');
-  const saveSyncIssues = jest.spyOn(database, 'saveSyncIssues');
+  const saveTroubleshootingIssues = jest.spyOn(
+    database,
+    'saveTroubleshootingIssues',
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();
-    saveSyncIssues.mockResolvedValue(undefined);
+    saveTroubleshootingIssues.mockResolvedValue(undefined);
     useProgressStore.setState({
       miles: 10,
       steps: 20_000,

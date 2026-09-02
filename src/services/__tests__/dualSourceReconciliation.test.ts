@@ -31,6 +31,7 @@ import {
   reconciliationEntryId,
   startOfLocalDay,
 } from '../dualSourceReconciliation';
+import { stepsToMiles } from '../../utils/stride';
 
 function resetState(cursor: number, entries: any[] = []) {
   const settings = {
@@ -136,8 +137,8 @@ describe('dual source reconciliation', () => {
           id: 'aggregate',
           startTime: start.toISOString(),
           endTime: start.toISOString(),
-          distanceMeters: miles / 0.000621371,
-          steps: 0,
+          distanceMeters: 0,
+          steps: miles === 5 ? 10_565 : 3000,
         },
       ];
     });
@@ -152,7 +153,8 @@ describe('dual source reconciliation', () => {
     const topUp = progress.distanceEntries.find(
       entry => entry.id === reconciliationEntryId(dayOne),
     );
-    expect(topUp.miles).toBeCloseTo(3);
+    expect(topUp.steps).toBe(8565);
+    expect(topUp.miles).toBeCloseTo(stepsToMiles(8565));
     expect(topUp.date).toBe(dayTwo - 1);
     expect(
       progress.distanceEntries.find(
@@ -169,7 +171,7 @@ describe('dual source reconciliation', () => {
     expect(getRecords).toHaveBeenCalledTimes(2);
   });
 
-  it('reconciles distance and measured steps independently', async () => {
+  it('derives reconciliation miles from the Health Connect step top-up', async () => {
     const yesterday = new Date(2026, 6, 2).getTime();
     const today = new Date(2026, 6, 3).getTime();
     const { progress } = resetState(yesterday, [
@@ -186,7 +188,7 @@ describe('dual source reconciliation', () => {
         id: 'aggregate',
         startTime: new Date(yesterday).toISOString(),
         endTime: new Date(today).toISOString(),
-        distanceMeters: 5 / 0.000621371,
+        distanceMeters: 0,
         steps: 5000,
       },
     ]);
@@ -199,12 +201,12 @@ describe('dual source reconciliation', () => {
     const topUp = progress.distanceEntries.find(
       entry => entry.id === reconciliationEntryId(yesterday),
     );
-    expect(topUp.miles).toBeCloseTo(3);
     expect(topUp.steps).toBe(1000);
+    expect(topUp.miles).toBeCloseTo(stepsToMiles(1000));
     expect(progress.steps).toBe(5000);
   });
 
-  it('does not add steps when pedometer steps already exceed health steps', async () => {
+  it('does not add distance when pedometer steps already exceed health steps', async () => {
     const yesterday = new Date(2026, 6, 2).getTime();
     const today = new Date(2026, 6, 3).getTime();
     const { progress } = resetState(yesterday, [
@@ -221,7 +223,7 @@ describe('dual source reconciliation', () => {
         id: 'aggregate',
         startTime: new Date(yesterday).toISOString(),
         endTime: new Date(today).toISOString(),
-        distanceMeters: 5 / 0.000621371,
+        distanceMeters: 0,
         steps: 3000,
       },
     ]);
@@ -234,8 +236,7 @@ describe('dual source reconciliation', () => {
     const topUp = progress.distanceEntries.find(
       entry => entry.id === reconciliationEntryId(yesterday),
     );
-    expect(topUp.miles).toBeCloseTo(3);
-    expect(topUp.steps).toBe(0);
+    expect(topUp).toBeUndefined();
     expect(progress.steps).toBe(4000);
   });
 
@@ -304,8 +305,8 @@ describe('dual source reconciliation', () => {
         id: 'aggregate',
         startTime: new Date(yesterday).toISOString(),
         endTime: new Date(today).toISOString(),
-        distanceMeters: 4 / 0.000621371,
-        steps: 0,
+        distanceMeters: 0,
+        steps: 4000,
       },
     ]);
 
@@ -347,8 +348,8 @@ describe('dual source reconciliation', () => {
         id: 'aggregate',
         startTime: new Date(yesterday).toISOString(),
         endTime: new Date(today).toISOString(),
-        distanceMeters: 5 / 0.000621371,
-        steps: 0,
+        distanceMeters: 0,
+        steps: 10_565,
       },
     ]);
 
@@ -360,7 +361,8 @@ describe('dual source reconciliation', () => {
     const topUp = progress.distanceEntries.find(
       entry => entry.id === reconciliationEntryId(yesterday),
     );
-    expect(topUp.miles).toBeCloseTo(3);
+    expect(topUp.steps).toBe(8565);
+    expect(topUp.miles).toBeCloseTo(stepsToMiles(8565));
   });
 
   it('uses existing health and pedometer entries as the transition-day baseline', async () => {
@@ -387,8 +389,8 @@ describe('dual source reconciliation', () => {
         id: 'aggregate',
         startTime: new Date(yesterday).toISOString(),
         endTime: new Date(today).toISOString(),
-        distanceMeters: 4 / 0.000621371,
-        steps: 0,
+        distanceMeters: 0,
+        steps: 8452,
       },
     ]);
 
@@ -400,7 +402,8 @@ describe('dual source reconciliation', () => {
     const topUp = progress.distanceEntries.find(
       entry => entry.id === reconciliationEntryId(yesterday),
     );
-    expect(topUp.miles).toBeCloseTo(1);
+    expect(topUp.steps).toBe(5452);
+    expect(topUp.miles).toBeCloseTo(stepsToMiles(5452));
   });
 
   it('does not publish the cursor when the atomic day commit fails', async () => {

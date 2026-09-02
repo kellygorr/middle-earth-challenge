@@ -13,6 +13,7 @@ import { typographyThemed } from '../styles/typography';
 import { useProgressStore } from '../stores/progressStore';
 import type { SyncError } from '../stores/progressStore';
 import { useFriendProgressStore } from '../stores/friendProgressStore';
+import { getAndroidHealthConnectDiagnostics } from '../services/fitnessService';
 
 import Button, { IconButton, Dropdown } from './Buttons';
 import { DevModeIcon } from '../assets/icons';
@@ -45,6 +46,7 @@ export default function DevView({
     state => state.setFakeParticipantsEnabled,
   );
   const [testMiles, setTestMiles] = useState('');
+  const [healthDiagnosticRunning, setHealthDiagnosticRunning] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   // Fake-sync toggle: lets us preview the catching-up visual without
@@ -143,6 +145,34 @@ export default function DevView({
   const clearFakeError = () => {
     clearAllSyncIssues();
     resetSyncStatus();
+  };
+
+  const logHealthConnectDiagnostics = async () => {
+    if (healthDiagnosticRunning) return;
+    setHealthDiagnosticRunning(true);
+    try {
+      const days = [
+        {
+          label: '2026-08-29',
+          start: new Date(2026, 7, 29),
+          end: new Date(2026, 7, 30),
+        },
+        {
+          label: '2026-08-30',
+          start: new Date(2026, 7, 30),
+          end: new Date(2026, 7, 31),
+        },
+      ];
+      const diagnostics = await getAndroidHealthConnectDiagnostics(days);
+      console.log(
+        '[DevView] Health Connect diagnostics',
+        JSON.stringify(diagnostics, null, 2),
+      );
+    } catch (error) {
+      console.warn('[DevView] Health Connect diagnostics failed', error);
+    } finally {
+      setHealthDiagnosticRunning(false);
+    }
   };
 
   const [selectedErrLabel, setSelectedErrLabel] = useState<string | null>(null);
@@ -255,6 +285,16 @@ export default function DevView({
         >
           {fakeSyncActive ? 'Stop fake sync' : 'Fake sync'}
         </Button>
+        {__DEV__ && (
+          <Button
+            onPress={logHealthConnectDiagnostics}
+            variant="outline"
+            size="default"
+            disabled={healthDiagnosticRunning}
+          >
+            {healthDiagnosticRunning ? 'Logging HC...' : 'Log HC Aug 29-30'}
+          </Button>
+        )}
       </View>
       {/* Fake-error buttons are strictly a developer-facing UI harness
           (they let us preview error banners without triggering real sync

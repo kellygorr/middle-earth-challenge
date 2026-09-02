@@ -36,7 +36,7 @@ describe('fitnessService Android aggregation', () => {
       end,
     );
 
-    expect(mockAggregateRecord).toHaveBeenCalledTimes(2);
+    expect(mockAggregateRecord).toHaveBeenCalledTimes(1);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
       id: `hc_aggregate_${start.getTime()}`,
@@ -78,7 +78,7 @@ describe('fitnessService Android aggregation', () => {
     expect(amended[0].steps).toBeGreaterThan(first[0].steps);
   });
 
-  it('preserves measured steps when the distance aggregate wins', async () => {
+  it('uses Health Connect steps as the canonical aggregate when both signals exist', async () => {
     mockAggregateRecord.mockImplementation(
       ({ recordType }: { recordType: string }) =>
         Promise.resolve(
@@ -98,9 +98,28 @@ describe('fitnessService Android aggregation', () => {
 
     expect(records[0]).toMatchObject({
       id: `hc_aggregate_${start.getTime()}`,
-      distanceMeters: 5000,
       steps: 2000,
     });
+    expect(records[0].distanceMeters).toBeCloseTo(2000 * 0.762);
+  });
+
+  it('does not require a Distance aggregate when Steps succeeds', async () => {
+    mockAggregateRecord.mockImplementation(
+      ({ recordType }: { recordType: string }) =>
+        recordType === 'Steps'
+          ? Promise.resolve({ COUNT_TOTAL: 7501 })
+          : Promise.reject(new Error('distance permission missing')),
+    );
+
+    const records = await getAggregatedAndroidDistanceRecords(
+      { aggregateRecord: mockAggregateRecord },
+      new Date('2026-08-30T07:00:00.000Z'),
+      new Date('2026-08-31T07:00:00.000Z'),
+    );
+
+    expect(mockAggregateRecord).toHaveBeenCalledTimes(1);
+    expect(records[0].steps).toBe(7501);
+    expect(records[0].distanceMeters).toBeCloseTo(7501 * 0.762);
   });
 
   it('derives distance when Health Connect only has steps', async () => {
@@ -249,14 +268,14 @@ describe('fitnessService Apple Health sample selection', () => {
   const startDate = '2026-07-30T00:00:00.000Z';
   const endDate = '2026-07-31T00:00:00.000Z';
 
-  it('preserves measured steps when daily distance wins', () => {
+  it('uses Apple Health steps as the canonical sample when both signals exist', () => {
     const records = selectAppleHealthDistanceRecords(
       [{ value: 3, startDate, endDate }],
       [{ value: 2000, startDate, endDate }],
     );
 
-    expect(records[0].distanceMeters).toBeCloseTo(3 * 1609.344, 2);
     expect(records[0].steps).toBe(2000);
+    expect(records[0].distanceMeters).toBeCloseTo(2000 * 0.762);
   });
 
   it('derives steps when no measured sample overlaps the distance day', () => {

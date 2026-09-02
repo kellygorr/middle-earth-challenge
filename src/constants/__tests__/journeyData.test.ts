@@ -121,6 +121,13 @@ describe('trivia.json', () => {
     }
   });
 
+  it('every trivia point has a description image filename', () => {
+    for (const t of trivia) {
+      expect(typeof t.description?.image).toBe('string');
+      expect(t.description!.image!.length).toBeGreaterThan(0);
+    }
+  });
+
   it('every trivia point falls between the isStart and isEnd checkpoints (no orphans)', () => {
     const startMiles = checkpoints.find(c => c.isStart)!.CUMULATIVE_MILES;
     const endMiles = checkpoints.find(c => c.isEnd)!.CUMULATIVE_MILES;

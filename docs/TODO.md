@@ -333,3 +333,10 @@ shadow, transparency, and celebration-palette literals remain local by design.
 ---
 
 ## Add more trivia
+
+- [x] **Mile 308 — Ford the River?** An Oregon Trail Easter egg at the Last
+      Bridge, with `oregon-trail.jpg` artwork.
+- [x] **Mile 492 — The Pass of Caradhras.** The Fellowship's failed mountain
+      crossing, with `caradhras.jpg` artwork.
+- [ ] Review the remaining long gaps between Rivendell/Lothlorien and
+      Lothlorien/Parth Galen for additional route-appropriate trivia.
