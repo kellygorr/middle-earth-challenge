@@ -7,7 +7,6 @@ export const motion = {
   button: {
     enterDuration: 300,
     exitDuration: 50,
-    enterDelayLabels: 0,
   },
 
   // Map recenter animation

@@ -146,6 +146,9 @@ export default function MapScreen() {
     state => state.participants,
   );
   const [showFriendProgress, setShowFriendProgress] = useState(true);
+  const [hasInitialPathRevealed, setHasInitialPathRevealed] = useState(
+    !showWelcome,
+  );
 
   // Info store for checkpoint/trivia info
   const {
@@ -296,39 +299,36 @@ export default function MapScreen() {
   );
 
   // Initial animation
-  const {
-    initialBasePathProgress,
-    settingsEnterStyle,
-    labelsEnterStyle,
-    infoEnterStyle,
-  } = useInitialAnimation({
-    showWelcome,
-    pathRevealStart,
-    isSyncing,
-    recenterOpacity,
-    originMonitorEnabled,
-    resetToOrigin,
-    onStartupReady: () => {
-      // Fires ~1s after welcome dismisses — surfaces the startup tooltip
-      // and begins observing miles changes. Runs before the path reveal
-      // finishes so the guidance shows quickly.
-      const hasShownStartupGuidance = autoOpenRef.current;
-      if (!hasShownStartupGuidance && currentItem) {
-        // Display startup tooltip only at game start (0 miles)
-        if ((miles || 0) === 0) {
-          setShowStartupTooltip(true);
+  const { initialBasePathProgress, settingsEnterStyle, infoEnterStyle } =
+    useInitialAnimation({
+      showWelcome,
+      pathRevealStart,
+      isSyncing,
+      recenterOpacity,
+      originMonitorEnabled,
+      resetToOrigin,
+      onStartupReady: () => {
+        // Fires ~1s after welcome dismisses — surfaces the startup tooltip
+        // and begins observing miles changes. Runs before the path reveal
+        // finishes so the guidance shows quickly.
+        const hasShownStartupGuidance = autoOpenRef.current;
+        if (!hasShownStartupGuidance && currentItem) {
+          // Display startup tooltip only at game start (0 miles)
+          if ((miles || 0) === 0) {
+            setShowStartupTooltip(true);
+          }
+          autoOpenRef.current = true;
+          setObserveMilesChanges(true);
         }
-        autoOpenRef.current = true;
-        setObserveMilesChanges(true);
-      }
-    },
-    onPathRevealComplete: () => {
-      // Enable game progress animation only after the base path has
-      // finished drawing — avoids the progress marker walking along a
-      // half-drawn line for returning users.
-      setPhase('active');
-    },
-  });
+      },
+      onPathRevealComplete: () => {
+        // Enable game progress animation only after the base path has
+        // finished drawing — avoids the progress marker walking along a
+        // half-drawn line for returning users.
+        setHasInitialPathRevealed(true);
+        setPhase('active');
+      },
+    });
 
   // Gate startup guidance to first map open only (no auto-open)
   const autoOpenRef = useRef(false);
@@ -462,6 +462,7 @@ export default function MapScreen() {
   // Reset startup guidance when welcome is shown again
   useEffect(() => {
     if (showWelcome) {
+      setHasInitialPathRevealed(false);
       setShowStartupTooltip(false);
       autoOpenRef.current = false;
       setObserveMilesChanges(false);
@@ -581,6 +582,7 @@ export default function MapScreen() {
             translateY={translateY}
             scale={scale}
             showPointLabels={showPointLabels}
+            showActiveTrivia={hasInitialPathRevealed}
             animatedProgress={animatedProgress}
             currentMiles={miles}
             onItemPress={(item, type) => {
@@ -766,7 +768,7 @@ export default function MapScreen() {
             </View>
 
             {/* Labels Toggle */}
-            <Animated.View style={labelsEnterStyle}>
+            <Animated.View style={settingsEnterStyle}>
               <Button
                 onPress={() => {
                   clearStickyInfo();
@@ -791,7 +793,7 @@ export default function MapScreen() {
             </Animated.View>
 
             {friendProgressParticipants.length > 0 && (
-              <Animated.View style={labelsEnterStyle}>
+              <Animated.View style={settingsEnterStyle}>
                 <Button
                   onPress={() => {
                     clearStickyInfo();

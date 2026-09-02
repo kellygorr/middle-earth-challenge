@@ -1,10 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
+import {
+  cancelAnimation,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import PositionedPoint from './PositionedPoint';
 import Button, { labelSizeToButtonSize } from '../Buttons';
 import { mapBookMilesToPathProgress } from '../../utils/pathProgress';
 import { PointType } from '../../types';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { motion } from '../../styles/motion';
 
 // Default label height used until the hidden measurement Button reports its
 // actual height on first layout. Matches the medium size to minimize the
@@ -25,6 +32,7 @@ type Props = {
   translateY: any;
   scale: any;
   showPointLabels: boolean;
+  showActiveTrivia: boolean;
   animatedProgress: number;
   currentMiles: number;
   onItemPress: (item: PointType, type: 'checkpoint' | 'trivia') => void;
@@ -42,11 +50,24 @@ export default function PointLayer({
   translateY,
   scale,
   showPointLabels,
+  showActiveTrivia,
   animatedProgress,
   currentMiles,
   onItemPress,
 }: Props) {
   const labelSize = useSettingsStore(state => state.labelSize);
+  const reduceMotionEnabled = useReduceMotion();
+  const activeTriviaOpacity = useSharedValue(showActiveTrivia ? 1 : 0);
+
+  useEffect(() => {
+    cancelAnimation(activeTriviaOpacity);
+    activeTriviaOpacity.value =
+      showActiveTrivia && !reduceMotionEnabled
+        ? withTiming(1, { duration: motion.button.enterDuration })
+        : showActiveTrivia
+        ? 1
+        : 0;
+  }, [activeTriviaOpacity, reduceMotionEnabled, showActiveTrivia]);
 
   // A single hidden Button, rendered with the exact same size / textSize as
   // real point labels, reports its measured height once. Every PositionedPoint
@@ -81,6 +102,8 @@ export default function PointLayer({
         ? animatedProgress >= activationProgress + buffer
         : animatedProgress + buffer >= activationProgress;
 
+    if (kind === 'trivia' && isActive && !showActiveTrivia) return null;
+
     const enriched: PointType = { ...item, index };
 
     return (
@@ -99,6 +122,9 @@ export default function PointLayer({
         showLabel={kind === 'checkpoint' && showPointLabels}
         onPress={() => onItemPress(enriched, kind)}
         labelHeight={labelHeight}
+        opacity={
+          kind === 'trivia' && isActive ? activeTriviaOpacity : undefined
+        }
       />
     );
   };

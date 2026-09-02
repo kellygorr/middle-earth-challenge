@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
-import type { SyncError, SyncIssue } from '../stores/progressStore';
+import type { SyncError, TroubleshootingIssue } from '../stores/progressStore';
 import {
   orderSyncIssues,
   syncErrorSlot,
@@ -184,7 +184,7 @@ function SyncIssueCard({
   width,
   onDismiss,
 }: {
-  issue: SyncIssue;
+  issue: TroubleshootingIssue;
   width: number | undefined;
   onDismiss: () => void;
 }) {

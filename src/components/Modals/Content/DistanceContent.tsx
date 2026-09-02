@@ -13,6 +13,7 @@ import {
   Pressable,
   Animated,
   TextStyle,
+  Platform,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
@@ -36,6 +37,7 @@ import {
 } from '../../../utils/date';
 import EmptyState from '../EmptyState';
 import EditEntryModal from '../EditEntryModal';
+import AccessExpander from '../AccessExpander';
 import { TrackingOptions } from '../../TrackingOptions';
 import { StatusBadge } from '../../StatusBadge';
 import { useLivePedometerDelta } from '../../../hooks/useLivePedometerDelta';
@@ -464,6 +466,15 @@ export default function DistanceContent() {
     const isLocked = isLivePedometer || lockedHealthIds.has(item.id);
     const isHealthAdjustment = item.source === 'health-reconciliation';
     const sourceLabel = getDistanceSourceLabel(item.source);
+    const adjustmentInfo =
+      Platform.OS === 'android'
+        ? [
+            'Health Connect reported more steps than this app captured. The difference was added at the end of the day.',
+            'Health Connect manages fitness data for Android. When multiple devices or apps are connected, it may not use the source with the highest step count.',
+          ]
+        : [
+            'Apple Health reported more steps than this app captured. The difference was added at the end of the day.',
+          ];
     return (
       <View key={item.id}>
         <View style={styles.listItem}>
@@ -513,7 +524,6 @@ export default function DistanceContent() {
               ]}
             >
               {sourceLabel}
-              {isHealthAdjustment ? '*' : ''}
             </Text>
           </View>
           <View style={styles.entryValue}>
@@ -538,16 +548,13 @@ export default function DistanceContent() {
           </View>
         </View>
         {isHealthAdjustment && (
-          <Text
-            style={[
-              typographyThemed(theme).caption2Secondary,
-              styles.adjustmentExplanation,
-            ]}
-          >
-            *Your health app reported more {useMiles ? 'miles' : 'kilometers'}
-            {' or steps than this app had captured. The difference was added '}
-            at the end of the day.
-          </Text>
+          <View style={styles.adjustmentInfo}>
+            <AccessExpander
+              label="Adjustment details"
+              items={adjustmentInfo}
+              flushTop
+            />
+          </View>
         )}
       </View>
     );
@@ -705,7 +712,7 @@ const styles = StyleSheet.create({
   entryStepsCaption: {
     lineHeight: 18,
   },
-  adjustmentExplanation: {
+  adjustmentInfo: {
     paddingBottom: spacing.sm,
   },
   separator: {

@@ -9,11 +9,14 @@ import {
 import { StyleSheet } from 'react-native';
 
 import SyncErrorBanner from '../SyncErrorBanner';
-import { useProgressStore, type SyncIssue } from '../../stores/progressStore';
+import {
+  useProgressStore,
+  type TroubleshootingIssue,
+} from '../../stores/progressStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUIStore } from '../../stores/uiStore';
 
-const stoppedIssue: SyncIssue = {
+const stoppedIssue: TroubleshootingIssue = {
   error: {
     kind: 'pedometerServiceStopped',
     lastCommitAt: new Date('2026-08-20T12:00:00Z').getTime(),
@@ -25,7 +28,7 @@ const stoppedIssue: SyncIssue = {
   resolvedAt: null,
 };
 
-const fallbackIssue: SyncIssue = {
+const fallbackIssue: TroubleshootingIssue = {
   error: {
     kind: 'sourceFallback',
     unavailableSource: 'pedometer',
@@ -36,7 +39,7 @@ const fallbackIssue: SyncIssue = {
   resolvedAt: null,
 };
 
-const providerIssue: SyncIssue = {
+const providerIssue: TroubleshootingIssue = {
   error: {
     kind: 'provider',
     provider: 'apple-health',

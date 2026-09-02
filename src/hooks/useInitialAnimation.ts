@@ -40,7 +40,6 @@ interface UseInitialAnimationReturn {
 
   // Button opacity animated styles
   settingsEnterStyle: ReturnType<typeof useAnimatedStyle>;
-  labelsEnterStyle: ReturnType<typeof useAnimatedStyle>;
   infoEnterStyle: ReturnType<typeof useAnimatedStyle>;
 }
 
@@ -66,7 +65,6 @@ export function useInitialAnimation({
 
   // UI button opacities
   const settingsOpacity = useSharedValue(showWelcome ? 0 : 1);
-  const labelsOpacity = useSharedValue(showWelcome ? 0 : 1);
   const infoOpacity = useSharedValue(showWelcome ? 0 : 1);
 
   // Sentinel shared value used purely to sequence the startup-ready
@@ -76,7 +74,6 @@ export function useInitialAnimation({
 
   // Track if animations have completed to prevent restarts
   const hasSettingsAnimated = useSharedValue(!showWelcome);
-  const hasLabelsAnimated = useSharedValue(!showWelcome);
   const hasInfoAnimated = useSharedValue(!showWelcome);
   const hasPathRevealed = useSharedValue(!showWelcome);
   const hasStartupSignaled = useSharedValue(!showWelcome);
@@ -133,10 +130,6 @@ export function useInitialAnimation({
     opacity: settingsOpacity.value,
   }));
 
-  const labelsEnterStyle = useAnimatedStyle(() => ({
-    opacity: labelsOpacity.value,
-  }));
-
   const infoEnterStyle = useAnimatedStyle(() => ({
     opacity: infoOpacity.value,
   }));
@@ -151,18 +144,6 @@ export function useInitialAnimation({
         settingsOpacity.value = withTiming(1, {
           duration: motion.button.enterDuration,
         });
-      }
-
-      // Labels animation (only once)
-      if (!hasLabelsAnimated.value) {
-        hasLabelsAnimated.value = true;
-        labelsOpacity.value = 0;
-        labelsOpacity.value = withDelay(
-          motion.button.enterDelayLabels,
-          withTiming(1, {
-            duration: motion.button.enterDuration,
-          }),
-        );
       }
 
       // Only reset info opacity if animation hasn't run yet
@@ -231,20 +212,15 @@ export function useInitialAnimation({
       // Reset opacities when welcome shows
       clearPathRevealWatchdog();
       cancelAnimation(settingsOpacity);
-      cancelAnimation(labelsOpacity);
       cancelAnimation(infoOpacity);
       cancelAnimation(startupSignal);
       cancelAnimation(initialBasePathProgress);
       hasSettingsAnimated.value = false;
-      hasLabelsAnimated.value = false;
       hasInfoAnimated.value = false;
       hasPathRevealed.value = false;
       hasStartupSignaled.value = false;
       pathRevealCompletedRef.current = false;
       settingsOpacity.value = withTiming(0, {
-        duration: motion.button.exitDuration,
-      });
-      labelsOpacity.value = withTiming(0, {
         duration: motion.button.exitDuration,
       });
       infoOpacity.value = withTiming(0, {
@@ -270,14 +246,12 @@ export function useInitialAnimation({
     pathRevealStart,
     initialBasePathProgress,
     settingsOpacity,
-    labelsOpacity,
     infoOpacity,
     startupSignal,
     recenterOpacity,
     originMonitorEnabled,
     resetToOrigin,
     hasSettingsAnimated,
-    hasLabelsAnimated,
     hasInfoAnimated,
     hasPathRevealed,
     hasStartupSignaled,
@@ -290,7 +264,6 @@ export function useInitialAnimation({
   return {
     initialBasePathProgress,
     settingsEnterStyle,
-    labelsEnterStyle,
     infoEnterStyle,
   };
 }

@@ -26,6 +26,7 @@ interface PositionedPointProps {
   // Provided by PointLayer via a single hidden measurement Button so every
   // point uses the same accurate value without measuring per-instance.
   labelHeight: number;
+  opacity?: SharedValue<number>;
 }
 
 export default function PositionedPoint({
@@ -43,6 +44,7 @@ export default function PositionedPoint({
   onPress,
   anchorRef,
   labelHeight,
+  opacity,
 }: PositionedPointProps) {
   const animatedStyle = useAnimatedStyle(() => {
     // For 'top' labels the label sits above the circle in a column-reverse
@@ -60,6 +62,7 @@ export default function PositionedPoint({
       labelOffset;
 
     return {
+      opacity: opacity?.value ?? 1,
       transform: [{ translateX: x }, { translateY: y }],
     };
   });
