@@ -5,7 +5,6 @@ import {
   metersToMiles,
   milesToMeters,
   milesToSteps,
-  stepsToMiles,
 } from '../utils/stride';
 
 /**
@@ -468,10 +467,6 @@ export async function getLegacyAndroidDistanceRecords(
     throw new HealthProviderReadError('health-connect', 'steps', error);
   }
 
-  const totalDistanceMiles = distanceRecords.reduce(
-    (sum, record) => sum + metersToMiles(record.distance?.inMeters ?? 0),
-    0,
-  );
   const totalSteps = stepRecords.reduce(
     (sum, record) => sum + (record.count ?? 0),
     0,
