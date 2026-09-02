@@ -21,10 +21,10 @@ import {
   LONG_SYNC_TIME_THRESHOLD_MS,
 } from '../constants/sync';
 import {
-  supersededSlots,
-  syncErrorSlot,
-  type SyncIssueSlot,
-} from '../constants/syncIssues';
+  supersededTroubleshootingIssueSlots,
+  troubleshootingIssueSlot,
+  type TroubleshootingIssueSlot,
+} from '../constants/troubleshootingIssues';
 
 // The JSON files are hand-authored PointType-shaped rows. Cast once at
 // import time so the rest of this module can drop the per-call
@@ -163,11 +163,11 @@ export interface TroubleshootingIssue {
  * logging rather than an awaited transactional command: a failed write must
  * not break a sync or block the UI, and the worst case is a lost history row.
  */
-const persistSyncIssues = (issues: TroubleshootingIssue[]): void => {
+const persistTroubleshootingIssues = (issues: TroubleshootingIssue[]): void => {
   database
     .saveTroubleshootingIssues(
       issues.map(issue => ({
-        slot: syncErrorSlot(issue.error),
+        slot: troubleshootingIssueSlot(issue.error),
         error: issue.error,
         at: issue.at,
         dismissedAt: issue.dismissedAt,
@@ -179,15 +179,15 @@ const persistSyncIssues = (issues: TroubleshootingIssue[]): void => {
     });
 };
 
-const mergeSyncIssue = (
+const mergeTroubleshootingIssue = (
   issues: TroubleshootingIssue[],
   error: SyncError,
 ): TroubleshootingIssue[] => {
-  const replaced = supersededSlots(error);
-  const slot = syncErrorSlot(error);
-  const previous = issues.find(issue => syncErrorSlot(issue.error) === slot);
+  const replaced = supersededTroubleshootingIssueSlots(error);
+  const slot = troubleshootingIssueSlot(error);
+  const previous = issues.find(issue => troubleshootingIssueSlot(issue.error) === slot);
   return [
-    ...issues.filter(issue => !replaced.includes(syncErrorSlot(issue.error))),
+    ...issues.filter(issue => !replaced.includes(troubleshootingIssueSlot(issue.error))),
     {
       error,
       at: Date.now(),
@@ -224,12 +224,12 @@ interface ProgressStore {
   lastSyncDate: string | null;
   syncStatus: SyncStatus;
   /**
-   * Persisted sync issues (until dismissed) so they remain discoverable
+  * Persisted troubleshooting issues (until dismissed) so they remain discoverable
    * after the transient pill fades. At most one entry per slot, because
    * failures cascade within a subsystem but are independent across them --
-   * see `src/constants/syncIssues.ts`.
+  * see `src/constants/troubleshootingIssues.ts`.
    */
-  syncIssues: TroubleshootingIssue[];
+  troubleshootingIssues: TroubleshootingIssue[];
   // Dev/test override state
   testOverrideMiles: number | null;
 
@@ -272,19 +272,19 @@ interface ProgressStore {
   ) => void;
   resetSyncStatus: () => void;
   /** Record an issue, replacing any it supersedes. */
-  addSyncIssue: (error: SyncError) => void;
+  addTroubleshootingIssue: (error: SyncError) => void;
   /** User swiped the card away; kept in history so it can be re-raised. */
-  dismissSyncIssue: (slot: SyncIssueSlot) => void;
+  dismissTroubleshootingIssue: (slot: TroubleshootingIssueSlot) => void;
   /** Bring a dismissed issue back to the banner, from history. */
-  restoreSyncIssue: (slot: SyncIssueSlot) => void;
+  restoreTroubleshootingIssue: (slot: TroubleshootingIssueSlot) => void;
   /**
    * The underlying condition was re-checked and found gone. Only applies to
    * active issues: a closed one represents a decision the user made, so
    * relabelling it behind their back would both rewrite that record and take
    * away its Reopen action. Reopening re-checks explicitly.
    */
-  resolveSyncIssue: (slot: SyncIssueSlot) => void;
-  clearAllSyncIssues: () => void;
+  resolveTroubleshootingIssue: (slot: TroubleshootingIssueSlot) => void;
+  clearAllTroubleshootingIssues: () => void;
   resetProgress: () => Promise<void>;
   persistMilesSnapshot: () => Promise<void>;
 
@@ -326,7 +326,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   distanceEntries: [],
   lastSyncDate: null,
   syncStatus: initialSyncStatus,
-  syncIssues: [],
+  troubleshootingIssues: [],
   testOverrideMiles: null,
 
   // Initialize from database on app start
@@ -342,7 +342,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     // journey itself.
     try {
       const stored = await database.loadTroubleshootingIssues();
-      set({ syncIssues: stored as TroubleshootingIssue[] });
+      set({ troubleshootingIssues: stored as TroubleshootingIssue[] });
     } catch (error) {
       console.warn('[progress] could not load tracking issue history', error);
     }
@@ -471,9 +471,12 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
         next.error &&
         next.error.kind !== 'unknown'
       ) {
-        const syncIssues = mergeSyncIssue(state.syncIssues, next.error);
-        persistSyncIssues(syncIssues);
-        return { syncStatus: next, syncIssues };
+        const troubleshootingIssues = mergeTroubleshootingIssue(
+          state.troubleshootingIssues,
+          next.error,
+        );
+        persistTroubleshootingIssues(troubleshootingIssues);
+        return { syncStatus: next, troubleshootingIssues };
       }
       // Clear on success: phase=='idle' is only set by the success branch
       // in useSyncInterval (initial state and resetSyncStatus take other
@@ -481,69 +484,72 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       // happen if we cleared on 'syncing' and the retry itself failed.
       // Scoped to health-app: a successful health sync says nothing about
       // whether the pedometer is still broken.
-      if (next.phase === 'idle' && state.syncIssues.length > 0) {
-        const syncIssues = state.syncIssues.map(issue =>
-          syncErrorSlot(issue.error) === 'health-app' &&
+      if (next.phase === 'idle' && state.troubleshootingIssues.length > 0) {
+        const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
+          troubleshootingIssueSlot(issue.error) === 'health-app' &&
           issue.resolvedAt === null &&
           issue.dismissedAt === null
             ? { ...issue, resolvedAt: Date.now() }
             : issue,
         );
-        persistSyncIssues(syncIssues);
-        return { syncStatus: next, syncIssues };
+        persistTroubleshootingIssues(troubleshootingIssues);
+        return { syncStatus: next, troubleshootingIssues };
       }
       return { syncStatus: next };
     }),
 
   resetSyncStatus: () => set({ syncStatus: initialSyncStatus }),
 
-  addSyncIssue: error =>
+  addTroubleshootingIssue: error =>
     set(state => {
-      const syncIssues = mergeSyncIssue(state.syncIssues, error);
-      persistSyncIssues(syncIssues);
-      return { syncIssues };
+      const troubleshootingIssues = mergeTroubleshootingIssue(
+        state.troubleshootingIssues,
+        error,
+      );
+      persistTroubleshootingIssues(troubleshootingIssues);
+      return { troubleshootingIssues };
     }),
 
-  dismissSyncIssue: slot =>
+  dismissTroubleshootingIssue: slot =>
     set(state => {
-      const syncIssues = state.syncIssues.map(issue =>
-        syncErrorSlot(issue.error) === slot && issue.dismissedAt === null
+      const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
+        troubleshootingIssueSlot(issue.error) === slot && issue.dismissedAt === null
           ? { ...issue, dismissedAt: Date.now() }
           : issue,
       );
-      persistSyncIssues(syncIssues);
-      return { syncIssues };
+      persistTroubleshootingIssues(troubleshootingIssues);
+      return { troubleshootingIssues };
     }),
 
-  restoreSyncIssue: slot =>
+  restoreTroubleshootingIssue: slot =>
     set(state => {
-      const syncIssues = state.syncIssues.map(issue =>
-        syncErrorSlot(issue.error) === slot
+      const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
+        troubleshootingIssueSlot(issue.error) === slot
           ? { ...issue, dismissedAt: null }
           : issue,
       );
-      persistSyncIssues(syncIssues);
-      return { syncIssues };
+      persistTroubleshootingIssues(troubleshootingIssues);
+      return { troubleshootingIssues };
     }),
 
-  resolveSyncIssue: slot =>
+  resolveTroubleshootingIssue: slot =>
     set(state => {
-      const syncIssues = state.syncIssues.map(issue =>
-        syncErrorSlot(issue.error) === slot &&
+      const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
+        troubleshootingIssueSlot(issue.error) === slot &&
         issue.resolvedAt === null &&
         issue.dismissedAt === null
           ? { ...issue, resolvedAt: Date.now() }
           : issue,
       );
-      persistSyncIssues(syncIssues);
-      return { syncIssues };
+      persistTroubleshootingIssues(troubleshootingIssues);
+      return { troubleshootingIssues };
     }),
 
-  clearAllSyncIssues: () =>
+  clearAllTroubleshootingIssues: () =>
     set(state => {
-      persistSyncIssues([]);
+      persistTroubleshootingIssues([]);
       return {
-        syncIssues: [],
+        troubleshootingIssues: [],
         // Also reset syncStatus if it's still stuck in the error phase, so
         // anything reading syncStatus.phase (e.g. dev tools, indicators)
         // doesn't show the error as still active after the user dismissed it.
@@ -576,7 +582,7 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
       ),
       lastSyncDate: null,
       syncStatus: initialSyncStatus,
-      syncIssues: [],
+      troubleshootingIssues: [],
       testOverrideMiles: null,
     }));
   },

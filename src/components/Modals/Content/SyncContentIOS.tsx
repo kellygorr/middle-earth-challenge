@@ -223,6 +223,16 @@ export default function SyncContentIOS() {
           revoke access, go to Settings → Health → Middle Earth Challenge and
           turn off all permissions.
         </Text>
+        <View style={styles.revokeButtonRow}>
+          <Button
+            variant="primary"
+            size="default"
+            onPress={() => Linking.openSettings()}
+            disabled={busy}
+          >
+            Open app settings
+          </Button>
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -251,6 +261,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  revokeButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
     marginTop: spacing.md,
   },
   infoText: {

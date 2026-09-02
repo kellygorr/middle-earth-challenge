@@ -12,7 +12,8 @@ import {
   InfoContent,
   DataContent,
   FriendProgressContent,
-  SyncHistoryContent,
+  TroubleshootingHistoryContent,
+  TransferDataContent,
 } from '../components/Modals/Content';
 import { MilesFooter, InfoFooter } from '../components/Modals/Footers';
 
@@ -23,8 +24,9 @@ export type ModalType =
   | 'sync'
   | 'info'
   | 'data'
+  | 'transfer-data'
   | 'friend-progress'
-  | 'sync-history';
+  | 'troubleshooting-history';
 
 export interface ModalConfig {
   /** Modal title (displayed above card in portrait, left side in landscape) */
@@ -86,6 +88,13 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     leftButton: 'back',
     scrollType: 'default',
   },
+  'transfer-data': {
+    title: 'Transfer data',
+    content: TransferDataContent,
+    smallHeader: true,
+    leftButton: 'back',
+    scrollType: 'default',
+  },
   'friend-progress': {
     title: 'Connect with friends',
     content: FriendProgressContent,
@@ -94,9 +103,9 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     keyboardAvoiding: true,
     scrollType: 'default',
   },
-  'sync-history': {
+  'troubleshooting-history': {
     title: 'Troubleshooting',
-    content: SyncHistoryContent,
+    content: TroubleshootingHistoryContent,
     smallHeader: true,
     leftButton: 'back',
     scrollType: 'default',

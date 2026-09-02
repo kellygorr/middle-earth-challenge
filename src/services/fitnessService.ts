@@ -69,23 +69,6 @@ interface DailyHealthSample {
   id?: string;
 }
 
-export interface HealthConnectDiagnosticDay {
-  label: string;
-  startTime: string;
-  endTime: string;
-  aggregateSteps: number | null;
-  aggregateStepOrigins: string[];
-  aggregateDistanceMeters: number | null;
-  aggregateDistanceOrigins: string[];
-  rawStepTotal: number;
-  rawStepRecordCount: number;
-  rawStepOrigins: string[];
-  rawDistanceMeters: number;
-  rawDistanceRecordCount: number;
-  rawDistanceOrigins: string[];
-  errors: string[];
-}
-
 export class HealthProviderReadError extends Error {
   constructor(
     public readonly provider: 'health-connect' | 'apple-health',
@@ -99,30 +82,6 @@ export class HealthProviderReadError extends Error {
     );
     this.name = 'HealthProviderReadError';
   }
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
-}
-
-function numeric(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values)].sort();
-}
-
-function formatDiagnosticError(signal: string, error: unknown): string {
-  return `${signal}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
 export function selectAppleHealthDistanceRecords(
@@ -155,140 +114,6 @@ export function selectAppleHealthDistanceRecords(
       distanceMeters: milesToMeters(sample.value),
       steps: milesToSteps(sample.value),
     }));
-}
-
-export async function getAndroidHealthConnectDiagnostics(
-  days: Array<{ label: string; start: Date; end: Date }>,
-): Promise<HealthConnectDiagnosticDay[]> {
-  if (Platform.OS !== 'android') {
-    throw new Error('Health Connect diagnostics are Android-only');
-  }
-
-  const hc = await getHealthConnectModule();
-  if (!hc) {
-    throw new HealthProviderReadError(
-      'health-connect',
-      'module',
-      new Error('Health Connect module not available'),
-    );
-  }
-
-  const initialized = await hc.initialize();
-  if (!initialized) {
-    throw new HealthProviderReadError(
-      'health-connect',
-      'module',
-      new Error('Health Connect initialization returned false'),
-    );
-  }
-
-  const diagnostics: HealthConnectDiagnosticDay[] = [];
-  for (const day of days) {
-    const timeRangeFilter = {
-      operator: 'between' as const,
-      startTime: day.start.toISOString(),
-      endTime: day.end.toISOString(),
-    };
-    const result: HealthConnectDiagnosticDay = {
-      label: day.label,
-      startTime: day.start.toISOString(),
-      endTime: day.end.toISOString(),
-      aggregateSteps: null,
-      aggregateStepOrigins: [],
-      aggregateDistanceMeters: null,
-      aggregateDistanceOrigins: [],
-      rawStepTotal: 0,
-      rawStepRecordCount: 0,
-      rawStepOrigins: [],
-      rawDistanceMeters: 0,
-      rawDistanceRecordCount: 0,
-      rawDistanceOrigins: [],
-      errors: [],
-    };
-
-    try {
-      const stepsAggregate = asRecord(
-        await hc.aggregateRecord({ recordType: 'Steps', timeRangeFilter }),
-      );
-      result.aggregateSteps = numeric(stepsAggregate.COUNT_TOTAL);
-      result.aggregateStepOrigins = stringArray(stepsAggregate.dataOrigins);
-    } catch (error) {
-      result.errors.push(formatDiagnosticError('aggregate Steps', error));
-    }
-
-    try {
-      const distanceAggregate = asRecord(
-        await hc.aggregateRecord({ recordType: 'Distance', timeRangeFilter }),
-      );
-      result.aggregateDistanceMeters = numeric(
-        asRecord(distanceAggregate.DISTANCE).inMeters,
-      );
-      result.aggregateDistanceOrigins = stringArray(
-        distanceAggregate.dataOrigins,
-      );
-    } catch (error) {
-      result.errors.push(formatDiagnosticError('aggregate Distance', error));
-    }
-
-    try {
-      const stepRecordsResult = asRecord(
-        await hc.readRecords('Steps', {
-          timeRangeFilter,
-          ascendingOrder: true,
-          pageSize: 1000,
-        }),
-      );
-      const records = Array.isArray(stepRecordsResult.records)
-        ? stepRecordsResult.records.map(asRecord)
-        : [];
-      result.rawStepRecordCount = records.length;
-      result.rawStepTotal = records.reduce(
-        (sum, record) => sum + numeric(record.count),
-        0,
-      );
-      result.rawStepOrigins = uniqueStrings(
-        records
-          .map(record => asRecord(record.metadata).dataOrigin)
-          .filter(
-            (origin): origin is string => typeof origin === 'string',
-          ),
-      );
-    } catch (error) {
-      result.errors.push(formatDiagnosticError('raw Steps', error));
-    }
-
-    try {
-      const distanceRecordsResult = asRecord(
-        await hc.readRecords('Distance', {
-          timeRangeFilter,
-          ascendingOrder: true,
-          pageSize: 1000,
-        }),
-      );
-      const records = Array.isArray(distanceRecordsResult.records)
-        ? distanceRecordsResult.records.map(asRecord)
-        : [];
-      result.rawDistanceRecordCount = records.length;
-      result.rawDistanceMeters = records.reduce(
-        (sum, record) =>
-          sum + numeric(asRecord(record.distance).inMeters),
-        0,
-      );
-      result.rawDistanceOrigins = uniqueStrings(
-        records
-          .map(record => asRecord(record.metadata).dataOrigin)
-          .filter(
-            (origin): origin is string => typeof origin === 'string',
-          ),
-      );
-    } catch (error) {
-      result.errors.push(formatDiagnosticError('raw Distance', error));
-    }
-
-    diagnostics.push(result);
-  }
-
-  return diagnostics;
 }
 
 export async function getAppleHealthDistanceRecords(

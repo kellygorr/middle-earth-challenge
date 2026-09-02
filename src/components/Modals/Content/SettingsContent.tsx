@@ -86,12 +86,12 @@ export default function SettingsContent() {
   const showLiveSync = syncEnabled && trackingMode === 'health-app';
 
   const hasActiveTrackingIssue = useProgressStore(state =>
-    state.syncIssues.some(
+    state.troubleshootingIssues.some(
       issue => issue.dismissedAt === null && issue.resolvedAt === null,
     ),
   );
   const hasTrackingHistory = useProgressStore(
-    state => state.syncIssues.length > 0,
+    state => state.troubleshootingIssues.length > 0,
   );
 
   return (
@@ -384,7 +384,7 @@ export default function SettingsContent() {
             icon={<ClockIcon size={iconSizes.medium} />}
             label="Issue history"
             caption="Problems we detected, including ones you dismissed"
-            onPress={() => pushModal({ type: 'sync-history' })}
+            onPress={() => pushModal({ type: 'troubleshooting-history' })}
           />
         )}
       </Section>
@@ -420,6 +420,14 @@ export default function SettingsContent() {
           label="Manage data"
           caption="Delete synced data, reset progress, or clear settings"
           onPress={() => pushModal({ type: 'data' })}
+          borderTop
+        />
+
+        <ButtonRow
+          icon={<SyncIcon size={iconSizes.medium} />}
+          label="Transfer data"
+          caption="Export or import your journey data for a new phone"
+          onPress={() => pushModal({ type: 'transfer-data' })}
           borderTop
         />
       </Section>

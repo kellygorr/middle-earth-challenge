@@ -4,7 +4,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const START_DATE = '2026-07-28';
+const START_DATE = '2026-07-01';
 const END_DATE = '2026-09-01';
 const MIN_ENTRIES_PER_DAY = 5;
 const MAX_ENTRIES_PER_DAY = 20;

@@ -268,6 +268,89 @@ describe('database initialization', () => {
     );
   });
 
+  it('imports journey backups without overwriting device sync or sharing state', async () => {
+    const mockDb = createMockDatabase();
+    mockDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('SELECT COALESCE(SUM(miles)')) {
+        return { rows: [{ miles: 3, steps: 6000 }] };
+      }
+      return { rows: [] };
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+
+    await expect(
+      database.importJourneyBackup({
+        app: 'MiddleEarthChallenge',
+        schemaVersion: 1,
+        exportedAt: '2026-09-02T12:00:00.000Z',
+        settings: {
+          labelSize: 'large',
+          textSize: 'small',
+          currentTheme: 'classic',
+          showPointLabels: false,
+          colorizeMap: false,
+          reducedMapTitles: false,
+          devMode: true,
+          useMiles: false,
+          lastNotifiedCheckpointIndex: 3,
+        },
+        distanceEntries: [
+          {
+            id: 'manual-1',
+            saveId: 'default',
+            date: 1,
+            miles: 1,
+            steps: 2000,
+            source: 'manual-distance',
+          },
+          {
+            id: 'pedo-1',
+            saveId: 'default',
+            date: 2,
+            miles: 2,
+            steps: 4000,
+            source: 'pedometer',
+          },
+        ],
+        troubleshootingIssues: [
+          {
+            slot: 'health-app',
+            error: { kind: 'provider', provider: 'health-connect' },
+            at: 10,
+            dismissedAt: null,
+            resolvedAt: 20,
+          },
+        ],
+      }),
+    ).resolves.toEqual({ miles: 3, steps: 6000 });
+
+    const settingsUpdate = mockDb.executeSync.mock.calls.find(([sql]) =>
+      String(sql).includes('SET label_size = ?'),
+    )?.[0] as string;
+    expect(settingsUpdate).toBeTruthy();
+    expect(settingsUpdate).not.toContain('sync_enabled');
+    expect(settingsUpdate).not.toContain('sync_provider');
+    expect(settingsUpdate).not.toContain('pedometer_cursor');
+    expect(settingsUpdate).not.toContain('sharing_');
+    expect(mockDb.executeSync).toHaveBeenCalledWith(
+      'DELETE FROM distance_entries WHERE save_id = ?',
+      ['default'],
+    );
+    expect(mockDb.executeSync).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT OR REPLACE INTO troubleshooting_issues'),
+      [
+        'health-app',
+        JSON.stringify({ kind: 'provider', provider: 'health-connect' }),
+        10,
+        null,
+        20,
+      ],
+    );
+    expect(mockDb.executeSync).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('rolls back health entries when cursor and format persistence fails', async () => {
     const mockDb = createMockDatabase();
     mockDb.executeSync.mockImplementation((sql: string) => {

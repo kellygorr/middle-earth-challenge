@@ -44,6 +44,31 @@ export interface DistanceDaySummary {
   steps: number;
 }
 
+export interface JourneyBackup {
+  app: 'MiddleEarthChallenge';
+  schemaVersion: 1;
+  exportedAt: string;
+  settings: {
+    labelSize: LabelSize;
+    textSize: TextSize;
+    currentTheme: ThemeName;
+    showPointLabels: boolean;
+    colorizeMap: boolean;
+    reducedMapTitles: boolean;
+    devMode: boolean;
+    useMiles: boolean;
+    lastNotifiedCheckpointIndex: number;
+  };
+  distanceEntries: DistanceEntry[];
+  troubleshootingIssues: Array<{
+    slot: string;
+    error: unknown;
+    at: number;
+    dismissedAt: number | null;
+    resolvedAt: number | null;
+  }>;
+}
+
 // SQLite raises a generic error for "duplicate column" from ALTER TABLE
 // ADD COLUMN when the column already exists. There's no dedicated error
 // code we can rely on across engines, so we string-match. Any other
@@ -168,7 +193,8 @@ class Database {
         sharing_provisioning_pending INTEGER NOT NULL DEFAULT 0,
         sharing_deletion_pending INTEGER NOT NULL DEFAULT 0,
         last_published_miles REAL,
-        last_shared_progress_sync_at INTEGER
+        last_shared_progress_sync_at INTEGER,
+        last_journey_backup_file_name TEXT
       )
     `);
 
@@ -289,6 +315,7 @@ class Database {
       `ALTER TABLE user_settings ADD COLUMN sharing_deletion_pending INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE user_settings ADD COLUMN last_published_miles REAL`,
       `ALTER TABLE user_settings ADD COLUMN last_shared_progress_sync_at INTEGER`,
+      `ALTER TABLE user_settings ADD COLUMN last_journey_backup_file_name TEXT`,
     ];
     for (const migration of sharingMigrations) {
       try {
@@ -475,6 +502,8 @@ class Database {
       lastPublishedMiles: (row as any).last_published_miles ?? null,
       lastSharedProgressSyncAt:
         (row as any).last_shared_progress_sync_at ?? null,
+      lastJourneyBackupFileName:
+        (row as any).last_journey_backup_file_name ?? null,
     };
   }
 
@@ -605,6 +634,10 @@ class Database {
     if (updates.lastSharedProgressSyncAt !== undefined) {
       fields.push('last_shared_progress_sync_at = ?');
       values.push(updates.lastSharedProgressSyncAt);
+    }
+    if (updates.lastJourneyBackupFileName !== undefined) {
+      fields.push('last_journey_backup_file_name = ?');
+      values.push(updates.lastJourneyBackupFileName);
     }
 
     if (fields.length === 0) return;
@@ -775,6 +808,134 @@ class Database {
       miles: Number((row as any).miles),
       steps: Number((row as any).steps ?? 0),
     }));
+  }
+
+  async exportJourneyBackup(): Promise<JourneyBackup> {
+    if (!this.db) throw new Error('Database not initialized');
+    const settings = await this.getUserSettings();
+    const entriesResult = this.db.executeSync(
+      `SELECT id, save_id as saveId, date, miles, steps, source
+       FROM distance_entries
+       WHERE save_id = ?
+       ORDER BY date ASC, id ASC`,
+      [DEFAULT_SAVE_ID],
+    );
+    const issueRows = this.db.executeSync(
+      `SELECT slot, error, at, dismissed_at, resolved_at
+       FROM troubleshooting_issues
+       ORDER BY at ASC`,
+    ).rows as Array<{
+      slot: string;
+      error: string;
+      at: number;
+      dismissed_at: number | null;
+      resolved_at: number | null;
+    }>;
+
+    return {
+      app: 'MiddleEarthChallenge',
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      settings: {
+        labelSize: settings.labelSize,
+        textSize: settings.textSize,
+        currentTheme: settings.currentTheme,
+        showPointLabels: settings.showPointLabels,
+        colorizeMap: settings.colorizeMap,
+        reducedMapTitles: settings.reducedMapTitles,
+        devMode: settings.devMode,
+        useMiles: settings.useMiles,
+        lastNotifiedCheckpointIndex: settings.lastNotifiedCheckpointIndex,
+      },
+      distanceEntries: this.mapDistanceEntryRows(entriesResult.rows ?? []),
+      troubleshootingIssues: issueRows.flatMap(row => {
+        try {
+          return [
+            {
+              slot: String(row.slot),
+              error: JSON.parse(row.error),
+              at: Number(row.at),
+              dismissedAt:
+                row.dismissed_at == null ? null : Number(row.dismissed_at),
+              resolvedAt:
+                row.resolved_at == null ? null : Number(row.resolved_at),
+            },
+          ];
+        } catch {
+          return [];
+        }
+      }),
+    };
+  }
+
+  async importJourneyBackup(backup: JourneyBackup): Promise<{
+    miles: number;
+    steps: number;
+  }> {
+    return this.enqueueWrite(() =>
+      this.runTransaction(() => {
+        if (!this.db) throw new Error('Database not initialized');
+
+        this.db.executeSync(`DELETE FROM distance_entries WHERE save_id = ?`, [
+          DEFAULT_SAVE_ID,
+        ]);
+        for (const entry of backup.distanceEntries) {
+          this.db.executeSync(
+            `INSERT OR REPLACE INTO distance_entries (id, save_id, date, miles, steps, source) VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+              entry.id,
+              DEFAULT_SAVE_ID,
+              entry.date,
+              entry.miles,
+              entry.steps,
+              entry.source,
+            ],
+          );
+        }
+
+        this.db.executeSync(
+          `UPDATE user_settings
+           SET label_size = ?,
+               text_size = ?,
+               current_theme = ?,
+               show_checkpoint_labels = ?,
+               colorize_map = ?,
+               reduced_map_titles = ?,
+               dev_mode = ?,
+               use_miles = ?,
+               last_notified_checkpoint_index = ?
+           WHERE id = ?`,
+          [
+            backup.settings.labelSize,
+            backup.settings.textSize,
+            backup.settings.currentTheme,
+            backup.settings.showPointLabels ? 1 : 0,
+            backup.settings.colorizeMap ? 1 : 0,
+            backup.settings.reducedMapTitles ? 1 : 0,
+            backup.settings.devMode ? 1 : 0,
+            backup.settings.useMiles ? 1 : 0,
+            backup.settings.lastNotifiedCheckpointIndex,
+            DEFAULT_SAVE_ID,
+          ],
+        );
+
+        this.db.executeSync(`DELETE FROM troubleshooting_issues`);
+        for (const issue of backup.troubleshootingIssues) {
+          this.db.executeSync(
+            `INSERT OR REPLACE INTO troubleshooting_issues (slot, error, at, dismissed_at, resolved_at) VALUES (?, ?, ?, ?, ?)`,
+            [
+              issue.slot,
+              JSON.stringify(issue.error),
+              issue.at,
+              issue.dismissedAt,
+              issue.resolvedAt,
+            ],
+          );
+        }
+
+        return this.recalculateProgress(DEFAULT_SAVE_ID);
+      }),
+    );
   }
 
   async removeDistanceEntry(id: string): Promise<void> {

@@ -4,25 +4,25 @@ const mockStopTracking = jest.fn();
 const mockIsServiceRunning = jest.fn();
 const mockGetEnvironment = jest.fn();
 const mockSetSyncStatus = jest.fn();
-const mockResolveSyncIssue = jest.fn();
-const mockClearAllSyncIssues = jest.fn();
+const mockResolveTroubleshootingIssue = jest.fn();
+const mockClearAllTroubleshootingIssues = jest.fn();
 const mockProgress: {
-  syncIssues: Array<{
+  troubleshootingIssues: Array<{
     error: { kind: string; message?: string };
     at: number;
     dismissedAt: number | null;
   }>;
   setLastSyncDate: jest.Mock;
   resetSyncStatus: jest.Mock;
-  clearAllSyncIssues: jest.Mock;
-  resolveSyncIssue: jest.Mock;
+  clearAllTroubleshootingIssues: jest.Mock;
+  resolveTroubleshootingIssue: jest.Mock;
   setSyncStatus: jest.Mock;
 } = {
-  syncIssues: [],
+  troubleshootingIssues: [],
   setLastSyncDate: jest.fn(),
   resetSyncStatus: jest.fn(),
-  clearAllSyncIssues: mockClearAllSyncIssues,
-  resolveSyncIssue: mockResolveSyncIssue,
+  clearAllTroubleshootingIssues: mockClearAllTroubleshootingIssues,
+  resolveTroubleshootingIssue: mockResolveTroubleshootingIssue,
   setSyncStatus: mockSetSyncStatus,
 };
 const mockSettings: {
@@ -142,8 +142,8 @@ describe('tracking mode pedometer flush boundary', () => {
     mockUpdateSyncSettings.mockImplementation(async updates => {
       Object.assign(mockSettings, updates);
     });
-    mockProgress.syncIssues = [];
-    mockProgress.resolveSyncIssue = mockResolveSyncIssue;
+    mockProgress.troubleshootingIssues = [];
+    mockProgress.resolveTroubleshootingIssue = mockResolveTroubleshootingIssue;
     jest.spyOn(Date, 'now').mockReturnValue(200);
   });
 
@@ -270,7 +270,7 @@ describe('tracking mode pedometer flush boundary', () => {
       }),
     );
 
-    mockProgress.syncIssues = [
+    mockProgress.troubleshootingIssues = [
       {
         error: { kind: 'pedometerStorage', message: 'disk full' },
         at: 1,
@@ -279,7 +279,7 @@ describe('tracking mode pedometer flush boundary', () => {
     ];
     await ensureTrackingModeRunning();
 
-    expect(mockResolveSyncIssue).toHaveBeenCalledWith('pedometer');
+    expect(mockResolveTroubleshootingIssue).toHaveBeenCalledWith('pedometer');
     Platform.OS = originalOS;
   });
 });

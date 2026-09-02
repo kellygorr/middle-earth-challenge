@@ -212,7 +212,7 @@ Debug fixture and Android Studio's App Inspection > Database Inspector to inspec
 - [ ] Exercise `source-switching-stress` separately. It alternates Health Connect
       and pedometer several times every day and includes manual distance and step
       entries every day.
-- [ ] Confirm every fixture covers July 28 through September 1, 2026, with a
+- [ ] Confirm every fixture covers July 1 through September 1, 2026, with a
       deterministic 5–20 entries per day. The switching fixture must retain both
       automatic sources and at least one manual entry on every day.
 - [ ] Back up and force-stop only `com.middleearthchallenge.debug` before replacing

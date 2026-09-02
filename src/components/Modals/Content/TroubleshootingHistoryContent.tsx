@@ -3,13 +3,13 @@ import { View, Text, StyleSheet } from 'react-native';
 
 import { useTheme } from '../../../stores/settingsStore';
 import { useProgressStore } from '../../../stores/progressStore';
-import { syncErrorSlot } from '../../../constants/syncIssues';
+import { troubleshootingIssueSlot } from '../../../constants/troubleshootingIssues';
 import { ensureTrackingModeRunning } from '../../../services/trackingModeService';
 import SyncErrorBanner from '../../SyncErrorBanner';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing, borderRadius } from '../../../styles/global';
 import Button from '../../Buttons/Button';
-import { getSyncIssueSummary } from '../../SyncErrorBanner';
+import { getTroubleshootingIssueSummary } from '../../SyncErrorBanner';
 
 const formatWhen = (at: number): string => {
   const d = new Date(at);
@@ -34,38 +34,44 @@ const formatWhen = (at: number): string => {
  * The banner only shows undismissed issues, so this is where a card that was
  * closed by accident can be found again.
  */
-export default function SyncHistoryContent() {
+export default function TroubleshootingHistoryContent() {
   const theme = useTheme();
-  const syncIssues = useProgressStore(state => state.syncIssues);
-  const restoreSyncIssue = useProgressStore(state => state.restoreSyncIssue);
-  const dismissSyncIssue = useProgressStore(state => state.dismissSyncIssue);
-  const clearAllSyncIssues = useProgressStore(
-    state => state.clearAllSyncIssues,
+  const troubleshootingIssues = useProgressStore(
+    state => state.troubleshootingIssues,
+  );
+  const restoreTroubleshootingIssue = useProgressStore(
+    state => state.restoreTroubleshootingIssue,
+  );
+  const dismissTroubleshootingIssue = useProgressStore(
+    state => state.dismissTroubleshootingIssue,
+  );
+  const clearAllTroubleshootingIssues = useProgressStore(
+    state => state.clearAllTroubleshootingIssues,
   );
   const reopeningRef = React.useRef(false);
 
-  const close = (slot: ReturnType<typeof syncErrorSlot>) => {
-    dismissSyncIssue(slot);
+  const close = (slot: ReturnType<typeof troubleshootingIssueSlot>) => {
+    dismissTroubleshootingIssue(slot);
   };
 
   // Reopening re-runs the real permission/environment check rather than
   // assuming the issue is still live, so the row settles on Fixed or Active
   // from evidence. Without this, reopening a problem the user has since
   // solved would show it as Active again.
-  const reopen = async (slot: ReturnType<typeof syncErrorSlot>) => {
+  const reopen = async (slot: ReturnType<typeof troubleshootingIssueSlot>) => {
     if (reopeningRef.current) return;
     reopeningRef.current = true;
     try {
-      restoreSyncIssue(slot);
+      restoreTroubleshootingIssue(slot);
       await ensureTrackingModeRunning();
     } catch (error) {
-      console.warn('[syncHistory] re-check failed', error);
+      console.warn('[troubleshootingHistory] re-check failed', error);
     } finally {
       reopeningRef.current = false;
     }
   };
 
-  if (syncIssues.length === 0) {
+  if (troubleshootingIssues.length === 0) {
     return (
       <Text
         style={[
@@ -79,7 +85,9 @@ export default function SyncHistoryContent() {
     );
   }
 
-  const ordered = [...syncIssues].sort((left, right) => right.at - left.at);
+  const ordered = [...troubleshootingIssues].sort(
+    (left, right) => right.at - left.at,
+  );
 
   return (
     <View>
@@ -88,8 +96,8 @@ export default function SyncHistoryContent() {
       <SyncErrorBanner bleed={spacing.lg} />
 
       {ordered.map(issue => {
-        const slot = syncErrorSlot(issue.error);
-        const summary = getSyncIssueSummary(issue.error);
+        const slot = troubleshootingIssueSlot(issue.error);
+        const summary = getTroubleshootingIssueSummary(issue.error);
         const outcome =
           issue.resolvedAt !== null
             ? 'Fixed'
@@ -135,7 +143,11 @@ export default function SyncHistoryContent() {
       })}
 
       <View style={styles.clearRow}>
-        <Button variant="primary" size="small" onPress={clearAllSyncIssues}>
+        <Button
+          variant="primary"
+          size="small"
+          onPress={clearAllTroubleshootingIssues}
+        >
           Clear history
         </Button>
       </View>

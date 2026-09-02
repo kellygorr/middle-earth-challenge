@@ -52,14 +52,14 @@ const providerIssue: TroubleshootingIssue = {
 
 describe('SyncErrorBanner', () => {
   beforeEach(() => {
-    useProgressStore.setState({ syncIssues: [] });
+    useProgressStore.setState({ troubleshootingIssues: [] });
     useSettingsStore.setState({ useMiles: true });
     useUIStore.setState({ modalStack: [] });
   });
 
   it('renders stopped-service recovery guidance and both actions', async () => {
     const user = userEvent.setup();
-    useProgressStore.setState({ syncIssues: [stoppedIssue] });
+    useProgressStore.setState({ troubleshootingIssues: [stoppedIssue] });
 
     await render(<SyncErrorBanner />);
 
@@ -84,7 +84,7 @@ describe('SyncErrorBanner', () => {
   });
 
   it('uses the selected distance unit for catch-up entry', async () => {
-    useProgressStore.setState({ syncIssues: [stoppedIssue] });
+    useProgressStore.setState({ troubleshootingIssues: [stoppedIssue] });
     useSettingsStore.setState({ useMiles: false });
 
     await render(<SyncErrorBanner />);
@@ -95,25 +95,33 @@ describe('SyncErrorBanner', () => {
 
   it('sizes and snaps multiple cards while dismissing only the chosen slot', async () => {
     useProgressStore.setState({
-      syncIssues: [stoppedIssue, fallbackIssue, providerIssue],
+      troubleshootingIssues: [stoppedIssue, fallbackIssue, providerIssue],
     });
 
     await render(<SyncErrorBanner bleed={24} />);
-    await fireEvent(screen.getByTestId('sync-issue-carousel'), 'layout', {
-      nativeEvent: { layout: { width: 360, height: 200, x: 0, y: 0 } },
-    });
+    await fireEvent(
+      screen.getByTestId('troubleshooting-issue-carousel'),
+      'layout',
+      {
+        nativeEvent: { layout: { width: 360, height: 200, x: 0, y: 0 } },
+      },
+    );
 
     expect(screen.getByText('Step counting stopped')).toBeOnTheScreen();
     expect(screen.getByText('Switched to Health Connect')).toBeOnTheScreen();
     expect(screen.getByText('Health sync failed')).toBeOnTheScreen();
 
-    const pedometerCard = screen.getByTestId('sync-issue-card-pedometer');
-    expect(StyleSheet.flatten(pedometerCard.props.style).width).toBe(304);
-    expect(screen.getByTestId('sync-issue-pager').props.snapToInterval).toBe(
-      320,
+    const pedometerCard = screen.getByTestId(
+      'troubleshooting-issue-card-pedometer',
     );
+    expect(StyleSheet.flatten(pedometerCard.props.style).width).toBe(304);
+    expect(
+      screen.getByTestId('troubleshooting-issue-pager').props.snapToInterval,
+    ).toBe(320);
 
-    const noticeCard = screen.getByTestId('sync-issue-card-notice');
+    const noticeCard = screen.getByTestId(
+      'troubleshooting-issue-card-notice',
+    );
     await userEvent
       .setup()
       .press(within(noticeCard).getByLabelText('Dismiss sync error'));
@@ -121,12 +129,12 @@ describe('SyncErrorBanner', () => {
     expect(
       useProgressStore
         .getState()
-        .syncIssues.find(issue => issue.error.kind === 'sourceFallback'),
+        .troubleshootingIssues.find(issue => issue.error.kind === 'sourceFallback'),
     ).toMatchObject({ dismissedAt: expect.any(Number) });
     expect(
       useProgressStore
         .getState()
-        .syncIssues.find(
+        .troubleshootingIssues.find(
           issue => issue.error.kind === 'pedometerServiceStopped',
         ),
     ).toMatchObject({ dismissedAt: null });

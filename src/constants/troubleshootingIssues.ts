@@ -4,7 +4,7 @@
  * Two things the union does not encode on its own:
  *
  *  - **Slot.** Which subsystem an issue belongs to. Only one issue per slot
- *    can be true at a time, because within a subsystem the failures cascade —
+ *    can be true at a time, because within a subsystem the failures cascade -
  *    a revoked permission stops the service, which stalls commits. Reporting
  *    all three would be one cause and two symptoms. Across slots they are
  *    genuinely independent, so those must not collapse.
@@ -14,7 +14,7 @@
 
 import type { SyncError } from '../stores/progressStore';
 
-export type SyncIssueSlot =
+export type TroubleshootingIssueSlot =
   | 'pedometer'
   | 'health-app'
   /** A single fault affecting both sources at once. */
@@ -24,9 +24,11 @@ export type SyncIssueSlot =
   /** Informational; never competes with a fault for a slot. */
   | 'notice';
 
-export type SyncIssueSeverity = 'error' | 'info';
+export type TroubleshootingIssueSeverity = 'error' | 'info';
 
-export function syncErrorSlot(error: SyncError): SyncIssueSlot {
+export function troubleshootingIssueSlot(
+  error: SyncError,
+): TroubleshootingIssueSlot {
   switch (error.kind) {
     case 'permission':
       return error.source === 'both' ? 'cross' : error.source;
@@ -47,7 +49,9 @@ export function syncErrorSlot(error: SyncError): SyncIssueSlot {
   }
 }
 
-export function syncErrorSeverity(error: SyncError): SyncIssueSeverity {
+export function troubleshootingIssueSeverity(
+  error: SyncError,
+): TroubleshootingIssueSeverity {
   // The switch already happened and tracking continues; nothing to fix.
   return error.kind === 'sourceFallback' ? 'info' : 'error';
 }
@@ -57,19 +61,23 @@ export function syncErrorSeverity(error: SyncError): SyncIssueSeverity {
  * cross-source fault replaces the single-source slots; a notice never
  * displaces a fault.
  */
-export function supersededSlots(error: SyncError): SyncIssueSlot[] {
-  const slot = syncErrorSlot(error);
+export function supersededTroubleshootingIssueSlots(
+  error: SyncError,
+): TroubleshootingIssueSlot[] {
+  const slot = troubleshootingIssueSlot(error);
   if (slot === 'cross') return ['cross', 'pedometer', 'health-app'];
   return [slot];
 }
 
 /** Faults first, so the pager opens on something actionable. */
-export function orderSyncIssues<T extends { error: SyncError }>(
+export function orderTroubleshootingIssues<T extends { error: SyncError }>(
   issues: T[],
 ): T[] {
   return [...issues].sort((left, right) => {
-    const leftInfo = syncErrorSeverity(left.error) === 'info' ? 1 : 0;
-    const rightInfo = syncErrorSeverity(right.error) === 'info' ? 1 : 0;
+    const leftInfo =
+      troubleshootingIssueSeverity(left.error) === 'info' ? 1 : 0;
+    const rightInfo =
+      troubleshootingIssueSeverity(right.error) === 'info' ? 1 : 0;
     return leftInfo - rightInfo;
   });
 }

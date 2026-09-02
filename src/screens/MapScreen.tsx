@@ -293,7 +293,7 @@ export default function MapScreen() {
   // unresolved sync problem. Cleared by a successful sync or by the user
   // dismissing the banner inside Settings.
   const hasSyncError = useProgressStore(state =>
-    state.syncIssues.some(
+    state.troubleshootingIssues.some(
       issue => issue.dismissedAt === null && issue.resolvedAt === null,
     ),
   );

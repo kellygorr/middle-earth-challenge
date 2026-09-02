@@ -38,8 +38,8 @@ export default function WelcomeModal({
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const miles = useProgressStore(state => state.miles) || 0;
-  const hasSyncIssues = useProgressStore(state =>
-    state.syncIssues.some(
+  const hasTroubleshootingIssues = useProgressStore(state =>
+    state.troubleshootingIssues.some(
       issue => issue.dismissedAt === null && issue.resolvedAt === null,
     ),
   );
@@ -119,7 +119,7 @@ export default function WelcomeModal({
                     × dismiss; we deliberately do NOT clear it when the
                     welcome modal closes — the badge dot on Settings
                     should keep reflecting the unresolved problem. */}
-                {hasSyncIssues && (
+                {hasTroubleshootingIssues && (
                   <View style={styles.bannerWrap}>
                     <SyncErrorBanner bleed={spacing.xl} />
                     <Text

@@ -150,6 +150,7 @@ export interface UserSettings {
   sharingDeletionPending: boolean;
   lastPublishedMiles: number | null;
   lastSharedProgressSyncAt: number | null;
+  lastJourneyBackupFileName: string | null;
 }
 
 // Journey segment definition (from distance.md)
