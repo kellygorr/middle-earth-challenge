@@ -54,11 +54,13 @@ export default function DataContent() {
   );
   const hasSharedData =
     sharingEnabled || sharingProvisioningPending || sharingDeletionPending;
-  const syncIssues = useProgressStore(state => state.syncIssues);
-  const clearAllSyncIssues = useProgressStore(
-    state => state.clearAllSyncIssues,
+  const troubleshootingIssues = useProgressStore(
+    state => state.troubleshootingIssues,
   );
-  const hasTrackingHistory = syncIssues.length > 0;
+  const clearAllTroubleshootingIssues = useProgressStore(
+    state => state.clearAllTroubleshootingIssues,
+  );
+  const hasTrackingHistory = troubleshootingIssues.length > 0;
   const hasAllData = hasAnyData || hasSharedData || hasTrackingHistory;
 
   const handleDeleteTrackingHistory = () => {
@@ -70,7 +72,7 @@ export default function DataContent() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => clearAllSyncIssues(),
+          onPress: () => clearAllTroubleshootingIssues(),
         },
       ],
     );
@@ -176,7 +178,7 @@ export default function DataContent() {
             }
 
             await resetDistanceData({ clearAll: true });
-            clearAllSyncIssues();
+            clearAllTroubleshootingIssues();
           },
         },
       ],

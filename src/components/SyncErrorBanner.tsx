@@ -13,10 +13,10 @@ import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
 import type { SyncError, TroubleshootingIssue } from '../stores/progressStore';
 import {
-  orderSyncIssues,
-  syncErrorSlot,
-  type SyncIssueSlot,
-} from '../constants/syncIssues';
+  orderTroubleshootingIssues,
+  troubleshootingIssueSlot,
+  type TroubleshootingIssueSlot,
+} from '../constants/troubleshootingIssues';
 import { typographyThemed } from '../styles/typography';
 import { useUIStore } from '../stores/uiStore';
 import { spacing, borderRadius, iconSizes } from '../styles/global';
@@ -176,10 +176,10 @@ function formatTimestamp(at: number): string {
 
 /**
  * One issue card. Multiple issues can be true at once (a pedometer fault and
- * a health-app fault are independent), so this renders a single `SyncIssue`
+ * a health-app fault are independent), so this renders one troubleshooting issue
  * and the container below decides how they are laid out.
  */
-function SyncIssueCard({
+function TroubleshootingIssueCard({
   issue,
   width,
   onDismiss,
@@ -212,7 +212,9 @@ function SyncIssueCard({
   const unitLabel = useMiles ? 'Miles' : 'Kilometers';
   return (
     <View
-      testID={`sync-issue-card-${syncErrorSlot(lastSyncError)}`}
+      testID={`troubleshooting-issue-card-${troubleshootingIssueSlot(
+        lastSyncError,
+      )}`}
       style={[
         styles.card,
         width === undefined ? null : { width },
@@ -452,7 +454,7 @@ function SyncIssueCard({
 }
 
 /** Headline for an issue, for compact surfaces like the history list. */
-export function getSyncIssueSummary(error: SyncError): string {
+export function getTroubleshootingIssueSummary(error: SyncError): string {
   return getCopy(error)?.headline ?? 'Tracking problem';
 }
 
@@ -472,19 +474,23 @@ const PEEK_WIDTH = spacing.xl;
  * issue history in Settings.
  */
 export default function SyncErrorBanner({ bleed = 0 }: { bleed?: number }) {
-  const syncIssues = useProgressStore(state => state.syncIssues);
-  const dismissSyncIssue = useProgressStore(state => state.dismissSyncIssue);
+  const troubleshootingIssues = useProgressStore(
+    state => state.troubleshootingIssues,
+  );
+  const dismissTroubleshootingIssue = useProgressStore(
+    state => state.dismissTroubleshootingIssue,
+  );
   const [containerWidth, setContainerWidth] = React.useState(0);
 
   const issues = React.useMemo(
     () =>
-      orderSyncIssues(syncIssues).filter(
+      orderTroubleshootingIssues(troubleshootingIssues).filter(
         issue =>
           issue.dismissedAt === null &&
           issue.resolvedAt === null &&
           getCopy(issue.error),
       ),
-    [syncIssues],
+    [troubleshootingIssues],
   );
 
   const onLayout = React.useCallback((event: LayoutChangeEvent) => {
@@ -493,14 +499,15 @@ export default function SyncErrorBanner({ bleed = 0 }: { bleed?: number }) {
 
   if (issues.length === 0) return null;
 
-  const dismiss = (slot: SyncIssueSlot) => () => dismissSyncIssue(slot);
+  const dismiss = (slot: TroubleshootingIssueSlot) => () =>
+    dismissTroubleshootingIssue(slot);
 
   if (issues.length === 1) {
     return (
-      <SyncIssueCard
+      <TroubleshootingIssueCard
         issue={issues[0]}
         width={undefined}
-        onDismiss={dismiss(syncErrorSlot(issues[0].error))}
+        onDismiss={dismiss(troubleshootingIssueSlot(issues[0].error))}
       />
     );
   }
@@ -515,12 +522,12 @@ export default function SyncErrorBanner({ bleed = 0 }: { bleed?: number }) {
 
   return (
     <View
-      testID="sync-issue-carousel"
+      testID="troubleshooting-issue-carousel"
       onLayout={onLayout}
       style={bleed === 0 ? null : { marginHorizontal: -bleed }}
     >
       <ScrollView
-        testID="sync-issue-pager"
+        testID="troubleshooting-issue-pager"
         horizontal
         showsHorizontalScrollIndicator={false}
         decelerationRate="fast"
@@ -534,11 +541,11 @@ export default function SyncErrorBanner({ bleed = 0 }: { bleed?: number }) {
         ]}
       >
         {issues.map(issue => (
-          <SyncIssueCard
-            key={syncErrorSlot(issue.error)}
+          <TroubleshootingIssueCard
+            key={troubleshootingIssueSlot(issue.error)}
             issue={issue}
             width={cardWidth}
-            onDismiss={dismiss(syncErrorSlot(issue.error))}
+            onDismiss={dismiss(troubleshootingIssueSlot(issue.error))}
           />
         ))}
       </ScrollView>

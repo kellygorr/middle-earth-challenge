@@ -13,7 +13,6 @@ import { typographyThemed } from '../styles/typography';
 import { useProgressStore } from '../stores/progressStore';
 import type { SyncError } from '../stores/progressStore';
 import { useFriendProgressStore } from '../stores/friendProgressStore';
-import { getAndroidHealthConnectDiagnostics } from '../services/fitnessService';
 
 import Button, { IconButton, Dropdown } from './Buttons';
 import { DevModeIcon } from '../assets/icons';
@@ -46,7 +45,6 @@ export default function DevView({
     state => state.setFakeParticipantsEnabled,
   );
   const [testMiles, setTestMiles] = useState('');
-  const [healthDiagnosticRunning, setHealthDiagnosticRunning] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   // Fake-sync toggle: lets us preview the catching-up visual without
@@ -95,29 +93,31 @@ export default function DevView({
   // Fake-error buttons: push a synthetic `phase: 'error'` straight into
   // the store so we can iterate on the badge + (forthcoming) banner UI
   // without running a real sync. The store treats this exactly like a
-  // real error: it records a SyncIssue, which lights up the Settings badge.
-  const clearAllSyncIssues = useProgressStore(
-    state => state.clearAllSyncIssues,
+  // real error: it records a troubleshooting issue, which lights up the Settings badge.
+  const clearAllTroubleshootingIssues = useProgressStore(
+    state => state.clearAllTroubleshootingIssues,
   );
-  const addSyncIssue = useProgressStore(state => state.addSyncIssue);
+  const addTroubleshootingIssue = useProgressStore(
+    state => state.addTroubleshootingIssue,
+  );
 
   // Writes straight to the issue list rather than through setSyncStatus, so
   // the three land in different slots without the sync phase overwriting them.
   // Clear first so sticky dismissals from earlier previews cannot hide one.
   const pushThreeFakeErrors = () => {
-    clearAllSyncIssues();
-    addSyncIssue({
+    clearAllTroubleshootingIssues();
+    addTroubleshootingIssue({
       kind: 'pedometerServiceStopped',
       lastCommitAt: Date.now() - 20 * 60 * 60 * 1000,
       staleForMs: 20 * 60 * 60 * 1000,
       manufacturer: 'samsung',
     });
-    addSyncIssue({
+    addTroubleshootingIssue({
       kind: 'sourceFallback',
       unavailableSource: 'health-app',
       activeSource: 'pedometer',
     });
-    addSyncIssue({
+    addTroubleshootingIssue({
       kind: 'provider',
       provider: 'apple-health',
       message: 'forced provider error for testing',
@@ -143,36 +143,8 @@ export default function DevView({
   // status stuck on phase==='error' even though the badge is gone, which
   // confuses any selector reading syncStatus.phase.
   const clearFakeError = () => {
-    clearAllSyncIssues();
+    clearAllTroubleshootingIssues();
     resetSyncStatus();
-  };
-
-  const logHealthConnectDiagnostics = async () => {
-    if (healthDiagnosticRunning) return;
-    setHealthDiagnosticRunning(true);
-    try {
-      const days = [
-        {
-          label: '2026-08-29',
-          start: new Date(2026, 7, 29),
-          end: new Date(2026, 7, 30),
-        },
-        {
-          label: '2026-08-30',
-          start: new Date(2026, 7, 30),
-          end: new Date(2026, 7, 31),
-        },
-      ];
-      const diagnostics = await getAndroidHealthConnectDiagnostics(days);
-      console.log(
-        '[DevView] Health Connect diagnostics',
-        JSON.stringify(diagnostics, null, 2),
-      );
-    } catch (error) {
-      console.warn('[DevView] Health Connect diagnostics failed', error);
-    } finally {
-      setHealthDiagnosticRunning(false);
-    }
   };
 
   const [selectedErrLabel, setSelectedErrLabel] = useState<string | null>(null);
@@ -285,16 +257,6 @@ export default function DevView({
         >
           {fakeSyncActive ? 'Stop fake sync' : 'Fake sync'}
         </Button>
-        {__DEV__ && (
-          <Button
-            onPress={logHealthConnectDiagnostics}
-            variant="outline"
-            size="default"
-            disabled={healthDiagnosticRunning}
-          >
-            {healthDiagnosticRunning ? 'Logging HC...' : 'Log HC Aug 29-30'}
-          </Button>
-        )}
       </View>
       {/* Fake-error buttons are strictly a developer-facing UI harness
           (they let us preview error banners without triggering real sync

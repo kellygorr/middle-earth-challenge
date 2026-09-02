@@ -66,6 +66,7 @@ interface SettingsStore extends UserSettings {
       >
     >,
   ) => Promise<void>;
+  setLastJourneyBackupFileName: (fileName: string | null) => Promise<void>;
   loadSettings: () => Promise<void>;
 }
 
@@ -104,6 +105,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   sharingDeletionPending: false,
   lastPublishedMiles: null,
   lastSharedProgressSyncAt: null,
+  lastJourneyBackupFileName: null,
 
   // Actions - each setter also persists to database
   setLabelSize: size => {
@@ -175,6 +177,11 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     set(updates);
   },
 
+  setLastJourneyBackupFileName: async fileName => {
+    await database.updateUserSettings({ lastJourneyBackupFileName: fileName });
+    set({ lastJourneyBackupFileName: fileName });
+  },
+
   loadSettings: async () => {
     const settings = await database.getUserSettings();
     set({
@@ -212,6 +219,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
       sharingDeletionPending: settings.sharingDeletionPending ?? false,
       lastPublishedMiles: settings.lastPublishedMiles ?? null,
       lastSharedProgressSyncAt: settings.lastSharedProgressSyncAt ?? null,
+      lastJourneyBackupFileName: settings.lastJourneyBackupFileName ?? null,
       isLoaded: true,
     });
   },

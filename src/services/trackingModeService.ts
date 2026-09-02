@@ -147,7 +147,7 @@ async function performTrackingModeSwitch(
   });
   progress.setLastSyncDate(new Date().toISOString());
   progress.resetSyncStatus();
-  progress.clearAllSyncIssues();
+  progress.clearAllTroubleshootingIssues();
 
   if (usesPedometer(mode)) {
     if (!pedometerService.isSupported()) {
@@ -277,9 +277,9 @@ export async function ensureTrackingModeRunning(): Promise<void> {
         },
       });
     } else if (
-      progress.syncIssues.some(issue => issue.error.kind === 'pedometerStorage')
+      progress.troubleshootingIssues.some(issue => issue.error.kind === 'pedometerStorage')
     ) {
-      progress.resolveSyncIssue('pedometer');
+      progress.resolveTroubleshootingIssue('pedometer');
     }
 
     // Matches the selection-time gate in SyncContentAndroid: both
@@ -441,7 +441,7 @@ export async function ensureTrackingModeRunning(): Promise<void> {
         serviceRunning: running,
       });
       if (commitHealth.status === 'service-stopped') {
-        progress.addSyncIssue({
+        progress.addTroubleshootingIssue({
           kind: 'pedometerServiceStopped',
           lastCommitAt: commitHealth.lastCommitAt,
           staleForMs: commitHealth.staleForMs,
@@ -449,11 +449,11 @@ export async function ensureTrackingModeRunning(): Promise<void> {
         });
       } else if (
         commitHealth.status === 'ok' &&
-        progress.syncIssues.some(
+        progress.troubleshootingIssues.some(
           issue => issue.error.kind === 'pedometerServiceStopped',
         )
       ) {
-        progress.resolveSyncIssue('pedometer');
+        progress.resolveTroubleshootingIssue('pedometer');
       }
     } else if (running) {
       // Persisted off-state is the user's intent. Mark cleanup before
