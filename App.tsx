@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import {
@@ -32,23 +32,81 @@ import { ensureTrackingModeRunning } from './src/services/trackingModeService';
 import { initializeFirebaseAppCheck } from './src/services/firebaseAppCheck';
 
 const Stack = createStackNavigator();
+const MAP_READY_TIMEOUT_MS = 1500;
 
 type BootstrapStatus = 'loading' | 'ready' | 'error';
+
+export function getSplashStatus({
+  bootstrapStatus,
+  mapReady,
+  mapReadyTimedOut,
+}: {
+  bootstrapStatus: BootstrapStatus;
+  mapReady: boolean;
+  mapReadyTimedOut: boolean;
+}): BootstrapStatus {
+  if (bootstrapStatus === 'error') return 'error';
+  if (bootstrapStatus === 'ready' && (mapReady || mapReadyTimedOut)) {
+    return 'ready';
+  }
+  return 'loading';
+}
+
+export function shouldShowWelcomeModal({
+  bootstrapStatus,
+  splashHidden,
+  showWelcome,
+}: {
+  bootstrapStatus: BootstrapStatus;
+  splashHidden: boolean;
+  showWelcome: boolean;
+}): boolean {
+  return bootstrapStatus === 'ready' && splashHidden && showWelcome;
+}
 
 export async function runRecoverableBootstrapStep(
   name: string,
   operation: () => void | Promise<void>,
 ): Promise<void> {
+  const start = Date.now();
+  console.log(`[App] initApp: ${name} start`);
   try {
     await operation();
-    console.log(`[App] initApp: ${name} ready`);
+    console.log(`[App] initApp: ${name} ready in ${Date.now() - start}ms`);
   } catch (error) {
-    console.warn(`[App] initApp: ${name} failed:`, error);
+    console.warn(
+      `[App] initApp: ${name} failed in ${Date.now() - start}ms:`,
+      error,
+    );
+  }
+}
+
+async function runRequiredBootstrapStep(
+  name: string,
+  operation: () => void | Promise<void>,
+): Promise<void> {
+  const start = Date.now();
+  console.log(`[App] initApp: ${name} start`);
+  try {
+    await operation();
+    console.log(`[App] initApp: ${name} ready in ${Date.now() - start}ms`);
+  } catch (error) {
+    console.error(
+      `[App] initApp: ${name} failed in ${Date.now() - start}ms:`,
+      error,
+    );
+    throw error;
   }
 }
 
 // Splash overlay - root level, fades out only after successful hydration
-export function SplashOverlay({ status }: { status: BootstrapStatus }) {
+export function SplashOverlay({
+  status,
+  onHidden,
+}: {
+  status: BootstrapStatus;
+  onHidden?: () => void;
+}) {
   const theme = useTheme();
   const [visible, setVisible] = useState(true);
   const [showSpinner, setShowSpinner] = useState(false);
@@ -69,6 +127,7 @@ export function SplashOverlay({ status }: { status: BootstrapStatus }) {
 
     if (status === 'error') {
       setVisible(false);
+      onHidden?.();
       return;
     }
 
@@ -82,6 +141,7 @@ export function SplashOverlay({ status }: { status: BootstrapStatus }) {
     animation.start(({ finished }) => {
       if (finished) {
         setVisible(false);
+        onHidden?.();
       }
     });
 
@@ -91,7 +151,7 @@ export function SplashOverlay({ status }: { status: BootstrapStatus }) {
         activeAnimation.current = null;
       }
     };
-  }, [status, opacity]);
+  }, [status, opacity, onHidden]);
 
   if (!visible) return null;
 
@@ -121,6 +181,9 @@ function App(): React.JSX.Element {
   const [bootstrapStatus, setBootstrapStatus] =
     useState<BootstrapStatus>('loading');
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapReadyTimedOut, setMapReadyTimedOut] = useState(false);
+  const [splashHidden, setSplashHidden] = useState(false);
   const setPhase = useInitializationStore(state => state.setPhase);
 
   const showWelcome = useSettingsStore(state => state.showWelcome);
@@ -140,6 +203,9 @@ function App(): React.JSX.Element {
     const initApp = async () => {
       console.log('[App] initApp: start');
       setBootstrapStatus('loading');
+      setMapReady(false);
+      setMapReadyTimedOut(false);
+      setSplashHidden(false);
       setPhase('loading');
 
       await runRecoverableBootstrapStep('Firebase App Check', () =>
@@ -147,13 +213,12 @@ function App(): React.JSX.Element {
       );
 
       try {
-        await database.init();
-        console.log('[App] initApp: db ready');
-        await loadSettings();
-        console.log('[App] initApp: settings loaded');
+        await runRequiredBootstrapStep('database.init', () => database.init());
+        await runRequiredBootstrapStep('loadSettings', () => loadSettings());
         // Initialize progress store from database (single source of truth)
-        await initFromDatabase();
-        console.log('[App] initApp: progress loaded');
+        await runRequiredBootstrapStep('initFromDatabase', () =>
+          initFromDatabase(),
+        );
       } catch (error) {
         console.error('Failed to initialize app:', error);
         if (!cancelled) {
@@ -183,6 +248,47 @@ function App(): React.JSX.Element {
       cancelled = true;
     };
   }, [bootstrapAttempt, loadSettings, initFromDatabase, setPhase]);
+
+  useEffect(() => {
+    if (bootstrapStatus !== 'ready' || mapReady) return;
+
+    const timer = setTimeout(() => {
+      console.warn('[App] Map visual readiness timed out');
+      setMapReadyTimedOut(true);
+    }, MAP_READY_TIMEOUT_MS);
+
+    return () => clearTimeout(timer);
+  }, [bootstrapStatus, mapReady]);
+
+  const handleMapReady = useCallback(() => {
+    setMapReady(true);
+  }, []);
+
+  const handleSplashHidden = useCallback(() => {
+    setSplashHidden(true);
+  }, []);
+
+  const splashStatus = getSplashStatus({
+    bootstrapStatus,
+    mapReady,
+    mapReadyTimedOut,
+  });
+
+  useEffect(() => {
+    console.log('[App] splash state', {
+      bootstrapStatus,
+      mapReady,
+      mapReadyTimedOut,
+      splashStatus,
+      splashHidden,
+    });
+  }, [
+    bootstrapStatus,
+    mapReady,
+    mapReadyTimedOut,
+    splashStatus,
+    splashHidden,
+  ]);
 
   // Re-reconcile tracking-mode state whenever the app returns to the
   // foreground. Catches: user granted/revoked ACTIVITY_RECOGNITION in
@@ -214,12 +320,24 @@ function App(): React.JSX.Element {
               headerShown: false,
             }}
           >
-            <Stack.Screen name="Map" component={MapScreen} />
+            <Stack.Screen name="Map">
+              {() => (
+                <MapScreen
+                  mapReadyEnabled={bootstrapStatus === 'ready'}
+                  mapReadyToken={bootstrapAttempt}
+                  onMapReady={handleMapReady}
+                />
+              )}
+            </Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
 
         {/* Global Modals */}
-        {bootstrapStatus === 'ready' && showWelcome && (
+        {shouldShowWelcomeModal({
+          bootstrapStatus,
+          splashHidden,
+          showWelcome,
+        }) && (
           <WelcomeModal
             visible={showWelcome}
             onDismiss={() => {
@@ -279,7 +397,7 @@ function App(): React.JSX.Element {
         )}
 
         {/* Splash - rendered LAST, hides everything until loading completes */}
-        <SplashOverlay status={bootstrapStatus} />
+        <SplashOverlay status={splashStatus} onHidden={handleSplashHidden} />
       </View>
     </SafeAreaProvider>
   );
