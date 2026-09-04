@@ -185,9 +185,13 @@ const mergeTroubleshootingIssue = (
 ): TroubleshootingIssue[] => {
   const replaced = supersededTroubleshootingIssueSlots(error);
   const slot = troubleshootingIssueSlot(error);
-  const previous = issues.find(issue => troubleshootingIssueSlot(issue.error) === slot);
+  const previous = issues.find(
+    issue => troubleshootingIssueSlot(issue.error) === slot,
+  );
   return [
-    ...issues.filter(issue => !replaced.includes(troubleshootingIssueSlot(issue.error))),
+    ...issues.filter(
+      issue => !replaced.includes(troubleshootingIssueSlot(issue.error)),
+    ),
     {
       error,
       at: Date.now(),
@@ -224,10 +228,10 @@ interface ProgressStore {
   lastSyncDate: string | null;
   syncStatus: SyncStatus;
   /**
-  * Persisted troubleshooting issues (until dismissed) so they remain discoverable
+   * Persisted troubleshooting issues (until dismissed) so they remain discoverable
    * after the transient pill fades. At most one entry per slot, because
    * failures cascade within a subsystem but are independent across them --
-  * see `src/constants/troubleshootingIssues.ts`.
+   * see `src/constants/troubleshootingIssues.ts`.
    */
   troubleshootingIssues: TroubleshootingIssue[];
   // Dev/test override state
@@ -513,7 +517,8 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   dismissTroubleshootingIssue: slot =>
     set(state => {
       const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
-        troubleshootingIssueSlot(issue.error) === slot && issue.dismissedAt === null
+        troubleshootingIssueSlot(issue.error) === slot &&
+        issue.dismissedAt === null
           ? { ...issue, dismissedAt: Date.now() }
           : issue,
       );

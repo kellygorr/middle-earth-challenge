@@ -277,7 +277,9 @@ export async function ensureTrackingModeRunning(): Promise<void> {
         },
       });
     } else if (
-      progress.troubleshootingIssues.some(issue => issue.error.kind === 'pedometerStorage')
+      progress.troubleshootingIssues.some(
+        issue => issue.error.kind === 'pedometerStorage',
+      )
     ) {
       progress.resolveTroubleshootingIssue('pedometer');
     }

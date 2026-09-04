@@ -131,11 +131,15 @@ describe('progressStore durability', () => {
     });
 
     expect(useProgressStore.getState().troubleshootingIssues).toHaveLength(1);
-    expect(useProgressStore.getState().troubleshootingIssues[0].error).toMatchObject({
+    expect(
+      useProgressStore.getState().troubleshootingIssues[0].error,
+    ).toMatchObject({
       kind: 'provider',
       provider: 'health-connect',
     });
-    expect(useProgressStore.getState().troubleshootingIssues[0].at).toBeGreaterThan(0);
+    expect(
+      useProgressStore.getState().troubleshootingIssues[0].at,
+    ).toBeGreaterThan(0);
   });
 
   describe('sync issue lifecycle', () => {
@@ -148,7 +152,8 @@ describe('progressStore durability', () => {
     it('keeps dismissal sticky when the same fault recurs', () => {
       useProgressStore.getState().addTroubleshootingIssue(providerError);
       useProgressStore.getState().dismissTroubleshootingIssue('health-app');
-      const dismissedAt = useProgressStore.getState().troubleshootingIssues[0].dismissedAt;
+      const dismissedAt =
+        useProgressStore.getState().troubleshootingIssues[0].dismissedAt;
 
       useProgressStore.getState().addTroubleshootingIssue({
         ...providerError,
@@ -156,7 +161,9 @@ describe('progressStore durability', () => {
       });
 
       expect(dismissedAt).not.toBeNull();
-      expect(useProgressStore.getState().troubleshootingIssues[0]).toMatchObject({
+      expect(
+        useProgressStore.getState().troubleshootingIssues[0],
+      ).toMatchObject({
         error: { kind: 'provider', message: 'failed again' },
         dismissedAt,
         resolvedAt: null,
@@ -194,7 +201,9 @@ describe('progressStore durability', () => {
       useProgressStore.getState().dismissTroubleshootingIssue('health-app');
       useProgressStore.getState().resolveTroubleshootingIssue('health-app');
 
-      expect(useProgressStore.getState().troubleshootingIssues[0]).toMatchObject({
+      expect(
+        useProgressStore.getState().troubleshootingIssues[0],
+      ).toMatchObject({
         dismissedAt: expect.any(Number),
         resolvedAt: null,
       });
@@ -206,7 +215,9 @@ describe('progressStore durability', () => {
 
       useProgressStore.getState().restoreTroubleshootingIssue('health-app');
 
-      expect(useProgressStore.getState().troubleshootingIssues[0]).toMatchObject({
+      expect(
+        useProgressStore.getState().troubleshootingIssues[0],
+      ).toMatchObject({
         dismissedAt: null,
         resolvedAt: null,
       });

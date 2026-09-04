@@ -121,7 +121,17 @@ const findPathRevealStart = ({
   return 0;
 };
 
-export default function MapScreen() {
+interface MapScreenProps {
+  mapReadyEnabled?: boolean;
+  mapReadyToken?: number;
+  onMapReady?: () => void;
+}
+
+export default function MapScreen({
+  mapReadyEnabled = false,
+  mapReadyToken = 0,
+  onMapReady,
+}: MapScreenProps = {}) {
   const theme = useTheme();
   const { width, height } = useReactiveDimensions(); // reactive
   const insets = useSafeAreaInsets();
@@ -334,6 +344,7 @@ export default function MapScreen() {
   const autoOpenRef = useRef(false);
   // Info button + tooltip managed in infoStore
   const infoButtonRef = useRef<any>(null);
+  const reportedMapReadyTokenRef = useRef<number | null>(null);
   // Removed prevMilesRef; selection is store-driven
   // Observe miles changes moved to infoStore
   // (No extra activation guards; equality-based activation below)
@@ -503,6 +514,40 @@ export default function MapScreen() {
     width,
     height,
   );
+
+  useEffect(() => {
+    if (!mapReadyEnabled || !onMapReady) return;
+    if (reportedMapReadyTokenRef.current === mapReadyToken) return;
+    if (width <= 0 || height <= 0 || mapWidth <= 0 || mapHeight <= 0) return;
+
+    const frame = requestAnimationFrame(() => {
+      reportedMapReadyTokenRef.current = mapReadyToken;
+      console.log('[MapScreen] visual ready', {
+        width,
+        height,
+        mapWidth,
+        mapHeight,
+        miles,
+        colorizeMap,
+        reducedMapTitles,
+      });
+      onMapReady();
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [
+    mapReadyEnabled,
+    mapReadyToken,
+    onMapReady,
+    width,
+    height,
+    mapWidth,
+    mapHeight,
+    miles,
+    colorizeMap,
+    reducedMapTitles,
+    theme.name,
+  ]);
 
   // Keyboard offset handled by useKeyboardOffset
 

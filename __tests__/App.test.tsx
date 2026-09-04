@@ -12,7 +12,12 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import App, { runRecoverableBootstrapStep, SplashOverlay } from '../App';
+import App, {
+  getSplashStatus,
+  runRecoverableBootstrapStep,
+  shouldShowWelcomeModal,
+  SplashOverlay,
+} from '../App';
 import { database } from '../src/services/database';
 import { useInitializationStore } from '../src/stores/initializationStore';
 import { useProgressStore } from '../src/stores/progressStore';
@@ -104,6 +109,54 @@ test('keeps the splash until required bootstrap steps complete', async () => {
     expect(useInitializationStore.getState().phase).toBe('ready'),
   );
   expect(consoleError).not.toHaveBeenCalled();
+});
+
+test('allows splash to hide after map readiness or its timeout fallback', () => {
+  expect(
+    getSplashStatus({
+      bootstrapStatus: 'ready',
+      mapReady: false,
+      mapReadyTimedOut: false,
+    }),
+  ).toBe('loading');
+  expect(
+    getSplashStatus({
+      bootstrapStatus: 'ready',
+      mapReady: true,
+      mapReadyTimedOut: false,
+    }),
+  ).toBe('ready');
+  expect(
+    getSplashStatus({
+      bootstrapStatus: 'ready',
+      mapReady: false,
+      mapReadyTimedOut: true,
+    }),
+  ).toBe('ready');
+});
+
+test('shows welcome only after bootstrap is ready and splash is hidden', () => {
+  expect(
+    shouldShowWelcomeModal({
+      bootstrapStatus: 'loading',
+      splashHidden: true,
+      showWelcome: true,
+    }),
+  ).toBe(false);
+  expect(
+    shouldShowWelcomeModal({
+      bootstrapStatus: 'ready',
+      splashHidden: false,
+      showWelcome: true,
+    }),
+  ).toBe(false);
+  expect(
+    shouldShowWelcomeModal({
+      bootstrapStatus: 'ready',
+      splashHidden: true,
+      showWelcome: true,
+    }),
+  ).toBe(true);
 });
 
 test('shows bootstrap failure and reaches readiness only after retry succeeds', async () => {

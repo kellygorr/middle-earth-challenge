@@ -119,9 +119,7 @@ describe('SyncErrorBanner', () => {
       screen.getByTestId('troubleshooting-issue-pager').props.snapToInterval,
     ).toBe(320);
 
-    const noticeCard = screen.getByTestId(
-      'troubleshooting-issue-card-notice',
-    );
+    const noticeCard = screen.getByTestId('troubleshooting-issue-card-notice');
     await userEvent
       .setup()
       .press(within(noticeCard).getByLabelText('Dismiss sync error'));
@@ -129,7 +127,9 @@ describe('SyncErrorBanner', () => {
     expect(
       useProgressStore
         .getState()
-        .troubleshootingIssues.find(issue => issue.error.kind === 'sourceFallback'),
+        .troubleshootingIssues.find(
+          issue => issue.error.kind === 'sourceFallback',
+        ),
     ).toMatchObject({ dismissedAt: expect.any(Number) });
     expect(
       useProgressStore
