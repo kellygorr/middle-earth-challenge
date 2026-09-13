@@ -304,6 +304,7 @@ interface ProgressStore {
   isExactlyOnCheckpoint: () => number; // returns exact index or -1
   isLatestCheckpoint: (checkpointIndex: number) => boolean;
   isLockedCheckpoint: (targetMiles: number) => boolean;
+  isNextLockedCheckpoint: (targetMiles: number) => boolean;
   shouldShowCheckpointCelebration: (checkpointIndex: number) => boolean;
   // New selectors
   getCurrentCheckpoint: () => PointType | null;
@@ -657,6 +658,23 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   isLockedCheckpoint: targetMiles => {
     const miles = get().getDisplayMiles();
     return miles < (targetMiles ?? 0);
+  },
+
+  // Whether this is the single *immediate* next locked checkpoint — the
+  // closest one still ahead — as opposed to any other locked checkpoint
+  // further down the road. Used to give just that one checkpoint a distinct
+  // highlight (map dot color, info-modal accent) instead of the generic
+  // locked treatment every other future checkpoint gets. `checkpoints` is
+  // ascending by CUMULATIVE_MILES, so the first one still ahead of the
+  // traveler is unambiguous.
+  isNextLockedCheckpoint: targetMiles => {
+    const miles = get().getDisplayMiles();
+    const nextIdx = checkpoints.findIndex(
+      cp => (cp?.CUMULATIVE_MILES ?? 0) > miles,
+    );
+    return (
+      nextIdx >= 0 && checkpoints[nextIdx]?.CUMULATIVE_MILES === targetMiles
+    );
   },
 
   // New selectors

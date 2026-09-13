@@ -109,14 +109,24 @@ describe('useLivePedometerDelta', () => {
       useLivePedometerDeltaOwner();
       return useLivePedometerDelta();
     });
+
+    // Changing the watermark tears down the old effect (which resets the
+    // in-flight guard along with the generation counter) and immediately
+    // starts a fresh refresh() in the new one, without waiting for the
+    // still-pending stale request to settle first.
     await act(() => {
       useSettingsStore.setState({ lastSyncTimestamp: 200 });
     });
+    expect(mockGetStepsBetween).toHaveBeenCalledTimes(2);
+    expect(result.current).toBe(9);
+
+    // The stale request finally resolving afterward must not clobber the
+    // already-correct value with its outdated result.
     await act(async () => {
       staleRead.resolve({ steps: 99, fromMs: 100, toMs: 200 });
       await staleRead.promise;
     });
-    expect(result.current).toBe(0);
+    expect(result.current).toBe(9);
 
     await act(async () => {
       jest.advanceTimersByTime(PEDOMETER_DISPLAY_REFRESH_MS);
@@ -148,5 +158,44 @@ describe('useLivePedometerDelta', () => {
       await pendingRead.promise;
     });
     expect(useLivePedometerDeltaStore.getState().steps).toBe(0);
+  });
+
+  it('does not permanently block refresh() when a request never settles before the watermark changes', async () => {
+    // Regression test: if the effect's cleanup only bumped the generation
+    // counter and didn't also reset the in-flight guard, a request that
+    // never resolves at all (not just late) would leave inFlightRef stuck
+    // forever, silently blocking every future refresh() call across this
+    // hook's re-runs -- even after a mode/watermark switch spins up a
+    // brand-new polling interval.
+    const neverSettles = new Promise<{
+      steps: number;
+      fromMs: number;
+      toMs: number;
+    }>(() => {});
+    mockGetStepsBetween
+      .mockReturnValueOnce(neverSettles)
+      .mockResolvedValue({ steps: 7, fromMs: 200, toMs: 300 });
+
+    const { result } = await renderHook(() => {
+      useLivePedometerDeltaOwner();
+      return useLivePedometerDelta();
+    });
+    expect(mockGetStepsBetween).toHaveBeenCalledTimes(1);
+
+    // Changing the watermark tears down and re-creates the effect while the
+    // first request is still (and will remain) permanently pending. The new
+    // effect's own refresh() runs immediately on mount -- if the guard were
+    // left stuck by the old, abandoned promise, this call would never
+    // happen and the value would freeze at its prior state forever.
+    await act(() => {
+      useSettingsStore.setState({ lastSyncTimestamp: 200 });
+    });
+
+    expect(mockGetStepsBetween).toHaveBeenCalledTimes(2);
+    expect(mockGetStepsBetween).toHaveBeenLastCalledWith(
+      200,
+      expect.any(Number),
+    );
+    expect(result.current).toBe(7);
   });
 });

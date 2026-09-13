@@ -1,12 +1,16 @@
 import { NativeModules, Platform } from 'react-native';
-import type { DistanceEntry, DistanceSource, LabelSize, TextSize } from '../types';
+import type {
+  DistanceEntry,
+  DistanceSource,
+  LabelSize,
+  TextSize,
+} from '../types';
 import type { ThemeName } from '../styles/themes';
 import { database, type JourneyBackup } from './database';
 import { useProgressStore } from '../stores/progressStore';
 import type { TroubleshootingIssue } from '../stores/progressStore';
 import { useSettingsStore } from '../stores/settingsStore';
-
-const BACKUP_SCHEMA_VERSION = 1;
+import { friendProgressService } from './friendProgressService';
 
 interface JourneyDataTransferNativeModule {
   exportJson(fileName: string, content: string): Promise<string | null>;
@@ -50,6 +54,11 @@ function requireString(value: unknown, label: string): string {
 function requireBoolean(value: unknown, label: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`Invalid backup: ${label}`);
   return value;
+}
+
+function requireNullableString(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return requireString(value, label);
 }
 
 function requireNumber(value: unknown, label: string): number {
@@ -121,7 +130,7 @@ function parseBackup(content: string): JourneyBackup {
   if (parsed.app !== 'MiddleEarthChallenge') {
     throw new Error('Invalid backup: not a Middle Earth Challenge backup.');
   }
-  if (parsed.schemaVersion !== BACKUP_SCHEMA_VERSION) {
+  if (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) {
     throw new Error('Invalid backup: unsupported backup version.');
   }
   if (!isRecord(parsed.settings)) {
@@ -139,9 +148,40 @@ function parseBackup(content: string): JourneyBackup {
   }
 
   const settings = parsed.settings;
+  let sharing: JourneyBackup['sharing'];
+  if (parsed.schemaVersion === 2) {
+    if (!isRecord(parsed.sharing)) {
+      throw new Error('Invalid backup: sharing settings');
+    }
+    const enabled = requireBoolean(parsed.sharing.enabled, 'sharing enabled');
+    const userId = requireNullableString(parsed.sharing.userId, 'sharing user');
+    const displayName = requireNullableString(
+      parsed.sharing.displayName,
+      'sharing display name',
+    );
+    const affinity =
+      parsed.sharing.affinity === null
+        ? null
+        : requireEnum(
+            parsed.sharing.affinity,
+            new Set([
+              'woodland',
+              'river',
+              'hills',
+              'coast',
+              'cottage',
+            ] as const),
+            'sharing affinity',
+          );
+    if (enabled && (!userId || !displayName || !affinity)) {
+      throw new Error('Invalid backup: active sharing profile is incomplete');
+    }
+    sharing = { enabled, userId, displayName, affinity };
+  }
+
   return {
     app: 'MiddleEarthChallenge',
-    schemaVersion: BACKUP_SCHEMA_VERSION,
+    schemaVersion: parsed.schemaVersion,
     exportedAt: requireString(parsed.exportedAt, 'exported date'),
     settings: {
       labelSize: requireEnum(settings.labelSize, labelSizes, 'label size'),
@@ -151,15 +191,9 @@ function parseBackup(content: string): JourneyBackup {
         themes,
         'theme',
       ) as JourneyBackup['settings']['currentTheme'],
-      showPointLabels: requireBoolean(
-        settings.showPointLabels,
-        'point labels',
-      ),
+      showPointLabels: requireBoolean(settings.showPointLabels, 'point labels'),
       colorizeMap: requireBoolean(settings.colorizeMap, 'map color'),
-      reducedMapTitles: requireBoolean(
-        settings.reducedMapTitles,
-        'map titles',
-      ),
+      reducedMapTitles: requireBoolean(settings.reducedMapTitles, 'map titles'),
       devMode: requireBoolean(settings.devMode, 'dev mode'),
       useMiles: requireBoolean(settings.useMiles, 'distance units'),
       lastNotifiedCheckpointIndex: Math.round(
@@ -171,6 +205,7 @@ function parseBackup(content: string): JourneyBackup {
     },
     distanceEntries: parsed.distanceEntries.map(parseDistanceEntry),
     troubleshootingIssues: troubleshootingIssues.map(parseTroubleshootingIssue),
+    sharing,
   };
 }
 
@@ -184,7 +219,8 @@ export function backupFileName(): string {
 
 export async function exportJourneyData(): Promise<string | null> {
   const transfer = assertTransferAvailable();
-  const backup = await database.exportJourneyBackup();
+  const sharingUserId = await friendProgressService.getCurrentUserId();
+  const backup = await database.exportJourneyBackup(sharingUserId);
   const fileName = backupFileName();
   const saved = await transfer.exportJson(
     fileName,

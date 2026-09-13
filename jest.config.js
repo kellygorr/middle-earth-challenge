@@ -9,4 +9,8 @@ module.exports = {
   },
   globalSetup: '<rootDir>/jest.globalSetup.js',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  // Firestore rules tests run against a live emulator with their own Jest
+  // project (see jest.rules.config.js / test:rules) and must not be picked
+  // up here.
+  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/firestore-tests/'],
 };

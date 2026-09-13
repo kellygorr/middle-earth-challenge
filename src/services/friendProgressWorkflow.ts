@@ -14,6 +14,7 @@ interface FriendProgressServiceActions {
   ) => Promise<void>;
   updateFriendDistance: (distanceMiles: number) => Promise<void>;
   deleteFriendProgress: () => Promise<void>;
+  deleteFriendProgressByUserId: (userId: string) => Promise<void>;
 }
 
 type SharingSettings = Pick<
@@ -23,6 +24,7 @@ type SharingSettings = Pick<
   | 'sharingAffinity'
   | 'sharingProvisioningPending'
   | 'sharingDeletionPending'
+  | 'sharingMigrationSourceUserId'
   | 'lastPublishedMiles'
   | 'updateSharingSettings'
 >;
@@ -146,11 +148,38 @@ export const createFriendProgressWorkflow = ({
     if (syncInFlight) return syncInFlight;
 
     syncInFlight = (async () => {
-      const settings = getSettings();
+      let settings = getSettings();
 
       if (settings.sharingDeletionPending) {
         await finishDeletion();
         return;
+      }
+      if (settings.sharingMigrationSourceUserId) {
+        await service.deleteFriendProgressByUserId(
+          settings.sharingMigrationSourceUserId,
+        );
+
+        const importedProfilePending =
+          !settings.sharingEnabled &&
+          settings.sharingProvisioningPending &&
+          settings.lastPublishedMiles === null;
+        if (importedProfilePending) {
+          if (!settings.sharingDisplayName || !settings.sharingAffinity) {
+            throw new Error('Imported shared progress profile is incomplete');
+          }
+          await finishProvisioning(
+            settings.sharingDisplayName,
+            distanceMiles,
+            settings.sharingAffinity,
+          );
+        }
+        await getSettings().updateSharingSettings({
+          sharingMigrationSourceUserId: null,
+        });
+        // Re-read settings: the migration branch above may have already
+        // completed provisioning, and the pre-migration snapshot would
+        // otherwise cause a duplicate provisioning pass below.
+        settings = getSettings();
       }
       if (settings.sharingProvisioningPending) {
         if (!settings.sharingDisplayName || !settings.sharingAffinity) {

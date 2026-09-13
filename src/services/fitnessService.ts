@@ -6,6 +6,8 @@ import {
   milesToMeters,
   milesToSteps,
 } from '../utils/stride';
+import { withTimeout } from '../utils/withTimeout';
+import { HEALTH_CONNECT_PERMISSION_CHECK_TIMEOUT_MS } from '../constants/sync';
 
 /**
  * Fitness service abstraction layer
@@ -615,25 +617,40 @@ class FitnessService implements FitnessServiceInterface {
    * Passive Health Connect grant check for lifecycle reconciliation.
    * `unknown` means the provider could not be queried, so callers must not
    * interpret it as a revoke or change the user's selected sources.
+   *
+   * Bounded with a timeout: this is called during app bootstrap
+   * (trackingModeService's ensureTrackingModeRunning), and a cold-starting
+   * or mid-update Health Connect provider can stall its binder calls well
+   * past any interactive wait. A timeout here is safe specifically because
+   * this function is a pure read with no side effects — on timeout it
+   * returns 'unknown', the exact same safe fallback its own catch block
+   * already returns for any other failure, and an abandoned late
+   * resolution of the real native calls has nothing left to act on it.
    */
   async getHealthConnectPermissionState(): Promise<
     'granted' | 'revoked' | 'unknown'
   > {
     if (Platform.OS !== 'android') return 'unknown';
     try {
-      const hc = await getHealthConnectModule();
-      if (!hc) return 'unknown';
-      // initialize() is idempotent and required before querying grants.
-      const initialized = await hc.initialize();
-      if (!initialized) return 'unknown';
-      const granted = await hc.getGrantedPermissions();
-      return granted.some(
-        p =>
-          p.accessType === 'read' &&
-          (p.recordType === 'Distance' || p.recordType === 'Steps'),
-      )
-        ? 'granted'
-        : 'revoked';
+      return await withTimeout(
+        (async () => {
+          const hc = await getHealthConnectModule();
+          if (!hc) return 'unknown' as const;
+          // initialize() is idempotent and required before querying grants.
+          const initialized = await hc.initialize();
+          if (!initialized) return 'unknown' as const;
+          const granted = await hc.getGrantedPermissions();
+          return granted.some(
+            p =>
+              p.accessType === 'read' &&
+              (p.recordType === 'Distance' || p.recordType === 'Steps'),
+          )
+            ? ('granted' as const)
+            : ('revoked' as const);
+        })(),
+        HEALTH_CONNECT_PERMISSION_CHECK_TIMEOUT_MS,
+        'health-connect-permission-check-timeout',
+      );
     } catch (error) {
       console.warn('[FitnessService] getHealthConnectPermissionState:', error);
       return 'unknown';

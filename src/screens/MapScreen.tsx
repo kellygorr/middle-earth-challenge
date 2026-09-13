@@ -307,11 +307,12 @@ export default function MapScreen({
       issue => issue.dismissedAt === null && issue.resolvedAt === null,
     ),
   );
+  const startupShowWelcome = phase === 'loading' || showWelcome;
 
   // Initial animation
   const { initialBasePathProgress, settingsEnterStyle, infoEnterStyle } =
     useInitialAnimation({
-      showWelcome,
+      showWelcome: startupShowWelcome,
       pathRevealStart,
       isSyncing,
       recenterOpacity,

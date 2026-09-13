@@ -13,12 +13,33 @@ const usesPedometer = (mode: TrackingMode) =>
 
 let trackingModeTransitionsInProgress = 0;
 
+// Bootstrap only logs the total duration of the outer "tracking mode" step
+// (see App.tsx's runRecoverableBootstrapStep), which is not enough to tell
+// *which* native call inside this file is slow if that step ever takes an
+// unexpectedly long time again (as observed once after an app update, never
+// conclusively diagnosed). This wraps each native/async boundary here with
+// its own start/duration log so a recurrence points at a specific call.
+async function timedStep<T>(label: string, operation: () => Promise<T>): Promise<T> {
+  const start = Date.now();
+  console.log(`[trackingMode] ${label} start`);
+  try {
+    const result = await operation();
+    console.log(`[trackingMode] ${label} done in ${Date.now() - start}ms`);
+    return result;
+  } catch (error) {
+    console.log(`[trackingMode] ${label} failed in ${Date.now() - start}ms`);
+    throw error;
+  }
+}
+
 export async function completePendingPedometerCleanup(): Promise<boolean> {
   const settings = useSettingsStore.getState();
   if (!settings.pedometerCleanupPending) return true;
 
   try {
-    const stopped = await pedometerService.stopTracking();
+    const stopped = await timedStep('stopTracking', () =>
+      pedometerService.stopTracking(),
+    );
     if (!stopped) return false;
     await useSettingsStore.getState().updateSyncSettings({
       pedometerCleanupPending: false,
@@ -252,7 +273,9 @@ export async function ensureTrackingModeRunning(): Promise<void> {
 
   try {
     if (!usesPedometer(settings.trackingMode)) {
-      if (await pedometerService.isServiceRunning()) {
+      if (await timedStep('isServiceRunning(non-pedometer)', () =>
+        pedometerService.isServiceRunning(),
+      )) {
         await settings.updateSyncSettings({
           pedometerCleanupPending: true,
         });
@@ -261,7 +284,9 @@ export async function ensureTrackingModeRunning(): Promise<void> {
       return;
     }
 
-    const env = await pedometerService.getEnvironment();
+    const env = await timedStep('getEnvironment', () =>
+      pedometerService.getEnvironment(),
+    );
     const progress = useProgressStore.getState();
     if (!env.samplePersistenceHealthy) {
       progress.setSyncStatus({
@@ -295,8 +320,10 @@ export async function ensureTrackingModeRunning(): Promise<void> {
       env.ignoresBatteryOptimizations;
 
     if (settings.trackingMode === 'dual') {
-      const healthPermission =
-        await fitnessService.getHealthConnectPermissionState();
+      const healthPermission = await timedStep(
+        'getHealthConnectPermissionState',
+        () => fitnessService.getHealthConnectPermissionState(),
+      );
       const permissionOutcome = resolveDualPermissionOutcome(
         permissionsOk,
         healthPermission,
@@ -417,14 +444,18 @@ export async function ensureTrackingModeRunning(): Promise<void> {
       return;
     }
 
-    const running = await pedometerService.isServiceRunning();
+    const running = await timedStep('isServiceRunning', () =>
+      pedometerService.isServiceRunning(),
+    );
     const s = useSettingsStore.getState();
 
     if (s.syncEnabled) {
       // User has pedometer on. Restart the service if it isn't alive
       // (cold boot, force-stop recovery, fresh install).
       if (!running) {
-        await pedometerService.startTracking();
+        await timedStep('startTracking', () =>
+          pedometerService.startTracking(),
+        );
       }
 
       // Reported only after the restart above, because both of these are

@@ -12,6 +12,11 @@ export interface PointType {
   description?: {
     text: string;
     image?: string;
+    // Pre-authored teaser shown only for the immediate-next locked
+    // checkpoint, hinting at what's ahead without revealing the full
+    // description. Hand-written per checkpoint rather than derived at
+    // runtime so wording can be tuned intentionally.
+    teaser?: string;
   };
   image?: string; // Checkpoint image filename
   CUMULATIVE_MILES: number;
@@ -148,6 +153,7 @@ export interface UserSettings {
     | null;
   sharingProvisioningPending: boolean;
   sharingDeletionPending: boolean;
+  sharingMigrationSourceUserId: string | null;
   lastPublishedMiles: number | null;
   lastSharedProgressSyncAt: number | null;
   lastJourneyBackupFileName: string | null;

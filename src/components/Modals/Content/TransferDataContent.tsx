@@ -12,7 +12,6 @@ import {
   exportJourneyData,
   importJourneyData,
 } from '../../../services/journeyDataTransfer';
-import { friendProgressWorkflow } from '../../../services/friendProgressWorkflow';
 
 export default function TransferDataContent() {
   const theme = useTheme();
@@ -25,37 +24,12 @@ export default function TransferDataContent() {
   const setLastJourneyBackupFileName = useSettingsStore(
     state => state.setLastJourneyBackupFileName,
   );
-  const sharingEnabled = useSettingsStore(state => state.sharingEnabled);
-  const sharingProvisioningPending = useSettingsStore(
-    state => state.sharingProvisioningPending,
-  );
-  const sharingDeletionPending = useSettingsStore(
-    state => state.sharingDeletionPending,
-  );
-  const hasSharedData =
-    sharingEnabled || sharingProvisioningPending || sharingDeletionPending;
-
   const performExport = async () => {
     setBusy('export');
     try {
       const savedFileName = await exportJourneyData();
       if (savedFileName) {
         await setLastJourneyBackupFileName(savedFileName);
-        if (hasSharedData) {
-          try {
-            if (sharingDeletionPending) {
-              await friendProgressWorkflow.retryPendingDeletion();
-            } else {
-              await friendProgressWorkflow.disableSharing();
-            }
-          } catch {
-            Alert.alert(
-              'Export Complete',
-              `Your backup was saved as ${savedFileName}.\n\nFriend sharing is off, but cloud cleanup is still pending.`,
-            );
-            return;
-          }
-        }
         Alert.alert(
           'Export Complete',
           `Your backup was saved as ${savedFileName}.`,
@@ -74,9 +48,7 @@ export default function TransferDataContent() {
   const handleExport = () => {
     Alert.alert(
       'Export Backup?',
-      hasSharedData
-        ? 'Exporting saves your journey to a backup file and disconnects friend sharing on this phone. You can turn sharing back on after importing on your new phone.'
-        : 'Exporting saves your journey to a backup file.',
+      'Exporting saves your journey to a backup file. Friend sharing remains connected on this phone.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Export', onPress: performExport },
@@ -87,7 +59,7 @@ export default function TransferDataContent() {
   const handleImport = () => {
     Alert.alert(
       'Import Data?',
-      'Importing replaces local journey data and app preferences from the backup file. Current health permissions, pedometer access, and friend sharing stay as they are.',
+      'Importing replaces local journey data and app preferences from the backup file. Current health permissions and pedometer access stay as they are. If the backup has friend sharing enabled and this phone does not already share progress, sharing will be migrated to this phone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -130,19 +102,13 @@ export default function TransferDataContent() {
         >
           Move data to new phone
         </Text>
-        <View
-          style={[
-            styles.contentRow,
-          ]}
-        >
+        <View style={[styles.contentRow]}>
           <View style={styles.flex1}>
             <Text style={typographyThemed(theme).bodyPrimary}>
               Export backup
             </Text>
             <Text style={typographyThemed(theme).captionSecondary}>
-              {hasSharedData
-                ? 'Save your local journey data. This will disconnect friend sharing (it can be re-enabled on the new phone)'
-                : 'Save your local journey data to a file'}
+              Save your local journey data to a file
             </Text>
           </View>
           <Button

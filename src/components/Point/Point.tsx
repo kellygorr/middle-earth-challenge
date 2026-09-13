@@ -81,13 +81,21 @@ function Point({
       style={[
         styles.container,
         { marginLeft: -centerOffset, marginTop: -centerOffset },
-        labelPosition === 'top'
-          ? styles.containerColumn
-          : labelPosition === 'left'
-          ? styles.containerAnchored
-          : styles.containerRow,
+        // 'top' stacks the label above the icon via column-reverse and is
+        // compensated externally in PositionedPoint (it shifts the whole
+        // wrapper up by labelHeight to cancel the resulting offset).
+        // Every other position uses a fixed 24x24 icon box with the label
+        // absolutely positioned beside it — that keeps the icon's own
+        // layout completely independent of label height/size, so growing
+        // the label (e.g. the "large" label-size setting) can never shift
+        // where the icon renders. containerRow previously used a flex row
+        // with alignItems: 'center', which let a taller label grow the
+        // row's height and re-center the icon within it, visibly bumping
+        // checkpoint markers off the path whenever label size changed.
+        labelPosition === 'top' ? styles.containerColumn : styles.containerAnchored,
       ]}
       pointerEvents="box-none"
+      testID="point-icon-container"
     >
       {/* Point circles - will be wrapped with animation later */}
       <TouchableOpacity
@@ -117,12 +125,13 @@ function Point({
       {/* Label - only show for checkpoints */}
       {type === 'checkpoint' && (
         <Animated.View
+          testID="point-label-wrapper"
           style={[
             labelPosition === 'top'
               ? styles.nameContainerAbove
               : labelPosition === 'left'
               ? [styles.nameContainerLeft, { top: (24 - labelHeight) / 2 }]
-              : styles.nameContainerRight,
+              : [styles.nameContainerRight, { top: (24 - labelHeight) / 2 }],
             labelAnimatedStyle,
           ]}
           pointerEvents={showLabel ? 'auto' : 'none'}
@@ -164,10 +173,6 @@ const styles = StyleSheet.create({
   container: {
     // Offsets applied dynamically based on type to center on coordinates
   },
-  containerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   containerColumn: {
     flexDirection: 'column-reverse', // Label above circle
     alignItems: 'flex-start', // Align to left edge
@@ -208,7 +213,21 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   nameContainerRight: {
-    marginLeft: 6,
+    position: 'absolute',
+    // 24 (icon width) + 6 (gap), mirroring nameContainerLeft's 30px offset
+    // on the other side, so the visual gap to the icon matches either way.
+    left: 30,
+    // minWidth is required, not optional: an absolutely positioned View
+    // with no width hint at all collapses toward zero here and wraps its
+    // Text one character per line (this codebase's proven working
+    // nameContainerLeft below has always paired minWidth with an
+    // alignItems override for exactly this reason). alignItems: 'flex-start'
+    // then keeps the actual visible label pill sized to its own content
+    // instead of stretching to fill that reserved minWidth — the reserved
+    // space beyond a short name like "Bree" is empty and invisible, not a
+    // visibly padded pill.
+    minWidth: 120,
+    alignItems: 'flex-start',
   },
   nameContainerLeft: {
     position: 'absolute',

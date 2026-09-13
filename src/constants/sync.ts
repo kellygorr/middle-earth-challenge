@@ -8,6 +8,18 @@ export const SYNC_INTERVAL_MS = 30 * 1000; // 30 seconds between live syncs whil
 
 export const FRIEND_PROGRESS_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
+// Bounds every individual Firestore call in friendProgressService.ts (each
+// wraps a single await inside the function that owns it, so a timeout only
+// ever skips that function's remaining statements — never a detached
+// continuation with its own later side effects). Without this, a hung call
+// (e.g. waitForPendingWrites never resolving while offline) leaves
+// synchronize()/finishDeletion()'s shared in-flight promise permanently
+// unsettled, silently deadlocking every future periodic sync tick and manual
+// retry for the rest of the app session. Kept well under
+// FRIEND_PROGRESS_SYNC_INTERVAL_MS so a timed-out attempt reliably clears
+// before the next tick, rather than nearly overlapping it.
+export const FRIEND_PROGRESS_NETWORK_TIMEOUT_MS = 15 * 1000;
+
 // Pedometer mode uses a **watermark-based** commit strategy: each
 // commit reads `getStepsBetween(lastSyncTimestamp, now)`, writes a
 // single DistanceEntry (if steps > 0), then advances the watermark to
@@ -55,6 +67,12 @@ export const HEALTH_SYNC_LOOKBACK_MS =
 export const CHUNK_TIMEOUT_MS = 20_000; // per-chunk native call timeout
 export const CHUNK_RETRY_DELAY_MS = 1_000; // backoff before retry
 export const CHUNK_YIELD_MS = 0; // microtask yield between chunks (UI paint)
+
+// Bootstrap must never hang indefinitely on a slow/cold-starting Health
+// Connect provider (e.g. right after an OS or Health Connect update). Kept
+// short relative to CHUNK_TIMEOUT_MS because this runs during app startup,
+// where the user is actively waiting, rather than during a background sync.
+export const HEALTH_CONNECT_PERMISSION_CHECK_TIMEOUT_MS = 5_000;
 
 // Long-sync escalation (pill -> overlay)
 export const LONG_SYNC_CHUNK_THRESHOLD = 2; // chunks total > this -> overlay

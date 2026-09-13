@@ -117,6 +117,8 @@ test('allows splash to hide after map readiness or its timeout fallback', () => 
       bootstrapStatus: 'ready',
       mapReady: false,
       mapReadyTimedOut: false,
+      showWelcome: false,
+      welcomeReady: false,
     }),
   ).toBe('loading');
   expect(
@@ -124,6 +126,8 @@ test('allows splash to hide after map readiness or its timeout fallback', () => 
       bootstrapStatus: 'ready',
       mapReady: true,
       mapReadyTimedOut: false,
+      showWelcome: false,
+      welcomeReady: false,
     }),
   ).toBe('ready');
   expect(
@@ -131,32 +135,70 @@ test('allows splash to hide after map readiness or its timeout fallback', () => 
       bootstrapStatus: 'ready',
       mapReady: false,
       mapReadyTimedOut: true,
+      showWelcome: false,
+      welcomeReady: false,
     }),
   ).toBe('ready');
 });
 
-test('shows welcome only after bootstrap is ready and splash is hidden', () => {
+test('reports error status regardless of map or welcome readiness', () => {
+  expect(
+    getSplashStatus({
+      bootstrapStatus: 'error',
+      mapReady: true,
+      mapReadyTimedOut: true,
+      showWelcome: true,
+      welcomeReady: true,
+    }),
+  ).toBe('error');
+});
+
+test('also waits for the welcome entrance animation when welcome is showing', () => {
+  expect(
+    getSplashStatus({
+      bootstrapStatus: 'ready',
+      mapReady: true,
+      mapReadyTimedOut: false,
+      showWelcome: true,
+      welcomeReady: false,
+    }),
+  ).toBe('loading');
+  expect(
+    getSplashStatus({
+      bootstrapStatus: 'ready',
+      mapReady: true,
+      mapReadyTimedOut: false,
+      showWelcome: true,
+      welcomeReady: true,
+    }),
+  ).toBe('ready');
+});
+
+test('shows welcome whenever bootstrap has not failed and showWelcome is set', () => {
   expect(
     shouldShowWelcomeModal({
       bootstrapStatus: 'loading',
-      splashHidden: true,
-      showWelcome: true,
-    }),
-  ).toBe(false);
-  expect(
-    shouldShowWelcomeModal({
-      bootstrapStatus: 'ready',
-      splashHidden: false,
-      showWelcome: true,
-    }),
-  ).toBe(false);
-  expect(
-    shouldShowWelcomeModal({
-      bootstrapStatus: 'ready',
-      splashHidden: true,
       showWelcome: true,
     }),
   ).toBe(true);
+  expect(
+    shouldShowWelcomeModal({
+      bootstrapStatus: 'ready',
+      showWelcome: false,
+    }),
+  ).toBe(false);
+  expect(
+    shouldShowWelcomeModal({
+      bootstrapStatus: 'ready',
+      showWelcome: true,
+    }),
+  ).toBe(true);
+  expect(
+    shouldShowWelcomeModal({
+      bootstrapStatus: 'error',
+      showWelcome: true,
+    }),
+  ).toBe(false);
 });
 
 test('shows bootstrap failure and reaches readiness only after retry succeeds', async () => {
@@ -199,7 +241,9 @@ test('continues bootstrap when a recoverable step fails', async () => {
     ),
   ).resolves.toBeUndefined();
   expect(warn).toHaveBeenCalledWith(
-    '[App] initApp: optional service failed:',
+    expect.stringMatching(
+      /^\[App\] initApp: optional service failed in \d+ms:$/,
+    ),
     error,
   );
 
@@ -238,8 +282,14 @@ test('fades the splash only after bootstrap is ready', () => {
     renderer = ReactTestRenderer.create(<SplashOverlay status="loading" />);
     renderer.update(<SplashOverlay status="error" />);
   });
+  // The overlay stays mounted (so a retry can reset and re-fade it), but an
+  // error hides it immediately: not interactive, and no spinner.
   expect(
-    renderer!.root.findAllByProps({ testID: 'splash-overlay' }),
+    renderer!.root.findByProps({ testID: 'splash-overlay' }).props
+      .pointerEvents,
+  ).toBe('none');
+  expect(
+    renderer!.root.findAllByType(ActivityIndicator),
   ).toHaveLength(0);
 
   ReactTestRenderer.act(() => {
@@ -248,8 +298,9 @@ test('fades the splash only after bootstrap is ready', () => {
     jest.advanceTimersByTime(600);
   });
   expect(
-    renderer!.root.findAllByProps({ testID: 'splash-overlay' }),
-  ).toHaveLength(0);
+    renderer!.root.findByProps({ testID: 'splash-overlay' }).props
+      .pointerEvents,
+  ).toBe('none');
 
   ReactTestRenderer.act(() => renderer!.unmount());
   jest.useRealTimers();
@@ -266,9 +317,13 @@ test('cancels a stale fade when loading restarts', () => {
     jest.advanceTimersByTime(300);
   });
 
+  // Restarting bootstrap while a fade is in flight must restore full
+  // visibility and interactivity rather than leaving the overlay
+  // half-faded or non-interactive from the stale animation.
   expect(
-    renderer!.root.findAllByProps({ testID: 'splash-overlay' }).length,
-  ).toBeGreaterThan(0);
+    renderer!.root.findByProps({ testID: 'splash-overlay' }).props
+      .pointerEvents,
+  ).toBe('auto');
 
   ReactTestRenderer.act(() => renderer!.unmount());
   jest.useRealTimers();

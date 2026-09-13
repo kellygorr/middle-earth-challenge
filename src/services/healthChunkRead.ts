@@ -1,26 +1,9 @@
+import { withTimeout } from '../utils/withTimeout';
+
 interface HealthChunkReadOptions {
   timeoutMs: number;
   retryDelayMs: number;
   shouldRetry?: (error: unknown) => boolean;
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error('chunk-timeout')),
-      timeoutMs,
-    );
-    promise.then(
-      value => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      error => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
 }
 
 export async function readHealthChunkWithRetry<T>(
@@ -28,7 +11,7 @@ export async function readHealthChunkWithRetry<T>(
   options: HealthChunkReadOptions,
 ): Promise<T> {
   try {
-    return await withTimeout(readRecords(), options.timeoutMs);
+    return await withTimeout(readRecords(), options.timeoutMs, 'chunk-timeout');
   } catch (error) {
     if (
       (error instanceof Error && error.message === 'chunk-timeout') ||
@@ -39,5 +22,5 @@ export async function readHealthChunkWithRetry<T>(
   }
 
   await new Promise<void>(resolve => setTimeout(resolve, options.retryDelayMs));
-  return withTimeout(readRecords(), options.timeoutMs);
+  return withTimeout(readRecords(), options.timeoutMs, 'chunk-timeout');
 }
