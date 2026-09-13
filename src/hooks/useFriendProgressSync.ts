@@ -17,6 +17,9 @@ export function useFriendProgressSync() {
   const deletionPending = useSettingsStore(
     state => state.sharingDeletionPending,
   );
+  const migrationSourceUserId = useSettingsStore(
+    state => state.sharingMigrationSourceUserId,
+  );
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const performSync = useCallback(async () => {
@@ -25,7 +28,8 @@ export function useFriendProgressSync() {
       !initReady ||
       (!settings.sharingEnabled &&
         !settings.sharingProvisioningPending &&
-        !settings.sharingDeletionPending)
+        !settings.sharingDeletionPending &&
+        !settings.sharingMigrationSourceUserId)
     ) {
       return;
     }
@@ -42,7 +46,12 @@ export function useFriendProgressSync() {
 
   useEffect(() => {
     if (!initReady) return;
-    if (!sharingEnabled && !provisioningPending && !deletionPending) {
+    if (
+      !sharingEnabled &&
+      !provisioningPending &&
+      !deletionPending &&
+      !migrationSourceUserId
+    ) {
       useFriendProgressStore.getState().clearParticipants();
       return;
     }
@@ -58,6 +67,7 @@ export function useFriendProgressSync() {
     sharingEnabled,
     provisioningPending,
     deletionPending,
+    migrationSourceUserId,
     performSync,
   ]);
 

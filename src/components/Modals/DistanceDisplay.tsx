@@ -123,10 +123,26 @@ export function DistanceDisplay() {
       : Math.round(getRemainingMilesTo(milesVal));
 
   const isLocked = isCheckpointView && isLockedCheckpoint;
+  // Every locked checkpoint's "Remaining" pill uses the same
+  // checkpointTextBackground/checkpointLabel tokens as the journey
+  // progress bar's percentage pill (JourneyProgressBar.tsx) — not just
+  // the immediate next one. (Neutral progress-bar-track, green, and brand
+  // treatments were all tried and looked worse in testing.) The left
+  // ("Checkpoint") pill is untouched and keeps its original grey/inactive
+  // look when locked. (isNextLockedCheckpoint from progressStore drives a
+  // separate feature — the next-checkpoint description teaser in
+  // InfoContent.tsx — not this pill's color.) The title text above the
+  // pill uses the same color as the "Checkpoint" title so both titles
+  // read consistently against the modal's light background.
   const pillBackground = isLocked
     ? theme.colors.infoModalInactive
     : theme.colors.checkpointTextBackground;
+  const remainingPillBackground = isLocked
+    ? theme.colors.checkpointTextBackground
+    : pillBackground;
+  const remainingValueColor = theme.colors.checkpointLabel;
   const titleColor = isLocked ? theme.colors.infoModalInactive : undefined;
+  const remainingTitleColor = titleColor;
 
   return (
     <View style={styles.container}>
@@ -148,7 +164,7 @@ export function DistanceDisplay() {
             style={[
               typographyThemed(theme).captionPrimaryBold,
               styles.title,
-              titleColor ? { color: titleColor } : null,
+              remainingTitleColor ? { color: remainingTitleColor } : null,
             ]}
           >
             {isLocked ? 'Remaining' : nextCheckpointName || 'Next checkpoint'}
@@ -172,7 +188,9 @@ export function DistanceDisplay() {
           </View>
         </View>
         <View style={[styles.col, !showRightColumn && styles.hidden]}>
-          <View style={[styles.pill, { backgroundColor: pillBackground }]}>
+          <View
+            style={[styles.pill, { backgroundColor: remainingPillBackground }]}
+          >
             <DistanceValue
               value={
                 isLocked
@@ -188,7 +206,7 @@ export function DistanceDisplay() {
                     })
               }
               unitLabel={unitLabel}
-              color={theme.colors.checkpointLabel}
+              color={remainingValueColor}
             />
           </View>
         </View>

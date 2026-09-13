@@ -398,6 +398,52 @@ describe('isLockedCheckpoint', () => {
   });
 });
 
+describe('isNextLockedCheckpoint', () => {
+  it('is true for the closest checkpoint still ahead of progress', () => {
+    setMiles(100);
+    // Real checkpoints.json is [0, 120, 420, 595, 895, 1055, 1165, 1235];
+    // 120 is the first one still ahead of 100 miles.
+    expect(useProgressStore.getState().isNextLockedCheckpoint(120)).toBe(
+      true,
+    );
+  });
+
+  it('is false for a locked checkpoint that is not the immediate next one', () => {
+    setMiles(100);
+    expect(useProgressStore.getState().isNextLockedCheckpoint(420)).toBe(
+      false,
+    );
+  });
+
+  it('is false for an already-reached checkpoint', () => {
+    setMiles(300);
+    expect(useProgressStore.getState().isNextLockedCheckpoint(120)).toBe(
+      false,
+    );
+  });
+
+  it('updates to the new closest checkpoint once the previous one is reached', () => {
+    setMiles(120);
+    expect(useProgressStore.getState().isNextLockedCheckpoint(420)).toBe(
+      true,
+    );
+    expect(useProgressStore.getState().isNextLockedCheckpoint(120)).toBe(
+      false,
+    );
+  });
+
+  it('is false for every checkpoint once the journey is complete', () => {
+    setMiles(1235);
+    for (const cp of checkpoints) {
+      expect(
+        useProgressStore
+          .getState()
+          .isNextLockedCheckpoint(cp.CUMULATIVE_MILES ?? 0),
+      ).toBe(false);
+    }
+  });
+});
+
 describe('isLatestCheckpoint', () => {
   it('is false for the isStart checkpoint (index 0) even when at 0 miles', () => {
     setMiles(0);

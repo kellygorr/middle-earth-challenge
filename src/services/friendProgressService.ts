@@ -25,6 +25,8 @@ import {
   FRIEND_AFFINITIES,
   type FriendAffinity,
 } from '../constants/friendAffinities';
+import { FRIEND_PROGRESS_NETWORK_TIMEOUT_MS } from '../constants/sync';
+import { withTimeout } from '../utils/withTimeout';
 
 const COLLECTION_NAME = __DEV__ ? 'friend_progress_debug' : 'friend_progress';
 export const FRIEND_PROGRESS_PARTICIPANT_LIMIT = 50;
@@ -136,6 +138,10 @@ const firebaseFriendProgressClient: FriendProgressClient = {
   },
   signOut: () => signOut(getAuth()),
   setParticipant: async (userId, participant) => {
+    // setDoc (not updateDoc) is deliberate: create-or-replace lets this
+    // device silently recreate its own row if another device's migration
+    // cleanup ever deleted it (see deleteFriendProgressByUserId's comment)
+    // — no "document not found" failure, no re-provisioning flow needed.
     await setDoc(doc(getFirestore(), COLLECTION_NAME, userId), {
       ...participant,
       updatedAt: serverTimestamp(),
@@ -197,6 +203,21 @@ export const createFriendProgressService = (
 ) => {
   let signInInFlight: Promise<string> | null = null;
 
+  // Every network-bound client.* call below is wrapped with this at its
+  // await point, inside the function that owns any statements after it —
+  // never wrapping a whole function from outside. That means a timeout here
+  // only ever skips the rest of *that* function's body (it throws before
+  // reaching later statements, e.g. deleteFriendProgress's signOut()); it
+  // never abandons a side effect to fire later from a detached background
+  // continuation. See withTimeout's own doc comment for why that
+  // distinction matters.
+  const withNetworkTimeout = <T>(promise: Promise<T>): Promise<T> =>
+    withTimeout(
+      promise,
+      FRIEND_PROGRESS_NETWORK_TIMEOUT_MS,
+      'friend-progress-network-timeout',
+    );
+
   const getExistingUserId = async (): Promise<string> => {
     await client.waitForAuthState();
     const userId = client.getCurrentUserId();
@@ -213,11 +234,18 @@ export const createFriendProgressService = (
     if (currentUserId) return currentUserId;
 
     if (!signInInFlight) {
-      signInInFlight = client.signInAnonymously().finally(() => {
-        signInInFlight = null;
-      });
+      signInInFlight = withNetworkTimeout(client.signInAnonymously()).finally(
+        () => {
+          signInInFlight = null;
+        },
+      );
     }
     return signInInFlight;
+  };
+
+  const getCurrentUserId = async (): Promise<string | null> => {
+    await client.waitForAuthState();
+    return client.getCurrentUserId();
   };
 
   const enableFriendProgress = async (
@@ -235,11 +263,13 @@ export const createFriendProgressService = (
     }
 
     const userId = await ensureAnonymousUserId();
-    await client.setParticipant(userId, {
-      displayName: normalizedName,
-      distanceMiles,
-      affinity,
-    });
+    await withNetworkTimeout(
+      client.setParticipant(userId, {
+        displayName: normalizedName,
+        distanceMiles,
+        affinity,
+      }),
+    );
   };
 
   const updateFriendDistance = async (distanceMiles: number): Promise<void> => {
@@ -247,9 +277,11 @@ export const createFriendProgressService = (
       throw new Error('Distance must be a nonnegative number');
     }
 
-    await client.updateParticipant(await getExistingUserId(), {
-      distanceMiles,
-    });
+    await withNetworkTimeout(
+      client.updateParticipant(await getExistingUserId(), {
+        distanceMiles,
+      }),
+    );
   };
 
   const updateFriendProfile = async (
@@ -262,20 +294,24 @@ export const createFriendProgressService = (
       throw new Error('Display name is required');
     }
 
-    await client.updateParticipant(await getExistingUserId(), {
-      displayName: normalizedName,
-      affinity,
-    });
+    await withNetworkTimeout(
+      client.updateParticipant(await getExistingUserId(), {
+        displayName: normalizedName,
+        affinity,
+      }),
+    );
   };
 
   const fetchFriendProgressPage = async (
     cursor: string | null = null,
   ): Promise<FriendProgressPage> => {
     const userId = await getExistingUserId();
-    return client.fetchParticipantPage(
-      userId,
-      FRIEND_PROGRESS_PARTICIPANT_LIMIT,
-      cursor,
+    return withNetworkTimeout(
+      client.fetchParticipantPage(
+        userId,
+        FRIEND_PROGRESS_PARTICIPANT_LIMIT,
+        cursor,
+      ),
     );
   };
 
@@ -289,21 +325,51 @@ export const createFriendProgressService = (
     const userId = client.getCurrentUserId();
     if (!userId) return;
 
-    await client.deleteParticipant(userId);
+    await withNetworkTimeout(client.deleteParticipant(userId));
     // On Android the delete resolves once queued locally. Signing out before it
     // reaches the server drops the write and strands the document forever,
-    // because the owner-only rule leaves no session able to retry it.
-    await client.flushPendingWrites();
+    // because the owner-only rule leaves no session able to retry it. If the
+    // flush times out, signOut() below is never reached (the timeout throws)
+    // — the write stays queued locally under the same still-signed-in
+    // session, so a future retry (periodic sync or manual) can pick up
+    // exactly where this attempt left off.
+    await withNetworkTimeout(client.flushPendingWrites());
     await client.signOut();
   };
 
+  /**
+   * Deletes another device's stale participant row after a backup import
+   * migrates its sharing identity to this device. Deliberately does not
+   * touch the source device's own Firebase Auth session or local settings
+   * in any way — if that device is still running and still shares (an
+   * export doesn't disable sharing), it will simply recreate this document
+   * under its own unchanged UID the next time its distance changes, via
+   * enableFriendProgress()'s setDoc (create-or-replace, not requiring the
+   * doc to pre-exist). That is intended: at that point the two devices are
+   * independent participants again, not a broken or duplicate identity —
+   * migrating away from a device doesn't revoke its ability to keep
+   * sharing on its own if the user goes back to it. The only user-visible
+   * effect is a brief gap on friends' leaderboards until it republishes.
+   */
+  const deleteFriendProgressByUserId = async (
+    userId: string,
+  ): Promise<void> => {
+    const currentUserId = await ensureAnonymousUserId();
+    if (currentUserId === userId) return;
+
+    await withNetworkTimeout(client.deleteParticipant(userId));
+    await withNetworkTimeout(client.flushPendingWrites());
+  };
+
   return {
+    getCurrentUserId,
     enableFriendProgress,
     updateFriendDistance,
     updateFriendProfile,
     fetchFriendProgressPage,
     fetchFriendProgress,
     deleteFriendProgress,
+    deleteFriendProgressByUserId,
   };
 };
 

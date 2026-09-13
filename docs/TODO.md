@@ -332,6 +332,165 @@ shadow, transparency, and celebration-palette literals remain local by design.
 
 ---
 
+## Android backup, migration recovery, and friend identity
+
+- [x] **Enable Android backup — decided against, staying with manual export/import.**
+      OS-level Auto Backup restores the raw SQLite file on a fresh install before
+      the user ever opens the app, with no chance to validate or confirm
+      anything. That would require automatic first-launch reconciliation of
+      stale sharing UIDs, mid-flight provisioning/deletion flags, and
+      device-specific health-sync cursors — a much riskier, silent version of
+      the reconciliation the manual export/import flow already does
+      deliberately with user confirmation. `android:allowBackup="false"` stays
+      as-is; the manual flow fully covers cross-device transfer.
+- [x] **Define backup exclusions — not needed.** Only relevant if Android
+      Auto Backup were enabled (see above); moot now that it isn't.
+- [x] **Create one reusable pre-migration snapshot.** `database.ts` now
+      tracks a `schema_meta.version` row and `CURRENT_SCHEMA_VERSION` constant.
+      On an upgrading install whose stored version is behind the current one,
+      `createPreMigrationSnapshot()` uses SQLite's `VACUUM INTO` (via
+      `@op-engineering/op-sqlite`) to copy the live database to one fixed
+      snapshot file (`MiddleEarthSettings.premigration.db`), overwriting any
+      prior snapshot. If the subsequent migration throws, `restoreFromPreMigrationSnapshot()`
+      attaches the snapshot and rebuilds every live table from its own schema
+      and data (not a column patch — a migration can fail after adding only
+      some columns, so the live schema at that point can't be trusted), then
+      migrations retry once. A fresh install (no prior recorded version) never
+      snapshots, since there's nothing yet to protect. Covered by
+      `needsPreMigrationSnapshot`, `pre-migration snapshot and restore`, and
+      `migrateWithSnapshotProtection` test suites in `database.test.ts`.
+- [x] **Friend-sharing identity behavior decided and implemented.** On the
+      same phone, stopping/deleting sharing and enabling it again creates a new
+      Firebase anonymous UID. Exporting no longer disconnects friend sharing —
+      the connection stays active on the exporting phone. Importing on a fresh
+      phone (no existing sharing) migrates the exported profile and cleans up
+      the stale participant under the old UID; importing onto a phone that
+      already has sharing configured preserves the destination's sharing state
+      and only deletes the stale exported participant.
+- [x] **Decided: an old phone rejoining sharing after migration is treated
+      as an independent participant, by design.** Since export no longer
+      disables sharing, an old phone can still be actively sharing when its
+      backup is imported and migrated on a new phone. The new phone's cleanup
+      deletes the old phone's Firestore row, but never touches the old phone's
+      own Firebase Auth session or local settings — if that phone keeps
+      running, it silently recreates its own row under its own unchanged UID
+      the next time its distance changes (`setParticipant` uses `setDoc`,
+      create-or-replace, not `updateDoc`, so there's no "document not found"
+      failure). This is intentional: migrating away from a device doesn't
+      revoke its ability to keep sharing under its own identity if the user
+      goes back to it — two devices become two independent participants, not a
+      broken or merged identity. The only user-visible effect is a brief gap on
+      friends' leaderboards until the old phone republishes. See the comments
+      on `deleteFriendProgressByUserId` and `setParticipant` in
+      `friendProgressService.ts`.
+- [ ] **Firestore delete rule is broader than the migration scenario
+      requires.** `allow delete: if request.auth != null` on `friend_progress`/
+      `friend_progress_debug` lets any authenticated user (including any
+      throwaway anonymous session) delete any other user's row, not just a
+      stale migrated one — confirmed by `firestore-tests/rules.test.ts`'s
+      cross-UID delete test, which has no relationship check between the
+      deleter and the doc owner. Consider scoping this tighter, e.g. only
+      allowing non-owner deletes when the target doc's `updatedAt` is older
+      than some staleness threshold, so a live participant's row can't be
+      griefed by an unrelated user while still allowing genuinely stale
+      migrated rows to be cleaned up.
+- [x] **Firestore rules test for cross-UID delete.** `friend_progress`/
+      `friend_progress_debug` delete rules changed from owner-only to any
+      authenticated user, so a destination phone can delete a stale participant
+      row left by a migrated import. Added an emulator-backed rules test suite
+      (`firestore-tests/rules.test.ts`, `yarn test:rules`) covering owner writes,
+      cross-user write/read rejection, and both same-owner and cross-UID delete
+      scenarios (requires a local Java 21 JDK for the Firestore emulator).
+
+---
+
+## Failure resilience review
+
+A new review guide, `docs/failure-resilience-review.md`, was written to focus
+specifically on "if a step fails or hangs, does the app stay usable?" — a
+different lens than the two general-correctness adversarial reviews. Findings:
+
+- [x] **Bootstrap could hang indefinitely on a cold-starting Health Connect
+      provider, with no timeout and no way for the user to retry.** Neither
+      `runRecoverableBootstrapStep` nor `runRequiredBootstrapStep` (App.tsx)
+      bound how long an awaited step can take — only rejections were handled,
+      not hangs. The likely real culprit for the previously-unexplained
+      minute-long update-launch stall: `ensureTrackingModeRunning` (dual
+      tracking mode) awaits `fitnessService.getHealthConnectPermissionState()`,
+      which makes real binder calls into the separately-updating Health
+      Connect provider app — exactly the kind of call that can stall well
+      past normal expectations right after an OS/provider update.
+      Fixed narrowly: added a shared `withTimeout()` utility
+      (`src/utils/withTimeout.ts`, also now used by the existing
+      `healthChunkRead.ts` chunk-timeout logic instead of a duplicate local
+      copy) and wrapped only the Health Connect module load +
+      `initialize()` + `getGrantedPermissions()` sequence inside
+      `getHealthConnectPermissionState()` — not the outer
+      `ensureTrackingModeRunning()` state machine. This distinction matters:
+      that inner call is a pure read with no side effects, and on timeout it
+      returns `'unknown'`, the exact same safe fallback its own catch block
+      already returns for any other failure — so `'unknown'` flows through
+      every existing caller exactly as a transient error already does today,
+      with no new states to reason about. Explicitly rejected wrapping the
+      whole `ensureTrackingModeRunning()` call instead: that function mutates
+      settings/tracking mode *after* the awaited call, so a timeout there
+      wouldn't cancel the abandoned continuation — it could still fire later,
+      after bootstrap moved on, and land a stale mutation while the user is
+      already on the map screen. New constant:
+      `HEALTH_CONNECT_PERMISSION_CHECK_TIMEOUT_MS` (5s) in `constants/sync.ts`.
+      Covered by a new `src/utils/__tests__/withTimeout.test.ts` suite (no
+      existing harness mocks `react-native-health-connect`/`Platform.OS` in
+      this codebase, so the timeout mechanism itself is tested directly
+      rather than adding new native-module mocking infrastructure for one
+      call site).
+- [x] **Friend-sharing sync/delete can permanently wedge for the rest of the
+      app session if a Firestore call hangs** (e.g. `waitForPendingWrites`
+      never resolving while offline). `synchronize()`/`finishDeletion()` in
+      `friendProgressWorkflow.ts` share one in-flight promise across all
+      callers and only clear it in `.finally()` — which never runs if the
+      underlying call never settles. Every subsequent periodic sync tick and
+      every manual "Retry" tap just re-awaits the same permanently-pending
+      promise for the rest of the session, with no way for the user to tell
+      "still working" from "frozen." Fixed by wrapping every network-bound
+      `client.*` call in `friendProgressService.ts` with the same
+      `withTimeout()` utility from Cluster 1
+      (`FRIEND_PROGRESS_NETWORK_TIMEOUT_MS`, 15s — comfortably under
+      `FRIEND_PROGRESS_SYNC_INTERVAL_MS`'s 2-minute tick so a timed-out
+      attempt clears before the next one). Each wrap sits at the exact await
+      point inside the function that owns any statements after it (never
+      wrapping a whole function from outside), so a timeout only ever skips
+      that function's remaining statements — e.g. in `deleteFriendProgress`,
+      a timed-out `flushPendingWrites()` means `signOut()` is never reached
+      on that attempt, so the still-signed-in session and locally-queued
+      delete are both intact for the next retry to pick up cleanly. The
+      workflow layer's existing `.finally()` guard-clearing already handles
+      any rejection generically (proven by existing tests), so converting a
+      hang into a timeout-rejection at the service layer was the whole fix —
+      no workflow-layer changes needed. New tests in
+      `friendProgressService.test.ts`'s `'network timeout'` suite prove the
+      timeout fires, `signOut`/downstream calls are skipped, and — the
+      critical end-to-end proof — a second attempt after a timed-out delete
+      succeeds normally.
+- [x] **`useLivePedometerDelta`'s in-flight guard isn't reset on effect
+      teardown**, so a hung native pedometer read could freeze the live step
+      display even across a tracking-mode switch. Lower likelihood than the
+      above (the underlying native calls are synchronous local reads), but a
+      real gap: `inFlightRef` is only cleared in `refresh()`'s own `finally`
+      block, not in the effect's cleanup function. Fixed by resetting
+      `inFlightRef.current = null` in the cleanup alongside the existing
+      generation bump — the existing `generation === generationRef.current`
+      check already protects against a late-resolving stale request writing
+      a stale value, so this fix purely unblocks the guard for the new
+      effect instance. A side benefit: the new effect's own first
+      `refresh()` now starts immediately on mount rather than potentially
+      waiting on a stale request to happen to resolve first; updated an
+      existing test (`discards an in-flight result after the watermark
+      changes`) whose assertions had baked in the old, blocked-guard timing,
+      and added a dedicated regression test using a request that never
+      resolves at all (not just late) to prove the guard no longer sticks.
+
+---
+
 ## Add more trivia
 
 - [x] **Mile 308 — Ford the River?** An Oregon Trail Easter egg at the Last

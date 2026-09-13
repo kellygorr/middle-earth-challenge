@@ -1,6 +1,11 @@
 import { open } from '@op-engineering/op-sqlite';
 
-import { database } from '../database';
+import {
+  database,
+  CURRENT_SCHEMA_VERSION,
+  PRE_MIGRATION_SNAPSHOT_DB_NAME,
+  needsPreMigrationSnapshot,
+} from '../database';
 import { useProgressStore } from '../../stores/progressStore';
 import { createTransactionalProgressDb } from '../__testHelpers__/transactionalProgressDb';
 
@@ -15,6 +20,18 @@ function createMockDatabase() {
       ): { rows: Record<string, unknown>[] } => ({ rows: [] }),
     ),
     close: jest.fn(),
+  };
+}
+
+// Distinct from createMockDatabase(): also exposes getDbPath/delete, which
+// only the pre-migration snapshot handle needs (a second, short-lived
+// database opened purely to read/clear the snapshot file's own path).
+function createMockSnapshotHandle(path = '/mock/premigration.db') {
+  return {
+    executeSync: jest.fn(() => ({ rows: [] })),
+    close: jest.fn(),
+    getDbPath: jest.fn(() => path),
+    delete: jest.fn(),
   };
 }
 
@@ -119,6 +136,411 @@ describe('database initialization', () => {
     expect(mockOpen).toHaveBeenCalledTimes(2);
     expect(failedDb.close).toHaveBeenCalledTimes(1);
     expect(retryDb.close).not.toHaveBeenCalled();
+  });
+
+  describe('needsPreMigrationSnapshot', () => {
+    it.each([
+      [0, 1, false],
+      [1, 1, false],
+      [1, 2, true],
+      [2, 2, false],
+      [3, 2, false],
+      [0, 5, false],
+    ])('stored=%i, current=%i -> %p', (stored, current, expected) => {
+      expect(needsPreMigrationSnapshot(stored, current)).toBe(expected);
+    });
+  });
+
+  describe('pre-migration snapshot and restore', () => {
+    it('does not snapshot a fresh install with no recorded schema version', async () => {
+      const mockDb = createMockDatabase();
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (sql.includes('SELECT version FROM schema_meta')) {
+          return { rows: [{ version: 0 }] };
+        }
+        return { rows: [] };
+      });
+      mockOpen.mockReturnValue(mockDb as never);
+
+      await database.init();
+
+      expect(mockOpen).toHaveBeenCalledTimes(1);
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).startsWith('VACUUM INTO'),
+        ),
+      ).toBe(false);
+      expect(mockDb.executeSync).toHaveBeenCalledWith(
+        `UPDATE schema_meta SET version = ? WHERE id = 1`,
+        [CURRENT_SCHEMA_VERSION],
+      );
+    });
+
+    it('does not snapshot an install already at the current schema version', async () => {
+      const mockDb = createMockDatabase();
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (sql.includes('SELECT version FROM schema_meta')) {
+          return { rows: [{ version: CURRENT_SCHEMA_VERSION }] };
+        }
+        return { rows: [] };
+      });
+      mockOpen.mockReturnValue(mockDb as never);
+
+      await database.init();
+
+      expect(mockOpen).toHaveBeenCalledTimes(1);
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).startsWith('VACUUM INTO'),
+        ),
+      ).toBe(false);
+    });
+
+    it('creates a snapshot via VACUUM INTO, clearing any stale prior snapshot first', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+      mockDb.executeSync.mockClear();
+
+      const snapshotHandle = createMockSnapshotHandle('/mock/premigration.db');
+      mockOpen.mockReturnValue(snapshotHandle as never);
+
+      (database as any).createPreMigrationSnapshot();
+
+      expect(mockOpen).toHaveBeenCalledWith({
+        name: PRE_MIGRATION_SNAPSHOT_DB_NAME,
+      });
+      expect(snapshotHandle.getDbPath).toHaveBeenCalledTimes(1);
+      // Clearing the stale snapshot must happen before VACUUM INTO writes
+      // the new one, since VACUUM INTO refuses to overwrite an existing file.
+      expect(snapshotHandle.delete).toHaveBeenCalledTimes(1);
+      expect(mockDb.executeSync).toHaveBeenCalledWith(
+        `VACUUM INTO '/mock/premigration.db'`,
+      );
+    });
+
+    it('escapes single quotes in the snapshot path for VACUUM INTO', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+      mockDb.executeSync.mockClear();
+
+      const snapshotHandle = createMockSnapshotHandle(
+        "/mock/o'brien/premigration.db",
+      );
+      mockOpen.mockReturnValue(snapshotHandle as never);
+
+      (database as any).createPreMigrationSnapshot();
+
+      expect(mockDb.executeSync).toHaveBeenCalledWith(
+        `VACUUM INTO '/mock/o''brien/premigration.db'`,
+      );
+    });
+
+    it('restores every table from the snapshot by dropping, recreating, and copying rows', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (sql.includes('sqlite_master') && sql.includes("type = 'table'")) {
+          return {
+            rows: [
+              {
+                name: 'user_settings',
+                sql: 'CREATE TABLE user_settings (id TEXT PRIMARY KEY)',
+              },
+              {
+                name: 'distance_entries',
+                sql: 'CREATE TABLE distance_entries (id TEXT PRIMARY KEY)',
+              },
+            ],
+          };
+        }
+        if (sql.includes('sqlite_master') && sql.includes("type = 'index'")) {
+          return {
+            rows: [
+              {
+                sql: 'CREATE INDEX idx_distance_entries_save_date ON distance_entries (save_id, date)',
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      });
+      const snapshotHandle = createMockSnapshotHandle('/mock/premigration.db');
+      mockOpen.mockReturnValue(snapshotHandle as never);
+
+      (database as any).restoreFromPreMigrationSnapshot();
+
+      const calls = mockDb.executeSync.mock.calls.map(([sql]) => String(sql));
+      expect(calls).toContain(
+        `ATTACH DATABASE '/mock/premigration.db' AS pre_migration_snapshot`,
+      );
+      expect(calls).toContain('DROP TABLE IF EXISTS "user_settings"');
+      expect(calls).toContain(
+        'CREATE TABLE user_settings (id TEXT PRIMARY KEY)',
+      );
+      expect(calls).toContain(
+        'INSERT INTO "user_settings" SELECT * FROM pre_migration_snapshot."user_settings"',
+      );
+      expect(calls).toContain('DROP TABLE IF EXISTS "distance_entries"');
+      expect(calls).toContain(
+        'INSERT INTO "distance_entries" SELECT * FROM pre_migration_snapshot."distance_entries"',
+      );
+      expect(calls).toContain(
+        'CREATE INDEX idx_distance_entries_save_date ON distance_entries (save_id, date)',
+      );
+      expect(calls).toContain('DETACH DATABASE pre_migration_snapshot');
+      // Detach must run even though it's the last statement, so a failure
+      // partway through table restoration can't leave the snapshot attached.
+      expect(calls.indexOf('DETACH DATABASE pre_migration_snapshot')).toBe(
+        calls.length - 1,
+      );
+    });
+
+    it('drops a live table that has no counterpart in the snapshot, but keeps schema_meta', async () => {
+      // Regression test: a migration can fail after CREATE TABLE-ing a
+      // brand-new table that didn't exist when the snapshot was taken (the
+      // same "new table" pattern runSchemaMigrations() already uses via
+      // CREATE TABLE IF NOT EXISTS). Restoring only tables the snapshot
+      // knows about must not leave that orphaned, partially-migrated table
+      // behind — otherwise the restore isn't an exact revert.
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (
+          sql.includes('pre_migration_snapshot.sqlite_master') &&
+          sql.includes("type = 'table'")
+        ) {
+          return {
+            rows: [
+              {
+                name: 'user_settings',
+                sql: 'CREATE TABLE user_settings (id TEXT PRIMARY KEY)',
+              },
+            ],
+          };
+        }
+        // Unqualified sqlite_master (no alias prefix) is the LIVE
+        // database's own table list — this must include a table the
+        // snapshot never had, plus schema_meta.
+        if (
+          sql.startsWith('SELECT name FROM sqlite_master') &&
+          sql.includes("type = 'table'")
+        ) {
+          return {
+            rows: [
+              { name: 'user_settings' },
+              { name: 'schema_meta' },
+              { name: 'a_new_table_added_by_the_failed_migration' },
+            ],
+          };
+        }
+        return { rows: [] };
+      });
+      const snapshotHandle = createMockSnapshotHandle('/mock/premigration.db');
+      mockOpen.mockReturnValue(snapshotHandle as never);
+
+      (database as any).restoreFromPreMigrationSnapshot();
+
+      const calls = mockDb.executeSync.mock.calls.map(([sql]) => String(sql));
+      expect(calls).toContain(
+        'DROP TABLE IF EXISTS "a_new_table_added_by_the_failed_migration"',
+      );
+      expect(calls).not.toContain('DROP TABLE IF EXISTS "schema_meta"');
+      // user_settings is in the snapshot, so it's handled by the normal
+      // restore loop, not the orphan-cleanup pass — only one drop for it.
+      expect(
+        calls.filter(sql => sql === 'DROP TABLE IF EXISTS "user_settings"'),
+      ).toHaveLength(1);
+    });
+
+    it('detaches the snapshot even when restoring a table fails', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (sql.includes('sqlite_master') && sql.includes("type = 'table'")) {
+          return {
+            rows: [
+              {
+                name: 'user_settings',
+                sql: 'CREATE TABLE user_settings (id TEXT PRIMARY KEY)',
+              },
+            ],
+          };
+        }
+        if (sql.startsWith('DROP TABLE')) {
+          throw new Error('disk error');
+        }
+        return { rows: [] };
+      });
+      const snapshotHandle = createMockSnapshotHandle('/mock/premigration.db');
+      mockOpen.mockReturnValue(snapshotHandle as never);
+
+      expect(() => (database as any).restoreFromPreMigrationSnapshot()).toThrow(
+        'disk error',
+      );
+
+      const calls = mockDb.executeSync.mock.calls.map(([sql]) => String(sql));
+      expect(calls).toContain('DETACH DATABASE pre_migration_snapshot');
+      // The rebuild must run as one transaction: a mid-loop failure has to
+      // roll back rather than leave some tables dropped/recreated and
+      // others untouched, which would be worse than the original state.
+      expect(calls).toContain('ROLLBACK');
+      expect(calls).not.toContain('COMMIT');
+      expect(calls.indexOf('ROLLBACK')).toBeLessThan(
+        calls.indexOf('DETACH DATABASE pre_migration_snapshot'),
+      );
+    });
+
+    it('wraps the table and index rebuild in a single transaction on success', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (sql.includes('sqlite_master') && sql.includes("type = 'table'")) {
+          return {
+            rows: [
+              {
+                name: 'user_settings',
+                sql: 'CREATE TABLE user_settings (id TEXT PRIMARY KEY)',
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      });
+      const snapshotHandle = createMockSnapshotHandle('/mock/premigration.db');
+      mockOpen.mockReturnValue(snapshotHandle as never);
+
+      (database as any).restoreFromPreMigrationSnapshot();
+
+      const calls = mockDb.executeSync.mock.calls.map(([sql]) => String(sql));
+      const attachIndex = calls.indexOf(
+        `ATTACH DATABASE '/mock/premigration.db' AS pre_migration_snapshot`,
+      );
+      const beginIndex = calls.indexOf('BEGIN TRANSACTION');
+      const commitIndex = calls.indexOf('COMMIT');
+      const detachIndex = calls.indexOf('DETACH DATABASE pre_migration_snapshot');
+
+      // ATTACH/DETACH must sit outside the transaction — SQLite rejects
+      // both when a transaction is already open.
+      expect(attachIndex).toBeGreaterThanOrEqual(0);
+      expect(beginIndex).toBeGreaterThan(attachIndex);
+      expect(commitIndex).toBeGreaterThan(beginIndex);
+      expect(detachIndex).toBeGreaterThan(commitIndex);
+    });
+  });
+
+  describe('migrateWithSnapshotProtection', () => {
+    it('runs migrations directly without snapshotting when not a protected upgrade', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+      mockDb.executeSync.mockClear();
+
+      (database as any).migrateWithSnapshotProtection(false);
+
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).startsWith('VACUUM INTO'),
+        ),
+      ).toBe(false);
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).includes('CREATE TABLE IF NOT EXISTS user_settings'),
+        ),
+      ).toBe(true);
+    });
+
+    it('propagates a migration failure without restoring when not a protected upgrade', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+      mockDb.executeSync.mockClear();
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (sql.includes('CREATE TABLE IF NOT EXISTS user_settings')) {
+          throw new Error('migration failed');
+        }
+        return { rows: [] };
+      });
+
+      expect(() =>
+        (database as any).migrateWithSnapshotProtection(false),
+      ).toThrow('migration failed');
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).startsWith('ATTACH DATABASE'),
+        ),
+      ).toBe(false);
+    });
+
+    it('snapshots, and on migration failure restores and retries once, succeeding on the retry', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+      mockDb.executeSync.mockClear();
+
+      let attempt = 0;
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (sql.includes('CREATE TABLE IF NOT EXISTS user_settings')) {
+          attempt += 1;
+          if (attempt === 1) {
+            throw new Error('migration failed');
+          }
+        }
+        return { rows: [] };
+      });
+      const snapshotHandle = createMockSnapshotHandle('/mock/premigration.db');
+      mockOpen.mockReturnValue(snapshotHandle as never);
+
+      expect(() =>
+        (database as any).migrateWithSnapshotProtection(true),
+      ).not.toThrow();
+
+      expect(attempt).toBe(2);
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).startsWith('VACUUM INTO'),
+        ),
+      ).toBe(true);
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).startsWith('ATTACH DATABASE'),
+        ),
+      ).toBe(true);
+    });
+
+    it('gives up and propagates the error when the retry after restore also fails', async () => {
+      const mockDb = createMockDatabase();
+      mockOpen.mockReturnValue(mockDb as never);
+      await database.init();
+      mockDb.executeSync.mockClear();
+
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (sql.includes('CREATE TABLE IF NOT EXISTS user_settings')) {
+          throw new Error('migration still failing');
+        }
+        return { rows: [] };
+      });
+      const snapshotHandle = createMockSnapshotHandle('/mock/premigration.db');
+      mockOpen.mockReturnValue(snapshotHandle as never);
+
+      expect(() =>
+        (database as any).migrateWithSnapshotProtection(true),
+      ).toThrow('migration still failing');
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).startsWith('ATTACH DATABASE'),
+        ),
+      ).toBe(true);
+    });
   });
 
   it('retries the legacy steps backfill after the column was added', async () => {
@@ -349,6 +771,130 @@ describe('database initialization', () => {
       ],
     );
     expect(mockDb.executeSync).toHaveBeenCalledWith('COMMIT');
+  });
+
+  const schemaV2Backup = (
+    sharing: {
+      enabled: boolean;
+      userId: string | null;
+      displayName: string | null;
+      affinity: 'river' | 'woodland' | 'hills' | null;
+    } | null,
+  ) => ({
+    app: 'MiddleEarthChallenge' as const,
+    schemaVersion: 2 as const,
+    exportedAt: '2026-09-02T12:00:00.000Z',
+    settings: {
+      labelSize: 'large' as const,
+      textSize: 'small' as const,
+      currentTheme: 'classic' as const,
+      showPointLabels: false,
+      colorizeMap: false,
+      reducedMapTitles: false,
+      devMode: true,
+      useMiles: false,
+      lastNotifiedCheckpointIndex: 3,
+    },
+    distanceEntries: [],
+    troubleshootingIssues: [],
+    ...(sharing ? { sharing } : {}),
+  });
+
+  it('records the exported sharing identity for cleanup when the backup has active sharing', async () => {
+    const mockDb = createMockDatabase();
+    mockDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('SELECT COALESCE(SUM(miles)')) {
+        return { rows: [{ miles: 0, steps: 0 }] };
+      }
+      return { rows: [] };
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+
+    await database.importJourneyBackup(
+      schemaV2Backup({
+        enabled: true,
+        userId: 'exported-user-id',
+        displayName: 'Penny Greycloak',
+        affinity: 'woodland',
+      }),
+    );
+
+    const sharingUpdate = mockDb.executeSync.mock.calls.find(([sql]) =>
+      String(sql).includes('sharing_migration_source_user_id = ?'),
+    );
+    expect(sharingUpdate).toBeTruthy();
+    expect(sharingUpdate?.[1]).toEqual([
+      'Penny Greycloak',
+      'woodland',
+      'exported-user-id',
+      'default',
+    ]);
+  });
+
+  it('does not touch sharing columns when the backup has no active sharing', async () => {
+    const mockDb = createMockDatabase();
+    mockDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('SELECT COALESCE(SUM(miles)')) {
+        return { rows: [{ miles: 0, steps: 0 }] };
+      }
+      return { rows: [] };
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+
+    await database.importJourneyBackup(
+      schemaV2Backup({
+        enabled: false,
+        userId: null,
+        displayName: null,
+        affinity: null,
+      }),
+    );
+
+    const sharingUpdate = mockDb.executeSync.mock.calls.find(([sql]) =>
+      String(sql).includes('sharing_migration_source_user_id'),
+    );
+    expect(sharingUpdate).toBeUndefined();
+  });
+
+  it('preserves destination sharing state when the CASE guard sees existing sharing intent', async () => {
+    const mockDb = createMockDatabase();
+    mockDb.executeSync.mockImplementation((sql: string) => {
+      if (sql.includes('SELECT COALESCE(SUM(miles)')) {
+        return { rows: [{ miles: 0, steps: 0 }] };
+      }
+      return { rows: [] };
+    });
+    mockOpen.mockReturnValue(mockDb as never);
+    await database.init();
+    mockDb.executeSync.mockClear();
+
+    await database.importJourneyBackup(
+      schemaV2Backup({
+        enabled: true,
+        userId: 'exported-user-id',
+        displayName: 'Penny Greycloak',
+        affinity: 'woodland',
+      }),
+    );
+
+    const sharingUpdateSql = mockDb.executeSync.mock.calls.find(([sql]) =>
+      String(sql).includes('sharing_migration_source_user_id = ?'),
+    )?.[0] as string;
+    // The destination-preservation guard must gate every mutable sharing
+    // column, not just display name/affinity, or a partially-configured
+    // destination could be silently clobbered by the imported profile.
+    expect(sharingUpdateSql).toContain(
+      'WHEN sharing_enabled = 1 OR sharing_provisioning_pending = 1 OR sharing_deletion_pending = 1',
+    );
+    expect(sharingUpdateSql).toContain('sharing_display_name = CASE');
+    expect(sharingUpdateSql).toContain('sharing_affinity_selection = CASE');
+    expect(sharingUpdateSql).toContain('sharing_provisioning_pending = CASE');
+    expect(sharingUpdateSql).toContain('last_published_miles = CASE');
+    expect(sharingUpdateSql).toContain('last_shared_progress_sync_at = CASE');
   });
 
   it('rolls back health entries when cursor and format persistence fails', async () => {

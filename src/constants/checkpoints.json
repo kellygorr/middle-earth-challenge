@@ -20,7 +20,8 @@
     "name": "Bree",
     "description": {
       "text": "Bree is a rare village where Men and Hobbits live side by side. Travelers gather at the Prancing Pony, a lively inn offering food, ale, and warmth. It is here that the Hobbits first meet Strider, who will guide them on the dangerous road ahead.",
-      "image": "bree.jpg"
+      "image": "bree.jpg",
+      "teaser": "A rare village where Men and Hobbits live side by side..."
     },
     "x": 975,
     "y": 646,
@@ -33,7 +34,8 @@
     "name": "Rivendell",
     "description": {
       "text": "Hidden in a deep valley, this Elven refuge offers healing, counsel, and secrecy. Here the Council of Elrond decides the Ring's fate, and a Fellowship is formed to see the task through.",
-      "image": "rivendell.jpg"
+      "image": "rivendell.jpg",
+      "teaser": "Hidden in a deep valley, this Elven refuge offers healing, counsel, and secrecy..."
     },
     "x": 1484,
     "y": 608,
@@ -46,7 +48,8 @@
     "name": "Lothlorien",
     "description": {
       "text": "An ancient Elven forest ruled by Galadriel, where golden mallorn trees rise above the river. Time feels slowed here, allowing the Fellowship to rest, and gain clarity before the journey turns darker.",
-      "image": "lothlorien.jpg"
+      "image": "lothlorien.jpg",
+      "teaser": "An ancient Elven forest ruled by Galadriel, where golden mallorn trees rise above the river..."
     },
     "x": 1634,
     "y": 1013,
@@ -59,7 +62,8 @@
     "name": "Parth Galen",
     "description": {
       "text": "Above the thunder of the Falls of Rauros, the Company makes camp for the last time. The Fellowship is broken, and Frodo sets out alone toward Mordor.",
-      "image": "parth-galen.jpg"
+      "image": "parth-galen.jpg",
+      "teaser": "Above the thunder of the Falls of Rauros, the Company makes camp for the last time..."
     },
     "x": 1829,
     "y": 1450,
@@ -73,7 +77,8 @@
     "name": "The Black Gates",
     "description": {
       "text": "The massive iron gates guarding the main entrance to Mordor, watched constantly by Sauron's forces. Reaching them makes one truth clear: this road is impossible, and another must be found.",
-      "image": "the-black-gates.jpg"
+      "image": "the-black-gates.jpg",
+      "teaser": "The massive iron gates guarding the main entrance to Mordor, watched constantly by Sauron's forces..."
     },
     "x": 2100,
     "y": 1435,
@@ -86,7 +91,8 @@
     "name": "Minas Morgul",
     "description": {
       "text": "Once the fair city of Minas Ithil, this fortress now serves the Witch-king. Its pale, corpse-light marks the path into Mordor, and passing it tests the courage of all who draw near.",
-      "image": "minas-morgul.jpg"
+      "image": "minas-morgul.jpg",
+      "teaser": "Once the fair city of Minas Ithil, this fortress now serves the Witch-king..."
     },
     "x": 2060,
     "y": 1645,
@@ -99,7 +105,8 @@
     "name": "Mount Doom",
     "description": {
       "text": "The fire-mountain of Mordor, where the One Ring was forged.  You have reached the end. The Ring is destroyed, the Shadow vanquished, and Middle-earth is free. Your journey is complete.",
-      "image": "mount-doom.jpg"
+      "image": "mount-doom.jpg",
+      "teaser": "The fire-mountain of Mordor, where the One Ring was forged..."
     },
     "isEnd": true,
     "x": 2197,

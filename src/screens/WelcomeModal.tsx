@@ -28,11 +28,15 @@ import SettingsRef from '../components/SettingsRef';
 interface WelcomeModalProps {
   visible: boolean;
   onDismiss: () => void;
+  onReady?: () => void;
+  startupOverlay?: React.ReactNode;
 }
 
 export default function WelcomeModal({
   visible,
   onDismiss,
+  onReady,
+  startupOverlay,
 }: WelcomeModalProps) {
   const theme = useTheme();
   const { width, height } = useWindowDimensions();
@@ -60,135 +64,165 @@ export default function WelcomeModal({
   const handleDismiss = () => {
     onDismiss();
   };
+  const modalVisible = visible || internalVisible || startupOverlay != null;
+
+  // Reports readiness once the entrance animation finishes, so the splash
+  // overlay (rendered via startupOverlay) can fade out only after the
+  // welcome content is actually visible underneath it.
+  const readyFiredRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!visible) {
+      readyFiredRef.current = false;
+      return;
+    }
+    if (!internalVisible || readyFiredRef.current) return;
+    const readyTimer = setTimeout(
+      () => {
+        readyFiredRef.current = true;
+        onReady?.();
+      },
+      motion.modal.entranceDelay + motion.modal.entranceDuration,
+    );
+    return () => clearTimeout(readyTimer);
+  }, [visible, internalVisible, onReady]);
 
   return (
     <Modal
-      visible={internalVisible}
+      visible={modalVisible}
       transparent={true}
       animationType="none"
       onRequestClose={handleDismiss}
       statusBarTranslucent={true}
     >
-      {/* iOS Modals render in a separate native window, so need their own SafeAreaProvider */}
-      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <Animated.View
-          style={[
-            styles.overlay,
-            { backgroundColor: theme.colors.modalOverlay },
-            animatedBackgroundStyle,
-          ]}
-        >
-          <TouchableWithoutFeedback onPress={handleDismiss}>
-            <View style={StyleSheet.absoluteFill} />
-          </TouchableWithoutFeedback>
-          <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
-            <Animated.View
-              style={[
-                styles.contentWrapper,
-                isLandscape && styles.contentWrapperLandscape,
-                animatedContentStyle,
-              ]}
-              pointerEvents="box-none"
-            >
-              <View style={styles.welcomeContainer} pointerEvents="box-none">
-                <Text
-                  style={[
-                    styles.title,
-                    typographyThemed(theme).titleLargeInverted,
-                  ]}
-                >
-                  Middle Earth Challenge
-                </Text>
-                <Text
-                  style={[
-                    styles.subtitle,
-                    typographyThemed(theme).subtitleLargeInverted,
-                  ]}
-                >
-                  Walk from Bag End to Mount Doom
-                </Text>
-                <Button
-                  onPress={handleDismiss}
-                  variant={theme.name === 'classic' ? 'primary' : 'brand'}
-                  size="large"
-                >
-                  {miles > 0 ? 'Continue journey' : 'Begin journey'}
-                </Button>
+      <View style={styles.modalRoot}>
+        {/* iOS Modals render in a separate native window, so need their own SafeAreaProvider */}
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+          <Animated.View
+            style={[
+              styles.overlay,
+              { backgroundColor: theme.colors.modalOverlay },
+              animatedBackgroundStyle,
+            ]}
+          >
+            <TouchableWithoutFeedback onPress={handleDismiss}>
+              <View style={StyleSheet.absoluteFill} />
+            </TouchableWithoutFeedback>
+            <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
+              <Animated.View
+                style={[
+                  styles.contentWrapper,
+                  isLandscape && styles.contentWrapperLandscape,
+                  animatedContentStyle,
+                ]}
+                pointerEvents="box-none"
+              >
+                <View style={styles.welcomeContainer} pointerEvents="box-none">
+                  <Text
+                    style={[
+                      styles.title,
+                      typographyThemed(theme).titleLargeInverted,
+                    ]}
+                  >
+                    Middle Earth Challenge
+                  </Text>
+                  <Text
+                    style={[
+                      styles.subtitle,
+                      typographyThemed(theme).subtitleLargeInverted,
+                    ]}
+                  >
+                    Walk from Bag End to Mount Doom
+                  </Text>
+                  <Button
+                    onPress={handleDismiss}
+                    variant={theme.name === 'classic' ? 'primary' : 'brand'}
+                    size="large"
+                  >
+                    {miles > 0 ? 'Continue journey' : 'Begin journey'}
+                  </Button>
 
-                {/* Persistent sync-error card (any kind). Has its own
-                    × dismiss; we deliberately do NOT clear it when the
-                    welcome modal closes — the badge dot on Settings
-                    should keep reflecting the unresolved problem. */}
-                {hasTroubleshootingIssues && (
-                  <View style={styles.bannerWrap}>
-                    <SyncErrorBanner bleed={spacing.xl} />
-                    <Text
-                      style={[
-                        typographyThemed(theme).caption2Inverted,
-                        styles.bannerHint,
-                      ]}
-                    >
-                      Troubleshooting history is available in{' '}
-                      <SettingsRef
-                        size={12}
-                        color={theme.colors.textInverted}
-                      />
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </Animated.View>
-            {/* Sync indicator: absolutely positioned so it does not affect
-                the centering of the welcome content above. Sits just above
-                the journey progress bar when present, otherwise at the
-                bottom of the safe area. */}
-            <View
-              style={[
-                styles.syncIndicatorContainer,
-                {
-                  bottom:
-                    miles > 0 ? progressBarHeight + spacing.lg : spacing.md,
-                },
-              ]}
-              pointerEvents="none"
-            >
-              <SyncIndicator />
-            </View>
-            {miles > 0 ? (
+                  {/* Persistent sync-error card (any kind). Has its own
+                      × dismiss; we deliberately do NOT clear it when the
+                      welcome modal closes — the badge dot on Settings
+                      should keep reflecting the unresolved problem. */}
+                  {hasTroubleshootingIssues && (
+                    <View style={styles.bannerWrap}>
+                      <SyncErrorBanner bleed={spacing.xl} />
+                      <Text
+                        style={[
+                          typographyThemed(theme).caption2Inverted,
+                          styles.bannerHint,
+                        ]}
+                      >
+                        Troubleshooting history is available in{' '}
+                        <SettingsRef
+                          size={12}
+                          color={theme.colors.textInverted}
+                        />
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </Animated.View>
+              {/* Sync indicator: absolutely positioned so it does not affect
+                  the centering of the welcome content above. Sits just above
+                  the journey progress bar when present, otherwise at the
+                  bottom of the safe area. */}
               <View
                 style={[
-                  styles.bottomProgressContainer,
-                  { paddingHorizontal: spacing.xl },
+                  styles.syncIndicatorContainer,
+                  {
+                    bottom:
+                      miles > 0 ? progressBarHeight + spacing.lg : spacing.md,
+                  },
                 ]}
-                onLayout={e =>
-                  setProgressBarHeight(e.nativeEvent.layout.height)
-                }
+                pointerEvents="none"
               >
-                <JourneyProgressBar darkMode />
+                <SyncIndicator />
               </View>
-            ) : (
-              /* First-run: reassure the user that they don't need to
-                 connect a health app to use the app. Occupies the same
-                 bottom slot as the progress bar (mutually exclusive with
-                 miles > 0). Doesn't affect sync — auto-sync still runs
-                 on dismiss if a provider was previously connected. */
-              <View style={styles.bottomHintContainer} pointerEvents="none">
-                <Text
-                  style={[styles.hint, typographyThemed(theme).captionInverted]}
+              {miles > 0 ? (
+                <View
+                  style={[
+                    styles.bottomProgressContainer,
+                    { paddingHorizontal: spacing.xl },
+                  ]}
+                  onLayout={e =>
+                    setProgressBarHeight(e.nativeEvent.layout.height)
+                  }
                 >
-                  Health data integration is optional and can be connected at
-                  any time for automatic tracking.
-                </Text>
-              </View>
-            )}
-          </SafeAreaView>
-        </Animated.View>
-      </SafeAreaProvider>
+                  <JourneyProgressBar darkMode />
+                </View>
+              ) : (
+                /* First-run: reassure the user that they don't need to
+                   connect a health app to use the app. Occupies the same
+                   bottom slot as the progress bar (mutually exclusive with
+                   miles > 0). Doesn't affect sync — auto-sync still runs
+                   on dismiss if a provider was previously connected. */
+                <View style={styles.bottomHintContainer} pointerEvents="none">
+                  <Text
+                    style={[
+                      styles.hint,
+                      typographyThemed(theme).captionInverted,
+                    ]}
+                  >
+                    Health data integration is optional and can be connected at
+                    any time for automatic tracking.
+                  </Text>
+                </View>
+              )}
+            </SafeAreaView>
+          </Animated.View>
+        </SafeAreaProvider>
+        {startupOverlay}
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     justifyContent: 'center',

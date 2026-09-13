@@ -351,4 +351,118 @@ describe('friendProgressService', () => {
     );
     expect(mockSignOut).not.toHaveBeenCalled();
   });
+
+  describe('network timeout', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('times out a hung delete-participant call instead of hanging forever, and never reaches signOut', async () => {
+      mockDeleteParticipant.mockImplementation(() => new Promise(() => {}));
+
+      const deletion = createService().deleteFriendProgress();
+      await Promise.all([
+        expect(deletion).rejects.toThrow('friend-progress-network-timeout'),
+        jest.advanceTimersByTimeAsync(15_000),
+      ]);
+
+      expect(mockFlushPendingWrites).not.toHaveBeenCalled();
+      expect(mockSignOut).not.toHaveBeenCalled();
+    });
+
+    it('times out a hung flush instead of hanging forever, and never reaches signOut', async () => {
+      mockFlushPendingWrites.mockImplementation(() => new Promise(() => {}));
+
+      const deletion = createService().deleteFriendProgress();
+      await Promise.all([
+        expect(deletion).rejects.toThrow('friend-progress-network-timeout'),
+        jest.advanceTimersByTimeAsync(15_000),
+      ]);
+
+      expect(mockSignOut).not.toHaveBeenCalled();
+    });
+
+    it('recovers on retry after a timed-out delete, since the session was never signed out', async () => {
+      mockDeleteParticipant.mockImplementationOnce(() => new Promise(() => {}));
+
+      const service = createService();
+      const firstAttempt = service.deleteFriendProgress();
+      await Promise.all([
+        expect(firstAttempt).rejects.toThrow(
+          'friend-progress-network-timeout',
+        ),
+        jest.advanceTimersByTimeAsync(15_000),
+      ]);
+
+      // Second attempt: deleteParticipant now resolves normally. Because the
+      // timed-out first attempt never reached signOut(), getCurrentUserId()
+      // still returns the same session, so the retry can pick up cleanly.
+      mockDeleteParticipant.mockResolvedValueOnce(undefined);
+      await service.deleteFriendProgress();
+
+      expect(mockDeleteParticipant).toHaveBeenCalledTimes(2);
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
+
+    it('times out a hung setParticipant call when enabling sharing', async () => {
+      mockSetParticipant.mockImplementation(() => new Promise(() => {}));
+
+      const enabling = createService().enableFriendProgress(
+        'Kelly',
+        15,
+        'hills',
+      );
+      await Promise.all([
+        expect(enabling).rejects.toThrow('friend-progress-network-timeout'),
+        jest.advanceTimersByTimeAsync(15_000),
+      ]);
+    });
+
+    it('times out a hung fetchParticipantPage call', async () => {
+      mockFetchParticipantPage.mockImplementation(() => new Promise(() => {}));
+
+      const fetching = createService().fetchFriendProgress();
+      await Promise.all([
+        expect(fetching).rejects.toThrow('friend-progress-network-timeout'),
+        jest.advanceTimersByTimeAsync(15_000),
+      ]);
+    });
+  });
+
+  describe('deleteFriendProgressByUserId', () => {
+    it('deletes the stale exported participant when the destination UID differs', async () => {
+      mockGetCurrentUserId.mockReturnValue('destination-user');
+
+      await createService().deleteFriendProgressByUserId('exported-user');
+
+      expect(mockDeleteParticipant).toHaveBeenCalledWith('exported-user');
+      expect(mockFlushPendingWrites).toHaveBeenCalledTimes(1);
+      expect(mockSignOut).not.toHaveBeenCalled();
+    });
+
+    it('skips deletion when the destination UID matches the exported UID', async () => {
+      mockGetCurrentUserId.mockReturnValue('same-user');
+
+      await createService().deleteFriendProgressByUserId('same-user');
+
+      expect(mockDeleteParticipant).not.toHaveBeenCalled();
+      expect(mockFlushPendingWrites).not.toHaveBeenCalled();
+      expect(mockSignOut).not.toHaveBeenCalled();
+    });
+
+    it('creates a destination session before comparing UIDs when none exists yet', async () => {
+      mockGetCurrentUserId.mockReturnValue(null);
+      mockSignInAnonymously.mockResolvedValue('new-destination-user');
+
+      await createService().deleteFriendProgressByUserId('exported-user');
+
+      expect(mockSignInAnonymously).toHaveBeenCalledTimes(1);
+      expect(mockDeleteParticipant).toHaveBeenCalledWith('exported-user');
+      expect(mockFlushPendingWrites).toHaveBeenCalledTimes(1);
+    });
+  });
 });

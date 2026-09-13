@@ -95,6 +95,16 @@ export function useLivePedometerDeltaOwner(): void {
 
     return () => {
       generationRef.current += 1;
+      // Reset the in-flight guard too, not just the generation counter. If
+      // the native read this effect started never settles, refresh()'s own
+      // finally (which clears the guard) never runs, and since inFlightRef
+      // persists across this hook's effect re-runs, a stuck old request
+      // would silently block every future refresh() forever — even after a
+      // mode switch spins up a brand-new interval. A stale resolution of
+      // the abandoned request is already harmless: its own finally checks
+      // identity before touching inFlightRef, and the generation check
+      // above already prevents it from writing a stale steps value.
+      inFlightRef.current = null;
       clearInterval(interval);
       sub.remove();
     };

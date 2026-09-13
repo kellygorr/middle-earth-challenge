@@ -4,6 +4,7 @@ const mockExportJourneyBackup = jest.fn();
 const mockImportJourneyBackup = jest.fn();
 const mockLoadSettings = jest.fn();
 const mockSetProgressState = jest.fn();
+const mockGetCurrentUserId = jest.fn();
 
 jest.mock('react-native', () => ({
   NativeModules: {
@@ -17,8 +18,15 @@ jest.mock('react-native', () => ({
 
 jest.mock('../database', () => ({
   database: {
-    exportJourneyBackup: () => mockExportJourneyBackup(),
+    exportJourneyBackup: (sharingUserId: string | null) =>
+      mockExportJourneyBackup(sharingUserId),
     importJourneyBackup: (backup: unknown) => mockImportJourneyBackup(backup),
+  },
+}));
+
+jest.mock('../friendProgressService', () => ({
+  friendProgressService: {
+    getCurrentUserId: () => mockGetCurrentUserId(),
   },
 }));
 
@@ -39,6 +47,7 @@ import { exportJourneyData, importJourneyData } from '../journeyDataTransfer';
 describe('journey data transfer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetCurrentUserId.mockResolvedValue(null);
   });
 
   const backup = {
@@ -81,6 +90,26 @@ describe('journey data transfer', () => {
       expect.stringMatching(/^challenge-backup-\d{1,2}-\d{1,2}-\d{2}\.json$/),
       JSON.stringify(backup, null, 2),
     );
+    expect(mockExportJourneyBackup).toHaveBeenCalledWith(null);
+  });
+
+  it('passes the active anonymous user ID into the exported backup', async () => {
+    mockGetCurrentUserId.mockResolvedValue('sharing-user');
+    mockExportJourneyBackup.mockResolvedValue({
+      ...backup,
+      schemaVersion: 2,
+      sharing: {
+        enabled: true,
+        userId: 'sharing-user',
+        displayName: 'Kelly',
+        affinity: 'river',
+      },
+    });
+    mockExportJson.mockResolvedValue('content://backup');
+
+    await exportJourneyData();
+
+    expect(mockExportJourneyBackup).toHaveBeenCalledWith('sharing-user');
   });
 
   it('imports a valid backup and refreshes in-memory progress', async () => {

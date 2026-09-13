@@ -61,6 +61,7 @@ interface SettingsStore extends UserSettings {
         | 'sharingAffinity'
         | 'sharingProvisioningPending'
         | 'sharingDeletionPending'
+        | 'sharingMigrationSourceUserId'
         | 'lastPublishedMiles'
         | 'lastSharedProgressSyncAt'
       >
@@ -103,6 +104,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   sharingAffinity: null,
   sharingProvisioningPending: false,
   sharingDeletionPending: false,
+  sharingMigrationSourceUserId: null,
   lastPublishedMiles: null,
   lastSharedProgressSyncAt: null,
   lastJourneyBackupFileName: null,
@@ -217,6 +219,8 @@ export const useSettingsStore = create<SettingsStore>(set => ({
       sharingAffinity: settings.sharingAffinity ?? null,
       sharingProvisioningPending: settings.sharingProvisioningPending ?? false,
       sharingDeletionPending: settings.sharingDeletionPending ?? false,
+      sharingMigrationSourceUserId:
+        settings.sharingMigrationSourceUserId ?? null,
       lastPublishedMiles: settings.lastPublishedMiles ?? null,
       lastSharedProgressSyncAt: settings.lastSharedProgressSyncAt ?? null,
       lastJourneyBackupFileName: settings.lastJourneyBackupFileName ?? null,

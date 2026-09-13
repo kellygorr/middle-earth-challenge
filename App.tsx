@@ -40,13 +40,22 @@ export function getSplashStatus({
   bootstrapStatus,
   mapReady,
   mapReadyTimedOut,
+  showWelcome,
+  welcomeReady,
 }: {
   bootstrapStatus: BootstrapStatus;
   mapReady: boolean;
   mapReadyTimedOut: boolean;
+  showWelcome: boolean;
+  welcomeReady: boolean;
 }): BootstrapStatus {
   if (bootstrapStatus === 'error') return 'error';
-  if (bootstrapStatus === 'ready' && (mapReady || mapReadyTimedOut)) {
+  const nextScreenReady = !showWelcome || welcomeReady;
+  if (
+    bootstrapStatus === 'ready' &&
+    nextScreenReady &&
+    (mapReady || mapReadyTimedOut)
+  ) {
     return 'ready';
   }
   return 'loading';
@@ -54,14 +63,12 @@ export function getSplashStatus({
 
 export function shouldShowWelcomeModal({
   bootstrapStatus,
-  splashHidden,
   showWelcome,
 }: {
   bootstrapStatus: BootstrapStatus;
-  splashHidden: boolean;
   showWelcome: boolean;
 }): boolean {
-  return bootstrapStatus === 'ready' && splashHidden && showWelcome;
+  return bootstrapStatus !== 'error' && showWelcome;
 }
 
 export async function runRecoverableBootstrapStep(
@@ -108,7 +115,7 @@ export function SplashOverlay({
   onHidden?: () => void;
 }) {
   const theme = useTheme();
-  const [visible, setVisible] = useState(true);
+  const [faded, setFaded] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
   const activeAnimation = useRef<Animated.CompositeAnimation | null>(null);
@@ -118,7 +125,7 @@ export function SplashOverlay({
     activeAnimation.current = null;
 
     if (status === 'loading') {
-      setVisible(true);
+      setFaded(false);
       setShowSpinner(false);
       opacity.setValue(1);
       const spinnerTimer = setTimeout(() => setShowSpinner(true), 200);
@@ -126,7 +133,8 @@ export function SplashOverlay({
     }
 
     if (status === 'error') {
-      setVisible(false);
+      opacity.setValue(0);
+      setFaded(true);
       onHidden?.();
       return;
     }
@@ -140,7 +148,7 @@ export function SplashOverlay({
     activeAnimation.current = animation;
     animation.start(({ finished }) => {
       if (finished) {
-        setVisible(false);
+        setFaded(true);
         onHidden?.();
       }
     });
@@ -153,11 +161,9 @@ export function SplashOverlay({
     };
   }, [status, opacity, onHidden]);
 
-  if (!visible) return null;
-
   return (
     <Animated.View
-      pointerEvents="auto"
+      pointerEvents={faded ? 'none' : 'auto'}
       testID="splash-overlay"
       style={[
         StyleSheet.absoluteFillObject,
@@ -165,7 +171,7 @@ export function SplashOverlay({
         { backgroundColor: theme.colors.splashBackground, opacity },
       ]}
     >
-      {showSpinner && (
+      {showSpinner && !faded && (
         <ActivityIndicator
           accessibilityLabel="Loading saved journey"
           color={theme.colors.iconInverted}
@@ -184,6 +190,7 @@ function App(): React.JSX.Element {
   const [mapReady, setMapReady] = useState(false);
   const [mapReadyTimedOut, setMapReadyTimedOut] = useState(false);
   const [splashHidden, setSplashHidden] = useState(false);
+  const [welcomeReady, setWelcomeReady] = useState(false);
   const setPhase = useInitializationStore(state => state.setPhase);
 
   const showWelcome = useSettingsStore(state => state.showWelcome);
@@ -206,6 +213,7 @@ function App(): React.JSX.Element {
       setMapReady(false);
       setMapReadyTimedOut(false);
       setSplashHidden(false);
+      setWelcomeReady(false);
       setPhase('loading');
 
       await runRecoverableBootstrapStep('Firebase App Check', () =>
@@ -268,10 +276,16 @@ function App(): React.JSX.Element {
     setSplashHidden(true);
   }, []);
 
+  const handleWelcomeReady = useCallback(() => {
+    setWelcomeReady(true);
+  }, []);
+
   const splashStatus = getSplashStatus({
     bootstrapStatus,
     mapReady,
     mapReadyTimedOut,
+    showWelcome,
+    welcomeReady,
   });
 
   useEffect(() => {
@@ -279,6 +293,7 @@ function App(): React.JSX.Element {
       bootstrapStatus,
       mapReady,
       mapReadyTimedOut,
+      welcomeReady,
       splashStatus,
       splashHidden,
     });
@@ -286,6 +301,7 @@ function App(): React.JSX.Element {
     bootstrapStatus,
     mapReady,
     mapReadyTimedOut,
+    welcomeReady,
     splashStatus,
     splashHidden,
   ]);
@@ -335,11 +351,17 @@ function App(): React.JSX.Element {
         {/* Global Modals */}
         {shouldShowWelcomeModal({
           bootstrapStatus,
-          splashHidden,
           showWelcome,
         }) && (
           <WelcomeModal
             visible={showWelcome}
+            onReady={handleWelcomeReady}
+            startupOverlay={
+              <SplashOverlay
+                status={splashStatus}
+                onHidden={handleSplashHidden}
+              />
+            }
             onDismiss={() => {
               setShowWelcome(false);
               // Transition to revealing phase when welcome is dismissed
@@ -396,8 +418,9 @@ function App(): React.JSX.Element {
           </View>
         )}
 
-        {/* Splash - rendered LAST, hides everything until loading completes */}
-        <SplashOverlay status={splashStatus} onHidden={handleSplashHidden} />
+        {!showWelcome && (
+          <SplashOverlay status={splashStatus} onHidden={handleSplashHidden} />
+        )}
       </View>
     </SafeAreaProvider>
   );
@@ -408,6 +431,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   splashFill: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -89,7 +89,7 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     scrollType: 'default',
   },
   'transfer-data': {
-    title: 'Transfer data',
+    title: 'Backup data',
     content: TransferDataContent,
     smallHeader: true,
     leftButton: 'back',

@@ -7,6 +7,7 @@ const createSettings = () => {
     sharingAffinity: null as 'river' | 'woodland' | 'hills' | null,
     sharingProvisioningPending: false,
     sharingDeletionPending: false,
+    sharingMigrationSourceUserId: null as string | null,
     lastPublishedMiles: null as number | null,
     updateSharingSettings: jest.fn(),
   };
@@ -21,6 +22,7 @@ const createService = () => ({
   updateFriendProfile: jest.fn().mockResolvedValue(undefined),
   updateFriendDistance: jest.fn().mockResolvedValue(undefined),
   deleteFriendProgress: jest.fn().mockResolvedValue(undefined),
+  deleteFriendProgressByUserId: jest.fn().mockResolvedValue(undefined),
 });
 
 describe('friendProgressWorkflow', () => {
@@ -322,5 +324,101 @@ describe('friendProgressWorkflow', () => {
 
     expect(service.enableFriendProgress).toHaveBeenCalledTimes(1);
     expect(fetchParticipants).toHaveBeenCalledTimes(1);
+  });
+
+  describe('sharing migration cleanup', () => {
+    it('provisions the imported profile exactly once on a fresh destination', async () => {
+      const settings = Object.assign(createSettings(), {
+        sharingMigrationSourceUserId: 'exported-user',
+        sharingDisplayName: 'Penny Greycloak',
+        sharingAffinity: 'woodland' as const,
+        sharingProvisioningPending: true,
+        lastPublishedMiles: null,
+      });
+      const service = createService();
+      const fetchParticipants = jest.fn().mockResolvedValue(undefined);
+      const workflow = createFriendProgressWorkflow({
+        service,
+        getSettings: () => settings,
+        now: () => 4242,
+      });
+
+      await workflow.synchronize(12.5, fetchParticipants);
+
+      expect(service.deleteFriendProgressByUserId).toHaveBeenCalledWith(
+        'exported-user',
+      );
+      // Regression guard: a stale settings snapshot taken before migration
+      // finished provisioning previously caused a second, redundant
+      // enableFriendProgress call in the same synchronize() cycle.
+      expect(service.enableFriendProgress).toHaveBeenCalledTimes(1);
+      expect(service.enableFriendProgress).toHaveBeenCalledWith(
+        'Penny Greycloak',
+        12.5,
+        'woodland',
+      );
+      expect(settings).toMatchObject({
+        sharingEnabled: true,
+        sharingProvisioningPending: false,
+        sharingMigrationSourceUserId: null,
+        lastPublishedMiles: 12.5,
+      });
+      expect(fetchParticipants).toHaveBeenCalledTimes(1);
+    });
+
+    it('only deletes the stale participant when the destination already has sharing configured', async () => {
+      const settings = Object.assign(createSettings(), {
+        sharingMigrationSourceUserId: 'exported-user',
+        sharingEnabled: true,
+        sharingDisplayName: 'Destination Name',
+        sharingAffinity: 'river' as const,
+        lastPublishedMiles: 10,
+      });
+      const service = createService();
+      const fetchParticipants = jest.fn().mockResolvedValue(undefined);
+      const workflow = createFriendProgressWorkflow({
+        service,
+        getSettings: () => settings,
+      });
+
+      await workflow.synchronize(10, fetchParticipants);
+
+      expect(service.deleteFriendProgressByUserId).toHaveBeenCalledWith(
+        'exported-user',
+      );
+      expect(service.enableFriendProgress).not.toHaveBeenCalled();
+      expect(settings).toMatchObject({
+        sharingMigrationSourceUserId: null,
+        sharingDisplayName: 'Destination Name',
+        sharingAffinity: 'river',
+      });
+    });
+
+    it('retries pending cleanup and leaves the marker set when deletion fails', async () => {
+      const settings = Object.assign(createSettings(), {
+        sharingMigrationSourceUserId: 'exported-user',
+        sharingEnabled: true,
+        sharingDisplayName: 'Destination Name',
+        sharingAffinity: 'river' as const,
+        lastPublishedMiles: 10,
+      });
+      const service = createService();
+      service.deleteFriendProgressByUserId.mockRejectedValueOnce(
+        new Error('offline'),
+      );
+      const workflow = createFriendProgressWorkflow({
+        service,
+        getSettings: () => settings,
+      });
+
+      await expect(
+        workflow.synchronize(10, jest.fn()),
+      ).rejects.toThrow('offline');
+      expect(settings.sharingMigrationSourceUserId).toBe('exported-user');
+
+      service.deleteFriendProgressByUserId.mockResolvedValueOnce(undefined);
+      await workflow.synchronize(10, jest.fn());
+      expect(settings.sharingMigrationSourceUserId).toBeNull();
+    });
   });
 });

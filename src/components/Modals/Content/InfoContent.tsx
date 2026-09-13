@@ -80,6 +80,22 @@ export default function InfoContent() {
       .getState()
       .isLockedCheckpoint(currentItem.CUMULATIVE_MILES || 0);
 
+  // The single immediate-next locked checkpoint gets a teaser: a
+  // pre-authored hint (checkpoints.json's description.teaser) shown even
+  // though the rest of the description/image stays hidden like any other
+  // locked checkpoint.
+  const isNextLockedCheckpoint =
+    isLockedCheckpoint &&
+    currentItem &&
+    'CUMULATIVE_MILES' in currentItem &&
+    useProgressStore
+      .getState()
+      .isNextLockedCheckpoint(currentItem.CUMULATIVE_MILES || 0);
+  const nextCheckpointTeaser =
+    isNextLockedCheckpoint && currentItem?.description?.teaser
+      ? currentItem.description.teaser
+      : null;
+
   // Show tracking options on first checkpoint (Hobbiton)
   const isFirstCheckpoint =
     itemType === 'checkpoint' &&
@@ -204,7 +220,7 @@ export default function InfoContent() {
       <View style={styles.bottomSection}>
         {/* Locked checkpoint message */}
         {itemType === 'checkpoint' && isLockedCheckpoint && (
-          <LockedCheckpointBanner />
+          <LockedCheckpointBanner teaser={nextCheckpointTeaser} />
         )}
 
         {/* Tracking options for first checkpoint */}

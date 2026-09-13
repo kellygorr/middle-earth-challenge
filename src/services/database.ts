@@ -16,6 +16,25 @@ import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
 const CURRENT_PROGRESS_CACHE_VERSION = 1;
 export const CURRENT_HEALTH_SYNC_FORMAT_VERSION = 1;
 
+// Bump this whenever a new data-affecting migration is added below. On
+// upgrade, any existing install (schema_meta.version > 0) whose stored
+// version is behind this one gets a fresh pre-migration snapshot taken
+// before the (otherwise idempotent, low-risk) ALTER TABLE migrations run.
+export const CURRENT_SCHEMA_VERSION = 1;
+export const PRE_MIGRATION_SNAPSHOT_DB_NAME =
+  'MiddleEarthSettings.premigration.db';
+const PRE_MIGRATION_SNAPSHOT_ALIAS = 'pre_migration_snapshot';
+
+// A stored version of 0 means either a brand-new install or one that
+// predates schema_meta — there is no prior recorded version to compare
+// against, so there is nothing yet worth protecting on this transition.
+export function needsPreMigrationSnapshot(
+  storedSchemaVersion: number,
+  currentSchemaVersion: number,
+): boolean {
+  return storedSchemaVersion > 0 && storedSchemaVersion < currentSchemaVersion;
+}
+
 export interface DistanceEntryChanges {
   upsert?: DistanceEntry[];
   removeIds?: string[];
@@ -46,7 +65,7 @@ export interface DistanceDaySummary {
 
 export interface JourneyBackup {
   app: 'MiddleEarthChallenge';
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   exportedAt: string;
   settings: {
     labelSize: LabelSize;
@@ -67,6 +86,12 @@ export interface JourneyBackup {
     dismissedAt: number | null;
     resolvedAt: number | null;
   }>;
+  sharing?: {
+    enabled: boolean;
+    userId: string | null;
+    displayName: string | null;
+    affinity: FriendAffinity | null;
+  };
 }
 
 // SQLite raises a generic error for "duplicate column" from ALTER TABLE
@@ -161,6 +186,157 @@ class Database {
   private async createTables(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Tracks the last fully-applied schema version so we know whether an
+    // upgrading install needs a pre-migration snapshot below. A fresh
+    // install (no row yet) starts at 0 and never needs one — there is no
+    // prior user data to protect.
+    this.db.executeSync(`
+      CREATE TABLE IF NOT EXISTS schema_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+    this.db.executeSync(
+      `INSERT OR IGNORE INTO schema_meta (id, version) VALUES (1, 0)`,
+    );
+    const schemaMetaRow = this.db.executeSync(
+      `SELECT version FROM schema_meta WHERE id = 1`,
+    ).rows?.[0] as { version?: number } | undefined;
+    const storedSchemaVersion = Number(schemaMetaRow?.version ?? 0);
+
+    // Only installs that already have a recorded version (i.e. have run
+    // this schema-tracking code before) and are behind the current version
+    // get a snapshot — see needsPreMigrationSnapshot() for the exact rule.
+    const isProtectedUpgrade = needsPreMigrationSnapshot(
+      storedSchemaVersion,
+      CURRENT_SCHEMA_VERSION,
+    );
+    this.migrateWithSnapshotProtection(isProtectedUpgrade);
+
+    this.db.executeSync(`UPDATE schema_meta SET version = ? WHERE id = 1`, [
+      CURRENT_SCHEMA_VERSION,
+    ]);
+  }
+
+  // Split out from createTables() so tests can exercise the
+  // snapshot/restore/retry orchestration directly, independent of whatever
+  // the real stored-vs-current schema version happens to be at any given
+  // time (there may be no real migration currently behind CURRENT_SCHEMA_VERSION
+  // to naturally trigger this).
+  private migrateWithSnapshotProtection(isProtectedUpgrade: boolean): void {
+    if (isProtectedUpgrade) {
+      this.createPreMigrationSnapshot();
+    }
+
+    try {
+      this.runSchemaMigrations();
+    } catch (error) {
+      // Nothing to fall back to — same failure mode as before this feature
+      // existed (fresh install, or a version we don't protect yet).
+      if (!isProtectedUpgrade) throw error;
+
+      // A migration failing mid-way can leave the live database in a
+      // half-migrated, inconsistent state — worse than either the old or
+      // new schema. Restore the clean pre-migration snapshot and retry
+      // once: if the original failure was transient (e.g. a momentary disk
+      // error), this succeeds and the update proceeds normally; if it's a
+      // real bug, the user still ends up with a working app on the old
+      // schema instead of a bricked install.
+      this.restoreFromPreMigrationSnapshot();
+      this.runSchemaMigrations();
+    }
+  }
+
+  private createPreMigrationSnapshot(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // VACUUM INTO refuses to write to a path that already exists, so clear
+    // out any snapshot left over from a prior schema-version bump first.
+    // Opening it (rather than guessing its path) guarantees the file exists
+    // and sits next to the live database, and delete() closes the handle.
+    const staleSnapshot = open({ name: PRE_MIGRATION_SNAPSHOT_DB_NAME });
+    const snapshotPath = staleSnapshot.getDbPath();
+    staleSnapshot.delete();
+
+    const escapedPath = snapshotPath.replace(/'/g, "''");
+    this.db.executeSync(`VACUUM INTO '${escapedPath}'`);
+  }
+
+  private restoreFromPreMigrationSnapshot(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const snapshotHandle = open({ name: PRE_MIGRATION_SNAPSHOT_DB_NAME });
+    const snapshotPath = snapshotHandle.getDbPath();
+    snapshotHandle.close();
+
+    const escapedPath = snapshotPath.replace(/'/g, "''");
+    // ATTACH (and DETACH, in the finally below) must run outside any
+    // transaction — SQLite rejects both inside one — so only the table
+    // rebuild itself is wrapped in BEGIN/COMMIT below.
+    this.db.executeSync(
+      `ATTACH DATABASE '${escapedPath}' AS ${PRE_MIGRATION_SNAPSHOT_ALIAS}`,
+    );
+
+    try {
+      // Rebuild every live table from the snapshot's own schema rather than
+      // patching columns in place — a migration can fail after adding only
+      // some of its columns, so the live schema at this point is unknown
+      // and untrusted. Recreating from the snapshot's CREATE TABLE text is
+      // the only way to guarantee an exact revert.
+      //
+      // The whole rebuild runs as one transaction: a mid-loop failure (disk
+      // error, killed process) must not leave some tables restored and
+      // others dropped-but-not-recreated, which would be strictly worse
+      // than the half-migrated state this function exists to fix.
+      this.runTransaction(() => {
+        const tables = (this.db!.executeSync(
+          `SELECT name, sql FROM ${PRE_MIGRATION_SNAPSHOT_ALIAS}.sqlite_master
+           WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+        ).rows ?? []) as Array<{ name: string; sql: string }>;
+
+        for (const table of tables) {
+          this.db!.executeSync(`DROP TABLE IF EXISTS "${table.name}"`);
+          this.db!.executeSync(table.sql);
+          this.db!.executeSync(
+            `INSERT INTO "${table.name}" SELECT * FROM ${PRE_MIGRATION_SNAPSHOT_ALIAS}."${table.name}"`,
+          );
+        }
+
+        // A migration can fail after CREATE TABLE-ing a brand-new table
+        // (the same pattern runSchemaMigrations() already uses for
+        // user_settings, distance_entries, etc. via CREATE TABLE IF NOT
+        // EXISTS) but before that table existed in the snapshot. Restoring
+        // only the tables the snapshot knows about would leave that
+        // partially-migrated table behind, which is not an exact revert.
+        // Drop anything live that isn't in the snapshot too — except
+        // schema_meta, which must survive so the version this restore is
+        // rolling back to remains correctly recorded.
+        const snapshotTableNames = new Set(tables.map(table => table.name));
+        const liveTables = (this.db!.executeSync(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+        ).rows ?? []) as Array<{ name: string }>;
+        for (const { name } of liveTables) {
+          if (name === 'schema_meta' || snapshotTableNames.has(name)) continue;
+          this.db!.executeSync(`DROP TABLE IF EXISTS "${name}"`);
+        }
+
+        const indexes = (this.db!.executeSync(
+          `SELECT sql FROM ${PRE_MIGRATION_SNAPSHOT_ALIAS}.sqlite_master
+           WHERE type = 'index' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`,
+        ).rows ?? []) as Array<{ sql: string }>;
+        for (const index of indexes) {
+          this.db!.executeSync(index.sql);
+        }
+      });
+    } finally {
+      this.db.executeSync(`DETACH DATABASE ${PRE_MIGRATION_SNAPSHOT_ALIAS}`);
+    }
+  }
+
+  private runSchemaMigrations(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
     // User settings table - simple key-value style for app preferences
     this.db.executeSync(`
       CREATE TABLE IF NOT EXISTS user_settings (
@@ -192,6 +368,7 @@ class Database {
         sharing_affinity_selection TEXT,
         sharing_provisioning_pending INTEGER NOT NULL DEFAULT 0,
         sharing_deletion_pending INTEGER NOT NULL DEFAULT 0,
+        sharing_migration_source_user_id TEXT,
         last_published_miles REAL,
         last_shared_progress_sync_at INTEGER,
         last_journey_backup_file_name TEXT
@@ -313,6 +490,7 @@ class Database {
       `ALTER TABLE user_settings ADD COLUMN sharing_affinity_selection TEXT`,
       `ALTER TABLE user_settings ADD COLUMN sharing_provisioning_pending INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE user_settings ADD COLUMN sharing_deletion_pending INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE user_settings ADD COLUMN sharing_migration_source_user_id TEXT`,
       `ALTER TABLE user_settings ADD COLUMN last_published_miles REAL`,
       `ALTER TABLE user_settings ADD COLUMN last_shared_progress_sync_at INTEGER`,
       `ALTER TABLE user_settings ADD COLUMN last_journey_backup_file_name TEXT`,
@@ -499,6 +677,8 @@ class Database {
       sharingProvisioningPending:
         (row as any).sharing_provisioning_pending === 1,
       sharingDeletionPending: (row as any).sharing_deletion_pending === 1,
+      sharingMigrationSourceUserId:
+        (row as any).sharing_migration_source_user_id ?? null,
       lastPublishedMiles: (row as any).last_published_miles ?? null,
       lastSharedProgressSyncAt:
         (row as any).last_shared_progress_sync_at ?? null,
@@ -626,6 +806,10 @@ class Database {
     if (updates.sharingDeletionPending !== undefined) {
       fields.push('sharing_deletion_pending = ?');
       values.push(updates.sharingDeletionPending ? 1 : 0);
+    }
+    if (updates.sharingMigrationSourceUserId !== undefined) {
+      fields.push('sharing_migration_source_user_id = ?');
+      values.push(updates.sharingMigrationSourceUserId);
     }
     if (updates.lastPublishedMiles !== undefined) {
       fields.push('last_published_miles = ?');
@@ -810,7 +994,9 @@ class Database {
     }));
   }
 
-  async exportJourneyBackup(): Promise<JourneyBackup> {
+  async exportJourneyBackup(
+    sharingUserId: string | null,
+  ): Promise<JourneyBackup> {
     if (!this.db) throw new Error('Database not initialized');
     const settings = await this.getUserSettings();
     const entriesResult = this.db.executeSync(
@@ -832,9 +1018,13 @@ class Database {
       resolved_at: number | null;
     }>;
 
+    if (settings.sharingEnabled && !sharingUserId) {
+      throw new Error('Could not read the active friend-sharing identity');
+    }
+
     return {
       app: 'MiddleEarthChallenge',
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: new Date().toISOString(),
       settings: {
         labelSize: settings.labelSize,
@@ -865,6 +1055,14 @@ class Database {
           return [];
         }
       }),
+      sharing: {
+        enabled: settings.sharingEnabled,
+        userId: settings.sharingEnabled ? sharingUserId : null,
+        displayName: settings.sharingEnabled
+          ? settings.sharingDisplayName
+          : null,
+        affinity: settings.sharingEnabled ? settings.sharingAffinity : null,
+      },
     };
   }
 
@@ -918,6 +1116,45 @@ class Database {
             DEFAULT_SAVE_ID,
           ],
         );
+
+        if (backup.sharing?.enabled) {
+          this.db.executeSync(
+            `UPDATE user_settings
+             SET sharing_display_name = CASE
+                   WHEN sharing_enabled = 1 OR sharing_provisioning_pending = 1 OR sharing_deletion_pending = 1
+                     THEN sharing_display_name
+                   ELSE ?
+                 END,
+                 sharing_affinity_selection = CASE
+                   WHEN sharing_enabled = 1 OR sharing_provisioning_pending = 1 OR sharing_deletion_pending = 1
+                     THEN sharing_affinity_selection
+                   ELSE ?
+                 END,
+                 sharing_provisioning_pending = CASE
+                   WHEN sharing_enabled = 1 OR sharing_provisioning_pending = 1 OR sharing_deletion_pending = 1
+                     THEN sharing_provisioning_pending
+                   ELSE 1
+                 END,
+                 sharing_migration_source_user_id = ?,
+                 last_published_miles = CASE
+                   WHEN sharing_enabled = 1 OR sharing_provisioning_pending = 1 OR sharing_deletion_pending = 1
+                     THEN last_published_miles
+                   ELSE NULL
+                 END,
+                 last_shared_progress_sync_at = CASE
+                   WHEN sharing_enabled = 1 OR sharing_provisioning_pending = 1 OR sharing_deletion_pending = 1
+                     THEN last_shared_progress_sync_at
+                   ELSE NULL
+                 END
+             WHERE id = ?`,
+            [
+              backup.sharing.displayName,
+              backup.sharing.affinity,
+              backup.sharing.userId,
+              DEFAULT_SAVE_ID,
+            ],
+          );
+        }
 
         this.db.executeSync(`DELETE FROM troubleshooting_issues`);
         for (const issue of backup.troubleshootingIssues) {

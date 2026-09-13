@@ -425,8 +425,8 @@ export default function SettingsContent() {
 
         <ButtonRow
           icon={<SyncIcon size={iconSizes.medium} />}
-          label="Transfer data"
-          caption="Export or import your journey data for a new phone"
+          label="Backup data"
+          caption="Export or import journey data. Move data to a new phone."
           onPress={() => pushModal({ type: 'transfer-data' })}
           borderTop
         />
