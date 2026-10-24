@@ -27,6 +27,15 @@ interface PositionedPointProps {
   // point uses the same accurate value without measuring per-instance.
   labelHeight: number;
   opacity?: SharedValue<number>;
+  // Forwarded to Point for its UI-thread-only activation pathway — see
+  // Point.tsx for why these exist. Optional so PositionedPoint keeps
+  // working (falling back to the plain `isActive` prop) if a caller
+  // doesn't supply them.
+  gameProgressValue?: SharedValue<number>;
+  activationProgress?: number;
+  goingBackward?: boolean;
+  buffer?: number;
+  forceActive?: boolean;
 }
 
 export default function PositionedPoint({
@@ -45,6 +54,11 @@ export default function PositionedPoint({
   anchorRef,
   labelHeight,
   opacity,
+  gameProgressValue,
+  activationProgress,
+  goingBackward,
+  buffer,
+  forceActive,
 }: PositionedPointProps) {
   const animatedStyle = useAnimatedStyle(() => {
     // For 'top' labels the label sits above the circle in a column-reverse
@@ -82,6 +96,11 @@ export default function PositionedPoint({
         labelHeight={labelHeight}
         type={type}
         onPress={onPress}
+        gameProgressValue={gameProgressValue}
+        activationProgress={activationProgress}
+        goingBackward={goingBackward}
+        buffer={buffer}
+        forceActive={forceActive}
       />
     </Animated.View>
   );

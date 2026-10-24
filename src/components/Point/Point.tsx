@@ -5,8 +5,10 @@ import Animated, {
   withTiming,
   useAnimatedStyle,
   useSharedValue,
+  useAnimatedReaction,
   interpolateColor,
   useDerivedValue,
+  SharedValue,
 } from 'react-native-reanimated';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 
@@ -14,13 +16,45 @@ interface PointProps {
   x: number;
   y: number;
   name: string;
-  // Single active flag for both checkpoint outline and inner fill, and for trivia
+  // Single active flag for both checkpoint outline and inner fill, and for
+  // trivia. When `gameProgressValue` (below) is not supplied, this is the
+  // sole driver of the color transition (legacy/standalone-usage path,
+  // e.g. tests). When it IS supplied, this prop is only used to seed the
+  // very first render's color and to label accessibility text — the
+  // ongoing color transition instead runs entirely on the UI thread,
+  // driven directly by `gameProgressValue`.
   isActive: boolean;
   showLabel: boolean;
   labelPosition?: 'top' | 'right' | 'left';
   labelHeight: number;
   type?: 'checkpoint' | 'trivia';
   onPress?: () => void;
+  /**
+   * The map's raw animated progress (0..1), updated every frame on the UI
+   * thread. Optional — when provided, activation state is computed via a
+   * worklet-only useDerivedValue/useAnimatedReaction chain instead of
+   * reacting to the `isActive` prop, so this Point's color transition
+   * never depends on a JS re-render at all. This is what actually fixes
+   * the JS/UI thread contention that was contributing to choppiness
+   * during the map's path-fill animation: previously, EVERY checkpoint
+   * and trivia point recomputed `isActive` in JS and re-rendered on every
+   * throttled progress-bridge tick, regardless of whether that
+   * particular point's activation state actually changed.
+   */
+  gameProgressValue?: SharedValue<number>;
+  /** This point's activation threshold (0..1 progress fraction). Required
+   * alongside `gameProgressValue` to compute activation on the UI thread. */
+  activationProgress?: number;
+  /** Whether the user is currently moving backward relative to this
+   * point (mirrors PointLayer's existing directional-buffer logic). */
+  goingBackward?: boolean;
+  /** Activation buffer (in progress units) — same value PointLayer
+   * already computes today, just passed through for the worklet. */
+  buffer?: number;
+  /** True for the always-active start checkpoint — bypasses the
+   * progress-based comparison entirely, same as PointLayer's existing
+   * `kind === 'checkpoint' && item.isStart` special case. */
+  forceActive?: boolean;
 }
 
 function Point({
@@ -31,6 +65,11 @@ function Point({
   labelHeight,
   type = 'checkpoint',
   onPress,
+  gameProgressValue,
+  activationProgress = 0,
+  goingBackward = false,
+  buffer = 0,
+  forceActive = false,
 }: PointProps) {
   const theme = useTheme();
   const labelSize = useSettingsStore(state => state.labelSize);
@@ -40,11 +79,43 @@ function Point({
   const labelAnimatedStyle = useAnimatedStyle(() => ({
     opacity: withTiming(showLabel ? 1 : 0, { duration: 200 }),
   }));
-  // Activation animation progress for checkpoint color transitions
+  // Activation animation progress for checkpoint color transitions.
+  // Seeded from the JS `isActive` prop so the very first render's color
+  // is correct even before the UI-thread reaction (below) has run once.
   const activationSV = useSharedValue(isActive ? 1 : 0);
+
+  // Legacy/fallback path: no gameProgressValue supplied, so there is no
+  // UI-thread signal to react to — fall back to the original behavior of
+  // driving the transition directly off the `isActive` prop via a normal
+  // effect. Exercised by unit tests and any other standalone usage.
   useEffect(() => {
+    if (gameProgressValue) return;
     activationSV.value = withTiming(isActive ? 1 : 0, { duration: 100 });
-  }, [isActive, activationSV]);
+  }, [isActive, activationSV, gameProgressValue]);
+
+  // Primary path: gameProgressValue supplied (real map usage via
+  // PointLayer). Activation is derived and reacted to entirely on the UI
+  // thread — worklet in, worklet out, no runOnJS, no React re-render
+  // involved in driving this point's own color transition.
+  const isActiveUI = useDerivedValue(() => {
+    'worklet';
+    if (!gameProgressValue) return isActive;
+    if (forceActive) return true;
+    return goingBackward
+      ? gameProgressValue.value >= activationProgress + buffer
+      : gameProgressValue.value + buffer >= activationProgress;
+  }, [gameProgressValue, activationProgress, goingBackward, buffer, forceActive, isActive]);
+
+  useAnimatedReaction(
+    () => isActiveUI.value,
+    (curr, prev) => {
+      if (!gameProgressValue) return;
+      if (curr !== prev) {
+        activationSV.value = withTiming(curr ? 1 : 0, { duration: 100 });
+      }
+    },
+    [isActiveUI, gameProgressValue],
+  );
 
   // Derive the active color once and reuse in both styles
   const activeColorDV = useDerivedValue(() =>

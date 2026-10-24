@@ -29,6 +29,18 @@ interface WelcomeModalProps {
   visible: boolean;
   onDismiss: () => void;
   onReady?: () => void;
+  /**
+   * Fires once the exit fade animation has fully finished after `visible`
+   * becomes false (i.e. once `internalVisible` — which useAnimatedModal
+   * only flips false after both the content and background fades have
+   * completed — settles). The parent should keep this component mounted
+   * until this fires, rather than unmounting it the instant `visible`
+   * becomes false; unmounting immediately skips the exit animation
+   * entirely (React removes the whole subtree before its effects can
+   * run), which is what caused welcome-dismiss to look like an instant
+   * cut/flash to whatever renders underneath instead of a smooth fade.
+   */
+  onExited?: () => void;
   startupOverlay?: React.ReactNode;
 }
 
@@ -36,6 +48,7 @@ export default function WelcomeModal({
   visible,
   onDismiss,
   onReady,
+  onExited,
   startupOverlay,
 }: WelcomeModalProps) {
   const theme = useTheme();
@@ -65,6 +78,24 @@ export default function WelcomeModal({
     onDismiss();
   };
   const modalVisible = visible || internalVisible || startupOverlay != null;
+
+  // Notify the parent once the exit fade has genuinely finished, so it
+  // can safely unmount this component. `internalVisible` transitions
+  // true shortly after mount (entrance) and false again only once the
+  // exit animation's fade-out chain completes — never on the very first
+  // render, since it starts false. Gating on "was true, now false, and
+  // still not asked to be visible" avoids firing this on initial mount.
+  const hasBeenVisibleRef = React.useRef(false);
+  React.useEffect(() => {
+    if (internalVisible) {
+      hasBeenVisibleRef.current = true;
+      return;
+    }
+    if (hasBeenVisibleRef.current && !visible) {
+      hasBeenVisibleRef.current = false;
+      onExited?.();
+    }
+  }, [internalVisible, visible, onExited]);
 
   // Reports readiness once the entrance animation finishes, so the splash
   // overlay (rendered via startupOverlay) can fade out only after the
@@ -206,7 +237,7 @@ export default function WelcomeModal({
                     ]}
                   >
                     Health data integration is optional and can be connected at
-                    any time for automatic tracking.
+                    any time for automatic tracking
                   </Text>
                 </View>
               )}
@@ -284,6 +315,7 @@ const styles = StyleSheet.create({
     textAlign: 'left',
   },
   hint: {
+    width: '100%',
     textAlign: 'center',
     fontWeight: '600',
     opacity: 0.8,

@@ -160,8 +160,19 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
 
   // Handle home button press (settings modal)
   const handleHomePress = () => {
+    // Hide the map's path and welcome-hidden UI immediately, on press —
+    // not deferred. Settings is a fully opaque modal covering the whole
+    // screen at this exact moment, so anything changing underneath it
+    // right now is invisible to the user regardless of how it looks;
+    // the rAF-deferral tried previously was solving a DIFFERENT problem
+    // (UI-thread jank in Settings' own closing fade) but ended up
+    // deferring far longer than one frame in practice, which reintroduced
+    // the visible "pops away once Settings has mostly closed" bug this
+    // was meant to fix in the first place. Firing synchronously is both
+    // simpler and — since it happens fully hidden behind Settings —
+    // should have no visible cost at all.
+    setPhase('ready');
     handleDismiss(() => {
-      setPhase('ready');
       setShowWelcome(true);
     });
   };

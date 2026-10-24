@@ -383,17 +383,26 @@ shadow, transparency, and celebration-palette literals remain local by design.
       friends' leaderboards until the old phone republishes. See the comments
       on `deleteFriendProgressByUserId` and `setParticipant` in
       `friendProgressService.ts`.
-- [ ] **Firestore delete rule is broader than the migration scenario
-      requires.** `allow delete: if request.auth != null` on `friend_progress`/
-      `friend_progress_debug` lets any authenticated user (including any
-      throwaway anonymous session) delete any other user's row, not just a
-      stale migrated one — confirmed by `firestore-tests/rules.test.ts`'s
-      cross-UID delete test, which has no relationship check between the
-      deleter and the doc owner. Consider scoping this tighter, e.g. only
-      allowing non-owner deletes when the target doc's `updatedAt` is older
-      than some staleness threshold, so a live participant's row can't be
-      griefed by an unrelated user while still allowing genuinely stale
-      migrated rows to be cleaned up.
+- [x] **Firestore delete rule is broader than the migration scenario
+      requires — fixed.** `allow delete: if request.auth != null` on
+      `friend_progress`/`friend_progress_debug` let any authenticated user
+      (including any throwaway anonymous session) delete any other user's
+      row at any time, not just a stale migrated one. Replaced with
+      `isOwner(userId) || canDeleteStaleParticipant(resource.data)`: the
+      owner can always delete their own row, and a non-owner can delete
+      only once `resource.data.updatedAt` is more than 15 minutes old —
+      comfortably above the ~2-minute publish cadence
+      (`docs/shared-progress.md`), so a genuinely active participant's row
+      is never eligible for non-owner deletion. This still supports
+      `deleteFriendProgressByUserId`'s post-import cleanup: that call has
+      no retry logic of its own, but needs none, because a denied delete
+      throws, `sharingMigrationSourceUserId` is deliberately left set
+      (`friendProgressWorkflow.ts`), and the next ~2-minute sync cycle
+      retries automatically until the source row actually goes stale.
+      `firestore-tests/rules.test.ts` now covers both directions: a stale
+      cross-UID row can still be deleted (migration cleanup keeps
+      working), and a fresh cross-UID row cannot (the griefing vector is
+      closed). All 18 rules-emulator tests pass.
 - [x] **Firestore rules test for cross-UID delete.** `friend_progress`/
       `friend_progress_debug` delete rules changed from owner-only to any
       authenticated user, so a destination phone can delete a stale participant
@@ -497,5 +506,196 @@ different lens than the two general-correctness adversarial reviews. Findings:
       Bridge, with `oregon-trail.jpg` artwork.
 - [x] **Mile 492 — The Pass of Caradhras.** The Fellowship's failed mountain
       crossing, with `caradhras.jpg` artwork.
-- [ ] Review the remaining long gaps between Rivendell/Lothlorien and
-      Lothlorien/Parth Galen for additional route-appropriate trivia.
+- [x] **Reviewed the remaining long gaps between Rivendell/Lothlorien and
+      Lothlorien/Parth Galen.** Rivendell → Lothlorien is resolved: `The
+      Pass of Caradhras` (492), `Hollin Gate` (531), and `The Bridge of
+      Khazad-dûm` (551) now space that segment at 72/39/20-mile intervals.
+      Lothlorien → Parth Galen keeps its two existing entries, `Lembas
+      Bread` (700) and `The Argonath` (850) — **decided to leave as-is**:
+      that segment is the Fellowship's river journey down the Anduin by
+      boat, which doesn't have enough distinct route-appropriate lore
+      beats to justify forcing additional trivia into the gap.
+
+---
+
+## Device-testing findings on 1.1.4 candidate (2026-10-22)
+
+Found during a fresh-install smoke test of `com.middleearthchallenge.debug`
+on a physical Pixel 6, independent of the pending legacy-migration
+rehearsal. Both reproduced on-device.
+
+- [x] **Yellow (active) journey path animated jagged/choppy; grey (base
+      reveal) path stayed smooth — fixed.** Reproduced both on the
+      production app's default/original map pan position and on the debug
+      app's differently panned/zoomed starting position — not specific to
+      one map location. Confirmed only during the animation itself (not a
+      static geometry defect): jaggedness stopped the instant the
+      animation finished.
+  - Two earlier fix attempts on this same investigation did **not**
+    resolve it and are documented here so the real cause isn't
+    re-litigated: (1) flattening `gameProgressAdjusted`'s read of
+    `basePathEnd.value` (a derived value) to read
+    `initialBasePathProgress?.value` (the raw shared value) directly,
+    suspecting a derived-on-derived staleness hazard; (2) moving
+    `useGameProgressAnimation`'s JS-sync throttle gate from inside the
+    `runOnJS`-scheduled function to before scheduling `runOnJS` at all, so
+    the cross-thread dispatch itself — not just the resulting state write
+    — only happens ~10/sec instead of on every frame. Both were reasoned
+    from the code and shipped for on-device testing; neither changed the
+    reported behavior.
+  - **Actual root cause:** `MiddleEarthMapSkia` (the `<Canvas>` component)
+    was not memoized, so every ~10Hz `animatedProgress` JS state update
+    from `useGameProgressAnimation` — which exists specifically to drive
+    `PointLayer`'s checkpoint/trivia activation logic, not anything
+    visual in the Skia canvas itself — triggered a full React re-render of
+    the entire Canvas subtree. Per a documented upstream
+    `react-native-skia` issue (#4243), every Canvas commit re-records its
+    scene graph on the JS thread (twice), which is expensive and competes
+    with the UI thread for the same frame budget the stroke-trim
+    animation needs. The grey/base path reveal never triggers any JS
+    state change at all, so it never hit this path — matching why it
+    stayed smooth while the yellow path, the only one paired with a
+    recurring unrelated re-render of its own renderer, did not.
+  - **Fix:** wrapped `MiddleEarthMapSkia`'s export in `React.memo`
+    (`src/components/MiddleEarthMapSkia.tsx`) so it only re-renders when
+    its own props actually change — every value that needs frame-accurate
+    animation (`gameProgress`, `initialBasePathProgress`, `zoomScale`,
+    `shimmerProgress`) is already a shared value read directly by
+    Reanimated/Skia on the UI thread, independent of React re-renders.
+    This required also fixing `MapScreen.tsx`'s `layerColors` prop, which
+    was an inline object literal recreated on every render — left as-is,
+    it would have defeated the new memo via React's default shallow prop
+    comparison just as completely as not memoizing at all. Replaced with
+    a `useMemo`'d `mapLayerColors` keyed on the actual theme color values.
+  - Verified on-device: the active path now animates smoothly, matching
+    the grey path.
+- [x] **Returning to the app leaves MapScreen mounted but visually blank
+      (no UI rendered), though touch targets still work — fixed.** Reported
+      sequence: open Recents, swipe the app card away to fully dismiss it
+      (a plain Home-button background/foreground cycle never reproduced
+      this), then reopen the app from the launcher. MapScreen returned to
+      the same screen with path/buttons invisible but still tappable
+      (blind-tapping the Settings button's location still opened Settings),
+      and opening/closing any modal (e.g. Settings → Home) "re-triggered"
+      correct rendering. No crash, no error dialog.
+  - Several earlier theories and fix attempts did **not** resolve it and
+    are documented here so they aren't re-litigated: (1) a GPU/Skia
+    surface-loss theory, addressed by force-remounting the Skia canvas via
+    a `key` bump on every `background→active` `AppState` transition — this
+    visibly "flashed" the canvas on every resume (too aggressive) and was
+    fully reverted per explicit user direction; (2) a theory that
+    Reanimated's animation driver wasn't re-applying computed values to
+    newly recreated native views after the OS recreates the Activity —
+    addressed by building a whole `useResumeEpoch()` module-scope-state
+    detection hook plus "replay the entrance animation on resume" logic
+    wired into both `useInitialAnimation.ts` and
+    `useGameProgressAnimation.ts`. This was iterated on extensively (fixing
+    several real bugs in the epoch-consumption timing along the way) and
+    on-device debug logging eventually proved the animation commands
+    *were* genuinely firing on resume — yet the UI still stayed blank,
+    disproving the native-reconnection theory entirely. All of this
+    machinery (the hook, its test, and both hooks' wiring) was fully
+    removed once the real cause was found; it was never the fix.
+  - **Actual root cause**, confirmed via on-device logcat correlation of
+    `[App] initApp` bootstrap logs against `phase`/`showWelcome` state:
+    swiping the app away in Recents does not kill the process (same PID
+    throughout), but it does cause Android to fully recreate the Activity,
+    which recreates the entire React root (confirmed via a fresh
+    `Running "MiddleEarthChallenge"` log line with an incremented
+    `rootTag` on every such resume) and reruns `App.tsx`'s bootstrap effect
+    (`initApp()`) from scratch — while Zustand/module-scope store state
+    (including `initializationStore` and `settingsStore`) survives
+    untouched across that recreation. `initApp()` unconditionally called
+    `setPhase('ready')` on completion — `'ready'` is documented as
+    "welcome screen visible," and the *only* code path that ever promotes
+    `phase` onward (`'revealing'` → `'active'`) is `WelcomeModal`'s
+    `onDismiss` handler, which only ever fires while `showWelcome` is
+    `true`. For any returning user, `showWelcome` is already persisted
+    `false` from completing onboarding in a prior session, so
+    `WelcomeModal` never mounts again and `onDismiss` never fires again —
+    meaning every post-resume bootstrap rerun left `phase` **permanently
+    stuck at `'ready'` forever**, with no remaining code path able to ever
+    advance it. `useInitialAnimation.ts`'s `showWelcome`-gated hide-branch
+    (effectively `phase !== 'active'`) ran on every subsequent render,
+    forever resetting path/button opacity to 0, while its reveal branch
+    never ran again — exactly matching the symptom (permanently invisible
+    UI, only after swipe-away-resume, never after a plain backgrounding
+    cycle that doesn't rerun this effect at all).
+  - **Fix** (`App.tsx`): read `initializationStore`'s `phase` directly at
+    the top of `initApp()`, before touching anything, to capture whether
+    the app was already `'active'` (fully onboarded and running) before
+    this bootstrap rerun started. If so, skip `setPhase('loading')`
+    entirely (a warm resume has nothing to visually reload) and, on
+    completion, skip `setPhase('ready')` too, since there is nothing to
+    restore. If bootstrap was *not* already active (genuine first launch,
+    or recovering from an error), it still correctly lands on `'ready'`
+    for first-time users (`showWelcome` true, so Welcome can still show
+    and its `onDismiss` can still promote the phase normally) or directly
+    on `'active'` for already-onboarded users (skipping the dead-end
+    `'ready'` plateau entirely, since there's no Welcome left to dismiss).
+    Added two regression tests in `__tests__/App.test.tsx` reproducing
+    both the original permanently-stuck scenario (mounting against a
+    pre-set `phase: 'active'` store + already-onboarded settings) and the
+    first-time-user path (confirming it's unaffected, still correctly
+    gated on `'ready'`).
+  - **Follow-up regression caught during verification**: the initial
+    version of this fix (skipping only the *final* `setPhase('ready')`,
+    not also the *initial* `setPhase('loading')`) still forced
+    `phase: 'loading'` momentarily on every warm resume, which
+    `startupShowWelcome` treats as "hide the UI" — producing a brief but
+    real hide-then-reveal flash on every plain background/foreground
+    cycle (confirmed via on-device logging: `phase` dipped to `'loading'`
+    then recovered to `'active'` a few hundred ms later, with zero actual
+    bootstrap work needed in between). Fixed by also skipping the initial
+    `setPhase('loading')` call when the app was already active — a warm
+    resume now never touches `phase` at all, which also finally proved
+    the `useResumeEpoch` replay mechanism above was unnecessary dead
+    weight (it only existed to paper over symptoms of this same
+    `phase`-churn bug) and let it be fully removed.
+  - **Confirmed fixed on-device** across both the original repro (swipe
+    away in Recents → reopen) and the newly-found flash regression (plain
+    background → foreground), with 439 tests passing before cleanup and
+    435 passing after removing the no-longer-needed `useResumeEpoch`
+    mechanism (48 suites → 47 suites, 4 fewer tests from the deleted
+    hook's own test file).
+- [x] Both findings now have a confirmed root cause and fix; this build is
+      no longer blocked on resume/animation behavior before being treated
+      as release-ready, clearing the way for the `1.1.3` migration
+      rehearsal (`docs/android-manual-testing.md`).
+
+### Manual entry future-dating could silently double-count distance/steps
+
+- [x] **The Distance screen's edit-entry date stepper allowed setting a
+      future date with no upper bound — fixed.** Found while reviewing
+      device-testing behavior, not from a user report. The "Next day"
+      chevron in `EditEntryModal` (via `DateStepper`) had no clamp at all,
+      so a manual entry could be dated arbitrarily far into the future.
+  - **Confirmed impact if left unfixed:** this was not an overwrite risk —
+    it was a silent double-count risk. A manual entry's id is
+    `manual_<creationTimestamp>` (unrelated to its `date` field), while
+    automatic entries use day-keyed ids (`hc_aggregate_<dayStartMs>` for
+    Health Connect, `pedo_<segmentStartMs>` for pedometer). The upsert
+    path (`applyDistanceEntryChanges`) only replaces a row when its `id`
+    matches exactly, and every total (Map/Stats) is a flat
+    `SUM(miles)`/`SUM(steps)` with no per-day dedup anywhere in the sync
+    or reconciliation code. So once a future-dated manual entry's real
+    calendar day arrived and Health Connect/pedometer data synced in for
+    that day, both rows would persist and both would be counted —
+    silently inflating that day's (and the running total's) distance and
+    steps rather than either value being overwritten.
+  - **Fix** (`src/components/Modals/DateStepper.tsx`): added a `maxDate`
+    prop (defaults to `Date.now()`) and compare by calendar day (via the
+    existing `getStartOfDay` helper), not exact timestamp — a raw
+    timestamp comparison would incorrectly block stepping to today itself
+    once the current time-of-day had already passed the entry's stored
+    time. The "Next day" button is disabled once the date reaches the max
+    day, and its handler also no-ops defensively even if pressed. The
+    "Previous day" button and the separate `TimeInput` time-of-day field
+    were deliberately left untouched per explicit direction — constraining
+    time-of-day input risks making it harder to type while editing.
+  - Added `src/components/Modals/__tests__/DateStepper.test.tsx` (5 tests,
+    previously no dedicated test file existed): steps back/forward
+    normally, disables "Next day" and ignores a forced press at the max
+    day, still allows stepping backward from the max day, compares by
+    calendar day rather than timestamp (the exact edge case above), and
+    confirms the `maxDate` default. Confirmed fixed on-device.

@@ -6,11 +6,21 @@ import {
   initializeTestEnvironment,
   RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  deleteDoc,
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+} from 'firebase/firestore';
 
 const PROJECT_ID = 'middle-earth-rules-test';
 const EMULATOR_HOST = '127.0.0.1';
 const EMULATOR_PORT = 8080;
+
+// Matches the 15-minute non-owner-delete staleness gate in firestore.rules.
+const STALE_PARTICIPANT_MINUTES = 15;
 
 const validParticipant = (overrides: Record<string, unknown> = {}) => ({
   displayName: 'Frodo of the Shire',
@@ -121,16 +131,40 @@ describe.each(['friend_progress', 'friend_progress_debug'])(
       // Mirrors deleteFriendProgressByUserId: after importing a backup
       // exported while sharing was active, the destination phone (bob) is
       // authenticated under its own anonymous UID and must clean up the
-      // stale row still owned by the source phone's old UID (alice).
+      // stale row still owned by the source phone's old UID (alice) —
+      // but only once that row is actually stale (see the "rejects... a
+      // live" test below for the anti-griefing counterpart).
+      const staleTimestamp = Timestamp.fromMillis(
+        Date.now() - (STALE_PARTICIPANT_MINUTES + 1) * 60 * 1000,
+      );
       await testEnv.withSecurityRulesDisabled(async context => {
         await setDoc(
           doc(context.firestore(), collectionName, 'alice'),
-          validParticipant(),
+          validParticipant({ updatedAt: staleTimestamp }),
         );
       });
 
       const bob = testEnv.authenticatedContext('bob');
       await assertSucceeds(
+        deleteDoc(doc(bob.firestore(), collectionName, 'alice')),
+      );
+    });
+
+    it("rejects a different authenticated user deleting a live participant's document", async () => {
+      // Anti-griefing regression guard: a non-owner must not be able to
+      // delete a row that is still being actively republished (updatedAt
+      // within the staleness window), even though the cross-UID delete
+      // path exists for migration cleanup.
+      const freshTimestamp = Timestamp.fromMillis(Date.now() - 60 * 1000);
+      await testEnv.withSecurityRulesDisabled(async context => {
+        await setDoc(
+          doc(context.firestore(), collectionName, 'alice'),
+          validParticipant({ updatedAt: freshTimestamp }),
+        );
+      });
+
+      const bob = testEnv.authenticatedContext('bob');
+      await assertFails(
         deleteDoc(doc(bob.firestore(), collectionName, 'alice')),
       );
     });

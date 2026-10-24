@@ -6,7 +6,9 @@ import {
   Skia,
   Group,
   LinearGradient,
+  Fill,
   vec,
+  CanvasRef,
 } from '@shopify/react-native-skia';
 import { SharedValue, useDerivedValue } from 'react-native-reanimated';
 
@@ -57,9 +59,17 @@ interface MiddleEarthMapSkiaProps {
     coastline?: string;
     mapBackground?: string;
   };
+  /**
+   * Ref to the underlying Skia Canvas. Callers can use
+   * `ref.current.makeImageSnapshotAsync()` to get a real signal that a
+   * frame has actually been GPU-painted — layout dimensions being
+   * non-zero only means React committed, not that Skia has drawn
+   * anything yet.
+   */
+  ref?: React.Ref<CanvasRef>;
 }
 
-export default function MiddleEarthMapSkia({
+function MiddleEarthMapSkia({
   width,
   height,
   colorize = false,
@@ -73,6 +83,7 @@ export default function MiddleEarthMapSkia({
   gameProgress,
   initialBasePathProgress,
   layerColors = {},
+  ref,
 }: MiddleEarthMapSkiaProps) {
   // Render canvas at higher resolution, display at original size
   const canvasWidth = width * RENDER_SCALE;
@@ -192,14 +203,30 @@ export default function MiddleEarthMapSkia({
     [strokeWidth],
   );
 
-  // Zoom-aware forward adjustment: push end slightly when zoomed in
+  // Zoom-aware forward adjustment: push end slightly when zoomed in.
+  //
+  // Reads `initialBasePathProgress` directly (the raw shared value), not
+  // `basePathEnd.value` (the derived value wrapping it), even though they
+  // hold the same number. A derived value that reads another derived
+  // value while both are changing in the same animation frame is a
+  // confirmed upstream Reanimated+Skia hazard (react-native-skia issues
+  // #4097 and #4243: a derived prop's native recorder can capture a stale
+  // intermediate value one frame behind a raw shared-value read in the
+  // same commit). That derived-on-derived shape is exactly what caused
+  // this path's animation to read as jagged/choppy next to the grey base
+  // path, which only ever reads one raw shared value
+  // (`initialBasePathProgress`) directly — never another derived value —
+  // and stayed smooth. Flattening this chain removes the hazard without
+  // changing the clamp's math: `basePathEnd.value` was always exactly
+  // `initialBasePathProgress?.value ?? 1`.
   const gameProgressAdjusted = useDerivedValue(() => {
     const base = gameProgress?.value ?? 0;
     const zoom = zoomScale?.value ?? 1;
     const K = 0.004; // tuning constant
     const delta = zoom > 1 ? (K * (zoom - 1)) / zoom : 0; // 0 at normal zoom
-    return Math.max(0, Math.min(base + delta, basePathEnd.value, 1));
-  }, [gameProgress, zoomScale, basePathEnd]);
+    const reveal = initialBasePathProgress?.value ?? 1;
+    return Math.max(0, Math.min(base + delta, reveal, 1));
+  }, [gameProgress, zoomScale, initialBasePathProgress]);
 
   const containerStyle = useMemo(
     () => ({ width, height, overflow: 'hidden' as const }),
@@ -222,7 +249,31 @@ export default function MiddleEarthMapSkia({
 
   return (
     <View style={containerStyle}>
-      <Canvas style={canvasStyle}>
+      <Canvas ref={ref} style={canvasStyle}>
+        {/* Full-canvas background fill. Kept even with the canvas
+            non-opaque (see below) as cheap insurance against any gap in
+            the map artwork ever showing transparency instead of a solid
+            backdrop.
+
+            NOTE: opaque={true} was tried here to silence recurring
+            (Skia-labeled "safe to ignore") `updateTexImage:
+            LegacySurfaceTexture is not attached!` / `RNSkia
+            updateAndRelease() failed` warnings during the map's path-fill
+            animations. That FAILED — those warnings turned out to be
+            unrelated to the actual visible choppiness (root-caused
+            separately, see useGameProgressAnimation.ts's duration-scaling
+            fix) — and opaque introduced a real regression: on Android,
+            opaque backs the canvas with a SurfaceView instead of a
+            SurfaceTexture-backed TextureView. SurfaceView is composited
+            as a separate hardware layer outside the normal view
+            hierarchy and does not blend correctly under a translucent,
+            animating overlay — so the welcome modal's fade-out punched
+            through to solid black instead of smoothly revealing the map
+            underneath. Do not set opaque on this Canvas again without
+            re-verifying the welcome-dismiss fade-out on a real Android
+            device first.
+        */}
+        <Fill color={colors.mapBackground} />
         <Group transform={[{ scale: uniformScale }]}>
           {/* Legend layer */}
           {legendPath && (
@@ -329,3 +380,35 @@ export default function MiddleEarthMapSkia({
     </View>
   );
 }
+
+// Memoized to isolate this component from MapScreen's own state churn.
+//
+// MapScreen re-renders at ~10Hz while the yellow/active journey path
+// animates — `useGameProgressAnimation`'s `animatedProgress` JS state
+// (bridged from the UI thread, throttled but still a real React state
+// update) drives checkpoint/trivia activation logic and is deliberately
+// NOT something this component's own visuals depend on: every value that
+// actually needs to track the animation frame-by-frame (`gameProgress`,
+// `initialBasePathProgress`, `zoomScale`, `shimmerProgress`) is a shared
+// value read directly by Reanimated/Skia on the UI thread, independent of
+// React re-renders entirely.
+//
+// Without memoization, each of those ~10 re-renders/sec still reconciles
+// this entire `<Canvas>` subtree, which forces Skia's JS-thread scene-graph
+// "recording" pass to re-run (a real, measurable cost — react-native-skia
+// issue #4243 documents every Canvas commit recording twice on the JS
+// thread) even though none of this component's own props changed. That
+// JS-thread recording work competes with the UI thread for the same
+// frame budget the stroke-trim animation needs, which is the likely
+// source of the reported jank: the grey/base path reveal never triggers
+// any JS state change at all (confirmed smooth), while the yellow/active
+// path's reveal is the only one paired with a recurring React re-render
+// of its own renderer.
+//
+// This relies on every prop below being reference-stable across those
+// unrelated re-renders — in particular, `layerColors` at the MapScreen
+// call site must be memoized (not an inline object literal), or its new
+// object identity on every render would defeat this memo via React's
+// default shallow prop comparison exactly as effectively as not
+// memoizing at all.
+export default React.memo(MiddleEarthMapSkia);
