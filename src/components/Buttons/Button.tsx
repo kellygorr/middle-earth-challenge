@@ -286,6 +286,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       >
         {renderIconBefore()}
         <AnimatedText
+          numberOfLines={1}
           style={[
             baseTextStyle,
             { color: textColor },
@@ -296,6 +297,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         </AnimatedText>
         {hasCaret && (
           <AnimatedText
+            numberOfLines={1}
             style={[
               baseTextStyle,
               { marginLeft: spacing.xs, color: textColor },

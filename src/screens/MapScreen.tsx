@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
-import { Skia } from '@shopify/react-native-skia';
+import { Skia, useCanvasRef } from '@shopify/react-native-skia';
 import {
   GestureHandlerRootView,
   GestureDetector,
@@ -141,7 +141,17 @@ export default function MapScreen({
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const phase = useInitializationStore(state => state.phase);
   const setPhase = useInitializationStore(state => state.setPhase);
-  const gameProgressAnimEnabled = phase !== 'loading';
+  // Matches initializationStore's own `gameProgressAnimEnabled` selector
+  // (phase === 'active'). Using the looser `phase !== 'loading'` here was
+  // a bug: it let the map's path-fill animation (and its per-frame JS
+  // bridge via useAnimatedReaction) start as soon as bootstrap finished —
+  // while the welcome modal was still showing, well before the user
+  // dismisses it. The animation's visual output was invisibly clamped to
+  // zero by `initialBasePathProgress` (the separate, correctly-gated path
+  // reveal value), but the wasted per-frame re-renders still ran under
+  // the hood, hammering the Skia canvas right as it was initializing and
+  // producing visible black-flash artifacts on cold launch.
+  const gameProgressAnimEnabled = phase === 'active';
   const devMode = useSettingsStore(state => state.devMode);
   const showPointLabels = useSettingsStore(state => state.showPointLabels);
   const setShowPointLabels = useSettingsStore(
@@ -247,8 +257,12 @@ export default function MapScreen({
     hasReachedLothlorien ? 260 : hasReachedRivendell ? 240 : 200,
   );
   const pathRevealStart = useMemo(() => {
-    if (!hasReachedRivendell) return 0;
-
+    // Always compute the off-screen reveal-start point rather than
+    // gating on hasReachedRivendell: for early users (still near
+    // Hobbiton) the backward search naturally resolves to 0 anyway,
+    // since their whole traveled distance is already inside the
+    // viewport — so this is a no-op for them and just unifies the logic
+    // for every camera position instead of special-casing by checkpoint.
     return findPathRevealStart({
       milestoneMiles: homeCheckpoint.CUMULATIVE_MILES,
       uniformScale,
@@ -260,7 +274,6 @@ export default function MapScreen({
       screenHeight: height,
     });
   }, [
-    hasReachedRivendell,
     homeCheckpoint.CUMULATIVE_MILES,
     uniformScale,
     mapOffsetX,
@@ -307,7 +320,20 @@ export default function MapScreen({
       issue => issue.dismissedAt === null && issue.resolvedAt === null,
     ),
   );
-  const startupShowWelcome = phase === 'loading' || showWelcome;
+  // Includes `phase === 'ready'` alongside the existing `showWelcome`
+  // check so the Home button (SharedModal) can hide the path immediately
+  // — synchronously, before Settings' own exit-fade even starts — by
+  // setting phase to 'ready' right away, without needing to also flip
+  // the (deferred) `showWelcome` setting that controls when WelcomeModal
+  // itself mounts. Previously this only reset when `showWelcome` flipped
+  // true, which only happened AFTER Settings' entire exit animation
+  // finished — so the user briefly saw the fully-drawn path on its own,
+  // then watched it visibly vanish, before Welcome finally faded in.
+  // `phase` is already 'ready' during every other case this matters
+  // (initial boot, and MapScreen's own reset-on-reopen effect below), so
+  // this doesn't change behavior anywhere but the Home-button path.
+  const startupShowWelcome =
+    phase === 'loading' || phase === 'ready' || showWelcome;
 
   // Initial animation
   const { initialBasePathProgress, settingsEnterStyle, infoEnterStyle } =
@@ -346,6 +372,49 @@ export default function MapScreen({
   // Info button + tooltip managed in infoStore
   const infoButtonRef = useRef<any>(null);
   const reportedMapReadyTokenRef = useRef<number | null>(null);
+  // Ref to the Skia canvas backing the map. `mapReady` used to fire purely
+  // off layout math (width/height non-zero), which only proves React
+  // committed — not that Skia has actually GPU-painted a frame yet.
+  // makeImageSnapshotAsync() is the one Skia API that resolves only once
+  // a real frame exists, so we use it to gate the "map is visible" signal
+  // that lets the splash screen hide.
+  const mapCanvasRef = useCanvasRef();
+
+  // Memoized so its object identity only changes when an actual color
+  // value changes (e.g. theme switch) — not on every MapScreen render.
+  // MiddleEarthMapSkia is wrapped in React.memo specifically to skip
+  // re-rendering on the frequent, unrelated `animatedProgress` state
+  // updates that drive checkpoint/trivia activation during the active
+  // path's catch-up animation (see that component's memo comment for the
+  // full root-cause explanation). An inline object literal here would
+  // get a new reference on every MapScreen render regardless, defeating
+  // that memo via React's default shallow prop comparison just as
+  // completely as not memoizing the component at all.
+  const mapLayerColors = useMemo(
+    () => ({
+      legend: theme.colors.svgLegend,
+      titles: theme.colors.svgTitles,
+      titlesReduced: theme.colors.svgTitlesReduced,
+      trees: theme.colors.svgTrees,
+      mountains: theme.colors.svgMountains,
+      streets: theme.colors.svgStreets,
+      water: theme.colors.svgWater,
+      coastline: theme.colors.svgCoastline,
+      mapBackground: theme.colors.mapBackground,
+    }),
+    [
+      theme.colors.svgLegend,
+      theme.colors.svgTitles,
+      theme.colors.svgTitlesReduced,
+      theme.colors.svgTrees,
+      theme.colors.svgMountains,
+      theme.colors.svgStreets,
+      theme.colors.svgWater,
+      theme.colors.svgCoastline,
+      theme.colors.mapBackground,
+    ],
+  );
+
   // Removed prevMilesRef; selection is store-driven
   // Observe miles changes moved to infoStore
   // (No extra activation guards; equality-based activation below)
@@ -353,6 +422,7 @@ export default function MapScreen({
     miles,
     gameProgressAnimEnabled,
     [observeMilesChanges],
+    pathRevealStart,
   );
 
   const shouldShowInfoButton = useInfoStore(state =>
@@ -521,7 +591,32 @@ export default function MapScreen({
     if (reportedMapReadyTokenRef.current === mapReadyToken) return;
     if (width <= 0 || height <= 0 || mapWidth <= 0 || mapHeight <= 0) return;
 
-    const frame = requestAnimationFrame(() => {
+    let cancelled = false;
+
+    const confirmPainted = async () => {
+      // One frame for the layout-triggered render to commit and the Skia
+      // canvas to mount before we can snapshot it.
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      if (cancelled) return;
+
+      try {
+        // makeImageSnapshotAsync() is the one Skia API that resolves only
+        // once a real GPU-rendered frame exists — layout dimensions being
+        // non-zero only proves React committed, not that anything has
+        // actually been painted to the canvas yet. This is what makes
+        // "map is visually ready" (and therefore "safe to hide splash")
+        // an accurate signal instead of a layout-timing guess.
+        await mapCanvasRef.current?.makeImageSnapshotAsync();
+      } catch (error) {
+        // Never block splash-hide indefinitely on a snapshot failure —
+        // fall through and report ready anyway.
+        console.warn(
+          '[MapScreen] map paint confirmation failed, proceeding anyway:',
+          error,
+        );
+      }
+      if (cancelled) return;
+
       reportedMapReadyTokenRef.current = mapReadyToken;
       console.log('[MapScreen] visual ready', {
         width,
@@ -533,9 +628,13 @@ export default function MapScreen({
         reducedMapTitles,
       });
       onMapReady();
-    });
+    };
 
-    return () => cancelAnimationFrame(frame);
+    confirmPainted();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     mapReadyEnabled,
     mapReadyToken,
@@ -548,6 +647,7 @@ export default function MapScreen({
     colorizeMap,
     reducedMapTitles,
     theme.name,
+    mapCanvasRef,
   ]);
 
   // Keyboard offset handled by useKeyboardOffset
@@ -589,6 +689,7 @@ export default function MapScreen({
           />
           <Animated.View style={[styles.svgWrapper, animatedStyle]}>
             <MiddleEarthMapSkia
+              ref={mapCanvasRef}
               width={mapWidth}
               height={mapHeight}
               colorize={colorizeMap}
@@ -601,17 +702,7 @@ export default function MapScreen({
               zoomScale={scale}
               gameProgress={gameProgressValue}
               initialBasePathProgress={initialBasePathProgress}
-              layerColors={{
-                legend: theme.colors.svgLegend,
-                titles: theme.colors.svgTitles,
-                titlesReduced: theme.colors.svgTitlesReduced,
-                trees: theme.colors.svgTrees,
-                mountains: theme.colors.svgMountains,
-                streets: theme.colors.svgStreets,
-                water: theme.colors.svgWater,
-                coastline: theme.colors.svgCoastline,
-                mapBackground: theme.colors.mapBackground,
-              }}
+              layerColors={mapLayerColors}
             />
           </Animated.View>
 
@@ -631,6 +722,7 @@ export default function MapScreen({
             showActiveTrivia={hasInitialPathRevealed}
             animatedProgress={animatedProgress}
             currentMiles={miles}
+            gameProgressValue={gameProgressValue}
             onItemPress={(item, type) => {
               showInfo(item, type);
               openModal();
@@ -669,9 +761,14 @@ export default function MapScreen({
 
       {/* Top-left stack: total distance + today's steps chip. Rendered as a
           single container so the two chips share the post-welcome enter
-          animation and stay flush against the left edge of the screen. */}
+          animation and stay flush against the left edge of the screen.
+          Uses `startupShowWelcome` (phase-aware) rather than the raw
+          `showWelcome` setting so this hides in sync with the path and
+          other UI when returning Home from Settings — `showWelcome`
+          itself only flips after Settings' entire exit-fade completes,
+          which left this chip visible on screen for that whole window. */}
       {(miles > 0 ||
-        (!showWelcome &&
+        (!startupShowWelcome &&
           (trackingMode === 'pedometer' || trackingMode === 'dual') &&
           totalSteps > 0)) && (
         <Animated.View
@@ -715,7 +812,7 @@ export default function MapScreen({
               })}
             </Button>
           )}
-          {!showWelcome &&
+          {!startupShowWelcome &&
             (trackingMode === 'pedometer' || trackingMode === 'dual') &&
             totalSteps > 0 && (
               <View style={styles.stepsChip}>
@@ -880,9 +977,14 @@ export default function MapScreen({
           pointerEvents="box-none"
         >
           {/* Sync pill: absolutely positioned so it centers relative to the
-              full screen width, independent of the icon column on the right. */}
+              full screen width, independent of the icon column on the right.
+              Uses `startupShowWelcome` (phase-aware), not raw `showWelcome`
+              — see the miles/steps chip comment above for why: this had no
+              fade of its own, so with the raw setting it stayed fully
+              visible on screen through Settings' entire exit-fade window
+              when returning Home. */}
           <View style={styles.syncPillSlot} pointerEvents="none">
-            {!showWelcome && <SyncIndicator />}
+            {!startupShowWelcome && <SyncIndicator />}
           </View>
 
           {/* Icon column: recenter on top, + on bottom. */}
@@ -923,8 +1025,11 @@ export default function MapScreen({
         </View>
       </SafeAreaView>
 
-      {/* Dev Miles (Developer mode) */}
-      {devMode && !showWelcome && <DevView keyboardOffset={keyboardOffset} />}
+      {/* Dev Miles (Developer mode). Uses `startupShowWelcome` for the
+          same reason as the sync pill and miles/steps chip above. */}
+      {devMode && !startupShowWelcome && (
+        <DevView keyboardOffset={keyboardOffset} />
+      )}
 
       {/* Loading overlay - hides map until ready */}
       {phase === 'loading' && (

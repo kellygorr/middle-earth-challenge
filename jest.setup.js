@@ -129,6 +129,7 @@ jest.mock('@shopify/react-native-skia', () => ({
   Path: 'Path',
   Group: 'Group',
   LinearGradient: 'LinearGradient',
+  Fill: 'Fill',
   vec: jest.fn((x, y) => ({ x, y })),
   Skia: {
     Path: {
@@ -140,4 +141,9 @@ jest.mock('@shopify/react-native-skia', () => ({
   },
   useFont: jest.fn(),
   useDerivedValue: jest.fn(() => ({ value: 0 })),
+  useCanvasRef: jest.fn(() => ({
+    current: {
+      makeImageSnapshotAsync: jest.fn(() => Promise.resolve({})),
+    },
+  })),
 }));

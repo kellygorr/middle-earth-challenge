@@ -63,8 +63,18 @@ test('renders the map controls', async () => {
     .mockImplementation(() => {});
   await render(<App />);
 
+  // showWelcome is false in the default fixture (beforeEach) — an
+  // already-onboarded returning user. Bootstrap should land directly on
+  // 'active', not the transient 'ready' plateau (which is reserved for
+  // "welcome screen visible"). See the matching App.tsx comment: landing
+  // on 'ready' here used to be asserted as correct, but it was actually
+  // the exact deadlocked state that caused the blank-UI-on-resume bug —
+  // 'ready' can only ever be promoted onward by WelcomeModal's onDismiss,
+  // which never fires once showWelcome is already false, so a returning
+  // user bootstrapping straight to 'ready' had no way to ever reach
+  // 'active' again.
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('ready'),
+    expect(useInitializationStore.getState().phase).toBe('active'),
   );
   expect(screen.getByText('Labels')).toBeOnTheScreen();
   expect(screen.getByLabelText('View statistics')).toBeOnTheScreen();
@@ -105,8 +115,11 @@ test('keeps the splash until required bootstrap steps complete', async () => {
   expect(useInitializationStore.getState().phase).toBe('loading');
 
   await act(async () => trackingReady.resolve());
+  // Same reasoning as 'renders the map controls': showWelcome is false
+  // in this fixture, so bootstrap completing lands directly on 'active',
+  // not 'ready'.
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('ready'),
+    expect(useInitializationStore.getState().phase).toBe('active'),
   );
   expect(consoleError).not.toHaveBeenCalled();
 });
@@ -201,6 +214,55 @@ test('shows welcome whenever bootstrap has not failed and showWelcome is set', (
   ).toBe(false);
 });
 
+test('first-time users (showWelcome true) still land on ready, not active, so the welcome flow runs', async () => {
+  useSettingsStore.setState({ showWelcome: true });
+  const consoleError = jest
+    .spyOn(console, 'error')
+    .mockImplementation(() => {});
+
+  await render(<App />);
+
+  // Unlike a returning user, a first-time user must stop at 'ready' and
+  // wait for WelcomeModal's onDismiss to advance the phase — there is no
+  // prior onboarding to skip.
+  await waitFor(() =>
+    expect(useInitializationStore.getState().phase).toBe('ready'),
+  );
+  expect(useInitializationStore.getState().phase).not.toBe('active');
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
+test('regression: bootstrap rerunning after a resume reaches active again instead of getting stuck at ready', async () => {
+  // Reproduces the exact blank-UI-on-resume bug: confirmed via on-device
+  // logcat that swiping the app away in Recents and reopening it does
+  // NOT kill the process, but DOES recreate the whole React root and
+  // rerun this component's bootstrap effect from scratch — while
+  // Zustand's module-scope stores (including initializationStore and
+  // settingsStore) survive untouched, since they live outside React.
+  // Mounting a second <App/> instance against an initializationStore
+  // already sitting at 'active' (as it would be right before a resume)
+  // and an unchanged, already-onboarded settingsStore faithfully
+  // reproduces that exact situation without needing an actual Activity
+  // recreation.
+  //
+  // Before the fix, this got permanently stuck at 'ready': bootstrap
+  // unconditionally called setPhase('ready'), and nothing ever promotes
+  // phase onward again for a returning user (showWelcome already false
+  // means WelcomeModal never mounts, so its onDismiss — the only other
+  // place that advances phase — never fires a second time).
+  useInitializationStore.setState({ phase: 'active' });
+  const consoleError = jest
+    .spyOn(console, 'error')
+    .mockImplementation(() => {});
+
+  await render(<App />);
+
+  await waitFor(() =>
+    expect(useInitializationStore.getState().phase).toBe('active'),
+  );
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
 test('shows bootstrap failure and reaches readiness only after retry succeeds', async () => {
   const failure = new Error('database unavailable');
   jest
@@ -225,8 +287,10 @@ test('shows bootstrap failure and reaches readiness only after retry succeeds', 
   fireEvent.press(screen.getByLabelText('Retry initialization'));
 
   await waitFor(() => expect(database.init).toHaveBeenCalledTimes(2));
+  // Same reasoning as 'renders the map controls': showWelcome is false
+  // in this fixture, so retry succeeding lands directly on 'active'.
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('ready'),
+    expect(useInitializationStore.getState().phase).toBe('active'),
   );
   expect(screen.queryByText('Unable to load data')).not.toBeOnTheScreen();
 });

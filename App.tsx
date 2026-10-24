@@ -191,6 +191,14 @@ function App(): React.JSX.Element {
   const [mapReadyTimedOut, setMapReadyTimedOut] = useState(false);
   const [splashHidden, setSplashHidden] = useState(false);
   const [welcomeReady, setWelcomeReady] = useState(false);
+  // Keeps <WelcomeModal> mounted through its own exit-fade animation.
+  // Gating its presence purely on `showWelcome` unmounted it the instant
+  // dismissal happened, before its internal fade-out could run at all —
+  // this is what made welcome-dismiss look like an instant cut instead of
+  // a smooth fade revealing the map underneath. Flips true whenever
+  // welcome should show; only flips back false once WelcomeModal itself
+  // reports (via onExited) that its exit animation has actually finished.
+  const [welcomeModalMounted, setWelcomeModalMounted] = useState(false);
   const setPhase = useInitializationStore(state => state.setPhase);
 
   const showWelcome = useSettingsStore(state => state.showWelcome);
@@ -209,12 +217,38 @@ function App(): React.JSX.Element {
 
     const initApp = async () => {
       console.log('[App] initApp: start');
+      // Was the app already fully active (past onboarding, UI visible)
+      // before this bootstrap effect started running? `initializationStore`
+      // is Zustand/module-scope state that survives a swipe-away-in-Recents
+      // resume even though this whole component tree gets torn down and
+      // recreated (confirmed via logcat) — so this captures the TRUE prior
+      // state, not this fresh instance's initial render value. Must be read
+      // before anything below touches `phase`.
+      //
+      // Without this check, `setPhase('loading')` a few lines down fires on
+      // every single bootstrap rerun, including a warm resume where
+      // nothing actually needs to reload — MapScreen's `startupShowWelcome`
+      // treats `phase === 'loading'`/`'ready'` as "hide the UI" (path and
+      // buttons), so every resume forced a real (if brief) hide while
+      // bootstrap re-ran, followed by a reveal once `phase` reached
+      // `'active'` again a moment later — a visible hide-then-reveal
+      // flash. Confirmed by testing: the flash appeared immediately after
+      // fixing the original permanently-stuck bug (which this same
+      // `wasAlreadyActive` check also fixes, a few lines further down),
+      // and disappeared once this skip was added. A warm resume has
+      // nothing to load — the whole point is the prior session's state
+      // (including full UI visibility) is still valid — so it should
+      // never touch `phase` at all.
+      const wasAlreadyActive =
+        useInitializationStore.getState().phase === 'active';
       setBootstrapStatus('loading');
       setMapReady(false);
       setMapReadyTimedOut(false);
       setSplashHidden(false);
       setWelcomeReady(false);
-      setPhase('loading');
+      if (!wasAlreadyActive) {
+        setPhase('loading');
+      }
 
       await runRecoverableBootstrapStep('Firebase App Check', () =>
         initializeFirebaseAppCheck(),
@@ -246,7 +280,47 @@ function App(): React.JSX.Element {
       );
 
       if (!cancelled) {
-        setPhase('ready');
+        // ROOT CAUSE FIX for the blank-UI-on-resume bug: this used to
+        // unconditionally setPhase('ready') here, every single time
+        // initApp() runs — including when it reruns because Android
+        // recreated the whole React root after the app was swiped away
+        // in Recents and reopened (confirmed via logcat: same PID, but a
+        // fresh `Running "MiddleEarthChallenge"` root + full `initApp`
+        // rerun). `phase === 'ready'` is documented as "welcome screen
+        // visible", and it is ONLY ever promoted onward to 'revealing'
+        // then 'active' by WelcomeModal's `onDismiss` handler — which
+        // only ever fires while `showWelcome` is true. For a returning
+        // user `showWelcome` is already persisted false (onboarding was
+        // completed long ago, in a previous app session), so
+        // WelcomeModal never mounts again and `onDismiss` never fires
+        // again — meaning `phase` got permanently stuck at 'ready'
+        // forever after any bootstrap rerun, with no code path left to
+        // ever advance it. Confirmed directly via on-device logging:
+        // after a resume, `useInitialAnimation`'s hide-everything
+        // else-branch (gated on `phase === 'ready'`) ran on every
+        // render, forever, while its reveal branch never ran again even
+        // once — exactly matching the reported symptom (path/buttons
+        // permanently invisible, only after swipe-away-resume, never
+        // after a plain Home-button background/foreground cycle that
+        // doesn't rerun this effect at all).
+        //
+        // Guarded on `!wasAlreadyActive` for the same reason as the
+        // `setPhase('loading')` skip above: a warm resume's phase is
+        // already 'active' and was never touched, so there's nothing to
+        // restore here — doing so anyway would be a harmless no-op at
+        // best, but reading `showWelcome` fresh here could theoretically
+        // race with a real same-tick settings change; simplest and
+        // safest is to leave an already-active resume alone entirely.
+        //
+        // Reading the store directly here (not the captured `showWelcome`
+        // hook value from this closure) because `loadSettings()` above
+        // may have just hydrated it from the database — this needs the
+        // authoritative post-hydration value, not whatever was true when
+        // this effect last happened to be defined.
+        if (!wasAlreadyActive) {
+          const alreadyOnboarded = !useSettingsStore.getState().showWelcome;
+          setPhase(alreadyOnboarded ? 'active' : 'ready');
+        }
         setBootstrapStatus('ready');
       }
     };
@@ -280,6 +354,10 @@ function App(): React.JSX.Element {
     setWelcomeReady(true);
   }, []);
 
+  const handleWelcomeExited = useCallback(() => {
+    setWelcomeModalMounted(false);
+  }, []);
+
   const splashStatus = getSplashStatus({
     bootstrapStatus,
     mapReady,
@@ -287,6 +365,17 @@ function App(): React.JSX.Element {
     showWelcome,
     welcomeReady,
   });
+
+  // Keep <WelcomeModal> mounted for as long as it should be showing OR is
+  // still playing its exit animation (see welcomeModalMounted's
+  // declaration comment above). This only ever needs to flip TRUE here —
+  // it flips back false via handleWelcomeExited, once WelcomeModal itself
+  // confirms the fade-out has actually finished.
+  useEffect(() => {
+    if (shouldShowWelcomeModal({ bootstrapStatus, showWelcome })) {
+      setWelcomeModalMounted(true);
+    }
+  }, [bootstrapStatus, showWelcome]);
 
   useEffect(() => {
     console.log('[App] splash state', {
@@ -349,18 +438,35 @@ function App(): React.JSX.Element {
         </NavigationContainer>
 
         {/* Global Modals */}
-        {shouldShowWelcomeModal({
-          bootstrapStatus,
-          showWelcome,
-        }) && (
+        {welcomeModalMounted && (
           <WelcomeModal
             visible={showWelcome}
             onReady={handleWelcomeReady}
+            onExited={handleWelcomeExited}
+            // Only wire up the boot-time splash overlay for the genuine
+            // first-boot sequence (before splash has ever finished
+            // hiding). WelcomeModal can remount later in the app's
+            // lifetime — e.g. every time the user returns Home from
+            // Settings — and passing a non-null `startupOverlay` on
+            // those later mounts replayed the whole black splash fade
+            // again: SplashOverlay's internal opacity ref always starts
+            // at 1 (fully opaque, solid black `splashBackground`) on
+            // mount, and by the time WelcomeModal remounts here,
+            // `splashStatus` is already 'ready', so its effect
+            // immediately re-ran the 200ms-delay + 400ms fade from black
+            // — even though splash had already legitimately finished
+            // long ago. Passing undefined once splashHidden is true
+            // prevents that replay, and also stops `startupOverlay !=
+            // null` from unconditionally forcing WelcomeModal's own
+            // underlying <Modal visible> open (see modalVisible in
+            // WelcomeModal.tsx).
             startupOverlay={
-              <SplashOverlay
-                status={splashStatus}
-                onHidden={handleSplashHidden}
-              />
+              splashHidden ? undefined : (
+                <SplashOverlay
+                  status={splashStatus}
+                  onHidden={handleSplashHidden}
+                />
+              )
             }
             onDismiss={() => {
               setShowWelcome(false);
@@ -418,7 +524,28 @@ function App(): React.JSX.Element {
           </View>
         )}
 
-        {!showWelcome && (
+        {/* Fallback splash cover for boot only — used when the app never
+            shows the welcome modal at all (showWelcome persisted false)
+            so there's still something covering the loading state.
+            Gating this on `!showWelcome` alone was the actual cause of
+            the "whole screen fades to black" bug on welcome dismiss:
+            WelcomeModal (and its own internal startupOverlay splash,
+            which already handles the boot-time fade for users who DO
+            see welcome) unmounts the instant `showWelcome` flips false,
+            and this standalone overlay — previously not rendered at all
+            — mounts FRESH at that exact moment with its internal opacity
+            starting at 1 (fully opaque). Since splashStatus is already
+            'ready' by then, it immediately started a 600ms fade from
+            solid black down to transparent, which is what actually
+            produced the "fades to black" look — not the welcome content
+            itself, which just vanished instantly underneath it.
+            `splashHidden` flips true the first time ANY splash overlay
+            (this one, or WelcomeModal's internal one) finishes its real
+            fade-out, and never resets except on a bootstrap retry — so
+            requiring `!splashHidden` here means this fallback can only
+            ever mount once, during genuine initial boot, and never
+            re-mounts just because `showWelcome` later toggles off. */}
+        {!showWelcome && !splashHidden && (
           <SplashOverlay status={splashStatus} onHidden={handleSplashHidden} />
         )}
       </View>
