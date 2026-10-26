@@ -5,6 +5,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   PRE_MIGRATION_SNAPSHOT_DB_NAME,
   needsPreMigrationSnapshot,
+  isLegacyUpgradeMissingSchemaMeta,
 } from '../database';
 import { useProgressStore } from '../../stores/progressStore';
 import { createTransactionalProgressDb } from '../__testHelpers__/transactionalProgressDb';
@@ -131,7 +132,10 @@ describe('database initialization', () => {
       .mockReturnValueOnce(retryDb as never);
 
     await expect(database.init()).rejects.toThrow('schema unavailable');
-    await expect(database.init()).resolves.toBeUndefined();
+    // false = not a protected upgrade — this mock's default `rows: []`
+    // means neither schema_meta nor distance_entries existed beforehand,
+    // i.e. a genuine fresh install, which correctly needs no protection.
+    await expect(database.init()).resolves.toBe(false);
 
     expect(mockOpen).toHaveBeenCalledTimes(2);
     expect(failedDb.close).toHaveBeenCalledTimes(1);
@@ -149,6 +153,28 @@ describe('database initialization', () => {
     ])('stored=%i, current=%i -> %p', (stored, current, expected) => {
       expect(needsPreMigrationSnapshot(stored, current)).toBe(expected);
     });
+  });
+
+  describe('isLegacyUpgradeMissingSchemaMeta', () => {
+    it.each([
+      // [schemaMetaTableExisted, distanceEntriesTableExisted, expected]
+      [false, false, false], // genuine fresh install — neither table yet
+      [false, true, true], // real legacy upgrade: has data, never tracked schema
+      [true, true, false], // already-tracked install, any later version
+      [true, false, false], // tracked but somehow no entries table (shouldn't
+      // happen in practice, but schema_meta already existing means this
+      // was already running schema-tracked code, not a legacy first-touch)
+    ])(
+      'schemaMetaExisted=%p, distanceEntriesExisted=%p -> %p',
+      (schemaMetaExisted, distanceEntriesExisted, expected) => {
+        expect(
+          isLegacyUpgradeMissingSchemaMeta(
+            schemaMetaExisted,
+            distanceEntriesExisted,
+          ),
+        ).toBe(expected);
+      },
+    );
   });
 
   describe('pre-migration snapshot and restore', () => {
@@ -194,6 +220,51 @@ describe('database initialization', () => {
           String(sql).startsWith('VACUUM INTO'),
         ),
       ).toBe(false);
+    });
+
+    // Regression: a real legacy (pre-1.1.3-tracking) database migrating to
+    // a schema-tracked version for the very first time has `distance_entries`
+    // already populated with a real user's irreplaceable history, but has
+    // never had a `schema_meta` table at all — so the version-compare check
+    // alone reads `storedSchemaVersion === 0` exactly as it would for a
+    // genuine fresh install, and previously skipped the protective snapshot
+    // on exactly the one upgrade that most needed it. Confirmed missing
+    // on-device against a real legacy-shaped fixture database before this
+    // fix: no `MiddleEarthSettings.premigration.db` snapshot file was ever
+    // created during that upgrade.
+    it('snapshots a legacy pre-schema_meta install that already has distance entries', async () => {
+      const mockDb = createMockDatabase();
+      mockDb.executeSync.mockImplementation((sql: string) => {
+        if (
+          sql.includes('sqlite_master') &&
+          sql.includes("name IN ('schema_meta', 'distance_entries')")
+        ) {
+          // schema_meta does not exist yet; distance_entries already does —
+          // exactly the real legacy-database shape.
+          return { rows: [{ name: 'distance_entries' }] };
+        }
+        if (sql.includes('SELECT version FROM schema_meta')) {
+          return { rows: [{ version: 0 }] };
+        }
+        return { rows: [] };
+      });
+      // First open() is the main database; createPreMigrationSnapshot()
+      // opens a second short-lived handle on the snapshot file itself
+      // (to read its path and clear any stale prior snapshot) — matching
+      // the pattern the existing "creates a snapshot via VACUUM INTO" test
+      // above uses.
+      const snapshotHandle = createMockSnapshotHandle('/mock/premigration.db');
+      mockOpen
+        .mockReturnValueOnce(mockDb as never)
+        .mockReturnValueOnce(snapshotHandle as never);
+
+      await database.init();
+
+      expect(
+        mockDb.executeSync.mock.calls.some(([sql]) =>
+          String(sql).startsWith('VACUUM INTO'),
+        ),
+      ).toBe(true);
     });
 
     it('creates a snapshot via VACUUM INTO, clearing any stale prior snapshot first', async () => {
@@ -563,7 +634,10 @@ describe('database initialization', () => {
       .mockReturnValueOnce(retryDb as never);
 
     await expect(database.init()).rejects.toThrow('backfill interrupted');
-    await expect(database.init()).resolves.toBeUndefined();
+    // false = not a protected upgrade — same reasoning as the matching
+    // assertion in "closes a partial handle and permits retry after
+    // initialization fails" above.
+    await expect(database.init()).resolves.toBe(false);
 
     expect(retryDb.executeSync).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE distance_entries'),

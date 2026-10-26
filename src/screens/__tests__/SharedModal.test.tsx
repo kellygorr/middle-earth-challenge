@@ -13,7 +13,7 @@ describe('SharedModal navigation', () => {
 
   it('pops back to the modal underneath instead of closing everything', async () => {
     useUIStore.setState({
-      modalStack: [{ type: 'info', params: {} }, { type: 'miles' }],
+      modalStack: [{ type: 'info', params: {} }, { type: 'distance' }],
     });
 
     const user = userEvent.setup();
@@ -29,7 +29,7 @@ describe('SharedModal navigation', () => {
       modalStack: [
         { type: 'info', params: {} },
         { type: 'info', params: {} },
-        { type: 'miles' },
+        { type: 'distance' },
       ],
     });
 
@@ -45,7 +45,7 @@ describe('SharedModal navigation', () => {
 
   it('closes the whole stack from the close button', async () => {
     useUIStore.setState({
-      modalStack: [{ type: 'info', params: {} }, { type: 'miles' }],
+      modalStack: [{ type: 'info', params: {} }, { type: 'distance' }],
     });
 
     const user = userEvent.setup();

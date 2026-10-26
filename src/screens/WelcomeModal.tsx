@@ -20,10 +20,13 @@ import { useAnimatedModal } from '../hooks/useAnimatedModal';
 import { motion } from '../styles/motion';
 import Button from '../components/Buttons';
 import { useProgressStore } from '../stores/progressStore';
+import { useInitializationStore } from '../stores/initializationStore';
+import { useUIStore } from '../stores/uiStore';
 import JourneyProgressBar from '../components/JourneyProgressBar';
 import SyncIndicator from '../components/SyncIndicator';
 import SyncErrorBanner from '../components/SyncErrorBanner';
-import SettingsRef from '../components/SettingsRef';
+import SettingsIcon from '../assets/icons/SettingsIcon';
+import InlineIconLink from '../components/InlineIconLink';
 
 interface WelcomeModalProps {
   visible: boolean;
@@ -60,6 +63,13 @@ export default function WelcomeModal({
       issue => issue.dismissedAt === null && issue.resolvedAt === null,
     ),
   );
+  const pushModal = useUIStore(state => state.pushModal);
+  // See initializationStore's own doc comment: true for the rest of this
+  // app session once this launch's database.init() detected a protected
+  // legacy-schema upgrade, false again on the next real cold start.
+  const wasJustUpgraded = useInitializationStore(
+    state => state.wasJustUpgraded,
+  );
 
   // Measure the journey progress bar so the absolutely-positioned sync
   // pill can sit exactly above it without overlapping.
@@ -78,6 +88,23 @@ export default function WelcomeModal({
     onDismiss();
   };
   const modalVisible = visible || internalVisible || startupOverlay != null;
+
+  // Gates JourneyProgressBar's fill animation off starting until the
+  // boot-time splash has actually finished covering this screen.
+  // `startupOverlay` is only ever non-null during the genuine first-launch
+  // sequence (App.tsx passes undefined here permanently once `splashHidden`
+  // flips true for the first time — see its own long comment) — so on
+  // every other WelcomeModal mount (e.g. returning Home from Settings,
+  // where there's no splash at all), this is always true immediately,
+  // identical to the component's pre-existing always-animate behavior.
+  // Only the very first boot mount ever sees this start false and flip
+  // true once the splash's own fade-out completes. Fixes a reported bug:
+  // progress data finishes loading (and the bar's fill animation would
+  // otherwise start) while the opaque splash is still covering the
+  // screen, so by the time the splash's ~600ms fade-out finishes, the
+  // bar's own 500-2000ms fill animation was already partway done or
+  // fully finished underneath it.
+  const progressBarCanAnimate = startupOverlay == null;
 
   // Notify the parent once the exit fade has genuinely finished, so it
   // can safely unmount this component. `internalVisible` transitions
@@ -172,25 +199,40 @@ export default function WelcomeModal({
                     {miles > 0 ? 'Continue journey' : 'Begin journey'}
                   </Button>
 
-                  {/* Persistent sync-error card (any kind). Has its own
-                      × dismiss; we deliberately do NOT clear it when the
-                      welcome modal closes — the badge dot on Settings
-                      should keep reflecting the unresolved problem. */}
-                  {hasTroubleshootingIssues && (
+                  {/* Upgrade confirmation renders as a real card inside
+                      SyncErrorBanner itself (via its `isHome` prop) —
+                      scrolls/peeks alongside any real sync-error card in
+                      the exact same carousel, rather than stacking as a
+                      separate block above it. See SyncErrorBanner's own
+                      doc comment for how it synthesizes that one extra
+                      card from initializationStore's `wasJustUpgraded`
+                      without ever touching the real, persisted
+                      troubleshootingIssues list (so it can never appear
+                      in Settings or the troubleshooting history screen,
+                      which both render this same component without
+                      `isHome`). */}
+                  {(wasJustUpgraded || hasTroubleshootingIssues) && (
                     <View style={styles.bannerWrap}>
-                      <SyncErrorBanner bleed={spacing.xl} />
-                      <Text
-                        style={[
-                          typographyThemed(theme).caption2Inverted,
-                          styles.bannerHint,
-                        ]}
-                      >
-                        Troubleshooting history is available in{' '}
-                        <SettingsRef
-                          size={12}
-                          color={theme.colors.textInverted}
-                        />
-                      </Text>
+                      <SyncErrorBanner bleed={spacing.xl} isHome />
+                      {hasTroubleshootingIssues && (
+                        <Text
+                          style={[
+                            typographyThemed(theme).caption2Inverted,
+                            styles.bannerHint,
+                          ]}
+                        >
+                          Troubleshooting history is available in{' '}
+                          <InlineIconLink
+                            icon={SettingsIcon}
+                            label="Settings"
+                            size={12}
+                            iconColor={theme.colors.textInverted}
+                            textColor={theme.colors.textInverted}
+                            onPress={() => pushModal({ type: 'settings' })}
+                            accessibilityLabel="Open Settings"
+                          />
+                        </Text>
+                      )}
                     </View>
                   )}
                 </View>
@@ -221,7 +263,10 @@ export default function WelcomeModal({
                     setProgressBarHeight(e.nativeEvent.layout.height)
                   }
                 >
-                  <JourneyProgressBar darkMode />
+                  <JourneyProgressBar
+                    darkMode
+                    startAnimation={progressBarCanAnimate}
+                  />
                 </View>
               ) : (
                 /* First-run: reassure the user that they don't need to

@@ -118,6 +118,21 @@ export type SyncError =
       staleForMs: number;
       manufacturer: string;
     }
+  /**
+   * Not a fault — an informational, one-time confirmation that this
+   * launch successfully ran a protected legacy-schema upgrade (see
+   * database.ts's wasProtectedUpgrade/isLegacyUpgradeMissingSchemaMeta
+   * and initializationStore's wasJustUpgraded). SyncErrorBanner
+   * synthesizes this card locally from initializationStore's
+   * `wasJustUpgraded` flag rather than it ever being added via
+   * `addTroubleshootingIssue`/stored in `troubleshootingIssues` — it is
+   * deliberately NOT persisted to the database, NOT written to
+   * troubleshooting issue history, and cannot be found in Settings'
+   * troubleshooting history screen. It shares the exact same card
+   * component/carousel as real sync errors purely for consistent
+   * shape/behavior (scrolling, dismiss, peek), not because it is one.
+   */
+  | { kind: 'newUpgrade' }
   | { kind: 'unknown'; message: string };
 
 export interface SyncStatus {

@@ -8,17 +8,24 @@ import {
 import {
   StyleSheet,
   View,
-  Animated,
   StatusBar,
   AppState,
-  Pressable,
   Text,
   ActivityIndicator,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  cancelAnimation,
+  runOnJS,
+} from 'react-native-reanimated';
 
 import MapScreen from './src/screens/MapScreen';
 import WelcomeModal from './src/screens/WelcomeModal';
 import SharedModal from './src/screens/SharedModal';
+import Button from './src/components/Buttons';
 import { useSettingsStore, useTheme } from './src/stores/settingsStore';
 import { useSyncInterval } from './src/hooks/useSyncInterval';
 import { useFriendProgressSync } from './src/hooks/useFriendProgressSync';
@@ -27,9 +34,17 @@ import { useLivePedometerDeltaOwner } from './src/hooks/useLivePedometerDelta';
 import { useInitializationStore } from './src/stores/initializationStore';
 import { database } from './src/services/database';
 import { useProgressStore } from './src/stores/progressStore';
-import { setupDevMockLongSyncIfEnabled } from './src/services/devSyncMock';
+import {
+  setupDevMockLongSyncIfEnabled,
+  shouldForceUpgradeSplashForDev,
+  shouldForceTestSyncErrorForDev,
+  addTestSyncErrorForDev,
+} from './src/services/devSyncMock';
 import { ensureTrackingModeRunning } from './src/services/trackingModeService';
 import { initializeFirebaseAppCheck } from './src/services/firebaseAppCheck';
+import { typographyThemed } from './src/styles/typography';
+import { spacing } from './src/styles/global';
+import { pickRandomLoadingPhrase } from './src/constants/loadingPhrases';
 
 const Stack = createStackNavigator();
 const MAP_READY_TIMEOUT_MS = 1500;
@@ -76,10 +91,8 @@ export async function runRecoverableBootstrapStep(
   operation: () => void | Promise<void>,
 ): Promise<void> {
   const start = Date.now();
-  console.log(`[App] initApp: ${name} start`);
   try {
     await operation();
-    console.log(`[App] initApp: ${name} ready in ${Date.now() - start}ms`);
   } catch (error) {
     console.warn(
       `[App] initApp: ${name} failed in ${Date.now() - start}ms:`,
@@ -88,15 +101,13 @@ export async function runRecoverableBootstrapStep(
   }
 }
 
-async function runRequiredBootstrapStep(
+async function runRequiredBootstrapStep<T>(
   name: string,
-  operation: () => void | Promise<void>,
-): Promise<void> {
+  operation: () => T | Promise<T>,
+): Promise<T> {
   const start = Date.now();
-  console.log(`[App] initApp: ${name} start`);
   try {
-    await operation();
-    console.log(`[App] initApp: ${name} ready in ${Date.now() - start}ms`);
+    return await operation();
   } catch (error) {
     console.error(
       `[App] initApp: ${name} failed in ${Date.now() - start}ms:`,
@@ -106,60 +117,156 @@ async function runRequiredBootstrapStep(
   }
 }
 
+// Minimum time (ms) the spinner/label must stay visible once shown, so a
+// fast bootstrap (nothing to migrate, warm cache) can't fade the splash
+// away before the user has had a chance to read the loading phrase.
+const MIN_VISIBLE_MS = 1000;
+
+function minVisibleRemainingMs(spinnerShownAt: number | null): number {
+  if (spinnerShownAt === null) return 0;
+  return Math.max(0, MIN_VISIBLE_MS - (Date.now() - spinnerShownAt));
+}
+
 // Splash overlay - root level, fades out only after successful hydration
 export function SplashOverlay({
   status,
+  label = 'Loading',
   onHidden,
+  onRetry,
+  errorTitle = 'Unable to load data',
+  errorMessage = 'Your saved journey has not been changed. Try loading it again.',
 }: {
   status: BootstrapStatus;
+  // Shown above the spinner once it appears. Defaults to "Loading" for
+  // every ordinary launch; App.tsx passes "Upgrading" instead when this
+  // launch's database.init() detected a protected schema upgrade (see
+  // database.ts's `wasProtectedUpgrade` and isLegacyUpgradeMissingSchemaMeta
+  // for exactly which launches that covers) — so a real user migrating
+  // from a legacy version sees confirmation that the longer first-run
+  // pause (how ever brief) is a deliberate one-time upgrade step, not the
+  // app looking stuck or broken.
+  label?: string;
   onHidden?: () => void;
+  /**
+   * Called when the user presses Retry on the `status === 'error'` view
+   * rendered by this component (see that render branch below). Required
+   * for that view to be actionable — App.tsx wires this to
+   * `setBootstrapAttempt(attempt => attempt + 1)`, which re-runs the
+   * whole bootstrap effect from scratch.
+   */
+  onRetry?: () => void;
+  /** Overrides the error view's title. See App.tsx's `upgradeMigrationFailed`
+   * for when this is set to upgrade-specific copy instead of the default. */
+  errorTitle?: string;
+  /** Overrides the error view's body message. */
+  errorMessage?: string;
 }) {
   const theme = useTheme();
   const [faded, setFaded] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
-  const opacity = useRef(new Animated.Value(1)).current;
-  const activeAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  // Opacity is driven by react-native-reanimated (a UI-thread shared value),
+  // not the legacy `Animated` API. The legacy API's useNativeDriver mode
+  // dispatches imperative opacity commands (setValue/timing) across the
+  // async JS<->UI bridge queue; under a severe main-thread jank spike (we
+  // confirmed via logcat "Skipped 59 frames! The application may be doing
+  // too much work on its main thread" occurring at exactly this moment —
+  // right as WelcomeModal/MapScreen settle in alongside the splash's own
+  // fade), those commands can apply out of order. We root-caused a real,
+  // reproducible bug this way: frame-by-frame screen recordings showed the
+  // fade-out genuinely completing (full map visible), then — ~12ms later,
+  // with ZERO corresponding React re-render or remount in the JS logs —
+  // the opaque "Loading"/"Upgrading" splash (with its spinner still
+  // visibly, continuously rotating, proving it was a live native view, not
+  // a cached/stale compositor buffer) reappeared for ~80-100ms before
+  // snapping back to the map. That matches a late-arriving, out-of-order
+  // "opacity back to 1" bridge command racing the already-applied
+  // "opacity to 0" command. Reanimated's shared values run the animation
+  // and its final-value application entirely on the UI thread via
+  // worklets, without that separate async command queue, which avoids
+  // this class of ordering hazard. (Two earlier fixes were tried and
+  // disproven before finding this: delaying the unmount after fade-finish
+  // by 150ms, and pinning the view to its own hardware layer via
+  // renderToHardwareTextureAndroid — neither changed the symptom at all,
+  // which is what pointed away from "stale GPU buffer on
+  // unmount/compositing" and toward "stale bridge command", since the
+  // flash occurred well before unmount and with the spinner still live.)
+  const opacity = useSharedValue(1);
+  const animatedSplashStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+  // Timestamp of when the spinner/label actually became visible (see the
+  // 200ms spinnerTimer below) — used to enforce MIN_VISIBLE_MS so a fast
+  // bootstrap (e.g. nothing to migrate, warm cache) can't fade the splash
+  // out again before the user has had a chance to read the loading phrase.
+  const spinnerShownAtRef = useRef<number | null>(null);
 
   useEffect(() => {
-    activeAnimation.current?.stop();
-    activeAnimation.current = null;
+    cancelAnimation(opacity);
 
     if (status === 'loading') {
       setFaded(false);
       setShowSpinner(false);
-      opacity.setValue(1);
-      const spinnerTimer = setTimeout(() => setShowSpinner(true), 200);
+      opacity.value = 1;
+      spinnerShownAtRef.current = null;
+      const spinnerTimer = setTimeout(() => {
+        setShowSpinner(true);
+        spinnerShownAtRef.current = Date.now();
+      }, 200);
       return () => clearTimeout(spinnerTimer);
     }
 
     if (status === 'error') {
-      opacity.setValue(0);
-      setFaded(true);
-      onHidden?.();
+      // Previously this immediately faded the splash to transparent and
+      // called onHidden(), on the assumption a separate, App-root-level
+      // error screen (outside this component, outside WelcomeModal's
+      // Modal) would be revealed underneath once this view got out of
+      // the way. That assumption broke on Android whenever WelcomeModal
+      // had already mounted earlier this session: WelcomeModal renders
+      // through a native <Modal>, which Android always composites in its
+      // own top-level OS window, ABOVE everything else in the main
+      // Activity — including that separate error View — regardless of
+      // JSX order. Confirmed directly: forcing a migration failure after
+      // the welcome modal had mounted showed the welcome screen with no
+      // visible error at all; the error view was rendering, just
+      // entirely hidden behind the modal's window. Rendering the error
+      // UI directly inside THIS component (see the `status === 'error'`
+      // branch in the JSX below) fixes it for both call sites — the one
+      // rendered via WelcomeModal's own `startupOverlay` prop now shares
+      // the same Modal window as the content it needs to cover, and the
+      // plain fallback usage was never affected either way. So: stay
+      // fully visible (not faded) and do NOT call onHidden — this view
+      // now owns showing the error state itself, rather than handing off
+      // to something else that may not actually be visible.
+      opacity.value = 1;
+      setFaded(false);
       return;
     }
 
-    const animation = Animated.timing(opacity, {
-      toValue: 0,
-      duration: 400,
-      delay: 200,
-      useNativeDriver: true,
-    });
-    activeAnimation.current = animation;
-    animation.start(({ finished }) => {
-      if (finished) {
-        setFaded(true);
-        onHidden?.();
-      }
-    });
+    opacity.value = withDelay(
+      200 + minVisibleRemainingMs(spinnerShownAtRef.current),
+      withTiming(0, { duration: 400 }, finished => {
+        if (finished) {
+          // NOTE: deliberately not calling runOnJS(console.log)(...) here.
+          // This worklet runs on the UI thread; an earlier version of this
+          // debug instrumentation called runOnJS(console.log)(...) with an
+          // object literal built from values captured by this closure, and
+          // that caused a real native crash (SIGABRT) confirmed via
+          // tombstone: "facebook::jsi::Function::getHostFunction(...):
+          // assertion isHostFunction(runtime) failed" inside
+          // libworklets.so. The `faded` effect below logs the equivalent
+          // info safely from the JS thread instead.
+          runOnJS(setFaded)(true);
+          if (onHidden) {
+            runOnJS(onHidden)();
+          }
+        }
+      }),
+    );
 
     return () => {
-      animation.stop();
-      if (activeAnimation.current === animation) {
-        activeAnimation.current = null;
-      }
+      cancelAnimation(opacity);
     };
-  }, [status, opacity, onHidden]);
+  }, [status, opacity, onHidden, label]);
 
   return (
     <Animated.View
@@ -168,22 +275,61 @@ export function SplashOverlay({
       style={[
         StyleSheet.absoluteFillObject,
         styles.splashFill,
-        { backgroundColor: theme.colors.splashBackground, opacity },
+        { backgroundColor: theme.colors.splashBackground },
+        animatedSplashStyle,
       ]}
     >
-      {showSpinner && !faded && (
-        <ActivityIndicator
-          accessibilityLabel="Loading saved journey"
-          color={theme.colors.iconInverted}
-          size="large"
-        />
+      {status === 'error' ? (
+        <View style={styles.splashErrorContent} accessibilityRole="alert">
+          <Text
+            style={[
+              typographyThemed(theme).subtitleLargeInverted,
+              styles.splashErrorTitle,
+            ]}
+          >
+            {errorTitle}
+          </Text>
+          <Text
+            style={[
+              typographyThemed(theme).captionInverted,
+              styles.splashErrorMessage,
+            ]}
+          >
+            {errorMessage}
+          </Text>
+          <Button
+            onPress={() => onRetry?.()}
+            variant="primaryInverted"
+            accessibilityLabel="Retry initialization"
+          >
+            Retry
+          </Button>
+        </View>
+      ) : (
+        showSpinner &&
+        !faded && (
+          <>
+            <Text
+              style={[
+                typographyThemed(theme).subtitleLargeInverted,
+                styles.splashLabel,
+              ]}
+            >
+              {label}
+            </Text>
+            <ActivityIndicator
+              accessibilityLabel="Loading saved journey"
+              color={theme.colors.iconInverted}
+              size="large"
+            />
+          </>
+        )
       )}
     </Animated.View>
   );
 }
 
 function App(): React.JSX.Element {
-  const theme = useTheme();
   const [bootstrapStatus, setBootstrapStatus] =
     useState<BootstrapStatus>('loading');
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
@@ -191,6 +337,29 @@ function App(): React.JSX.Element {
   const [mapReadyTimedOut, setMapReadyTimedOut] = useState(false);
   const [splashHidden, setSplashHidden] = useState(false);
   const [welcomeReady, setWelcomeReady] = useState(false);
+  // True only while this launch is running a protected schema upgrade —
+  // see database.ts's `wasProtectedUpgrade` for the exact detection,
+  // which covers both a normal version-behind upgrade and a legacy
+  // pre-schema_meta database's very first migration. Drives the splash
+  // screen's "Upgrading"/"Loading" label — see SplashOverlay below.
+  const [isUpgrading, setIsUpgrading] = useState(false);
+  // True only when THIS bootstrap attempt's database.init() call itself
+  // rejected while running a protected schema upgrade (checked via
+  // database.wasProtectedUpgradeAttempt() right after catching the
+  // rejection — see that method's docstring for why it's reliable even
+  // though init()'s own return value is unavailable on a rejected call).
+  // Deliberately scoped to ONLY the database.init() step, not loadSettings
+  // or initFromDatabase failing afterward — those are unrelated to
+  // migration even on a launch that happened to also be an upgrade, and
+  // showing "upgrade failed" copy for an unrelated failure would be
+  // misleading. Drives upgrade-specific copy on the bootstrap error
+  // screen instead of the generic message — see its usage below.
+  const [upgradeMigrationFailed, setUpgradeMigrationFailed] = useState(false);
+  // Picked once per app mount (lazy initializer) so the phrase stays
+  // stable across re-renders of this component but varies launch to
+  // launch. Only used for the ordinary "Loading" splash state — the
+  // "Upgrading" state always keeps its literal copy (see label prop below).
+  const [loadingPhrase] = useState(() => pickRandomLoadingPhrase());
   // Keeps <WelcomeModal> mounted through its own exit-fade animation.
   // Gating its presence purely on `showWelcome` unmounted it the instant
   // dismissal happened, before its internal fade-out could run at all —
@@ -216,7 +385,6 @@ function App(): React.JSX.Element {
     let cancelled = false;
 
     const initApp = async () => {
-      console.log('[App] initApp: start');
       // Was the app already fully active (past onboarding, UI visible)
       // before this bootstrap effect started running? `initializationStore`
       // is Zustand/module-scope state that survives a swipe-away-in-Recents
@@ -246,6 +414,8 @@ function App(): React.JSX.Element {
       setMapReadyTimedOut(false);
       setSplashHidden(false);
       setWelcomeReady(false);
+      setIsUpgrading(false);
+      setUpgradeMigrationFailed(false);
       if (!wasAlreadyActive) {
         setPhase('loading');
       }
@@ -254,8 +424,50 @@ function App(): React.JSX.Element {
         initializeFirebaseAppCheck(),
       );
 
+      // database.init() is deliberately caught on its own, separately from
+      // loadSettings/initFromDatabase below: only a failure HERE can mean
+      // the protected-upgrade migration itself failed (see
+      // database.wasProtectedUpgradeAttempt()'s docstring), which is the
+      // one bootstrap failure mode with genuinely different, more specific
+      // guidance to show the user (see upgradeMigrationFailed's own
+      // comment above and the bootstrap-error UI below). A failure in
+      // loadSettings/initFromDatabase afterward is unrelated to migration
+      // even on a launch that also happened to upgrade, so those stay on
+      // the generic error path.
+      let wasProtectedUpgrade: boolean;
       try {
-        await runRequiredBootstrapStep('database.init', () => database.init());
+        wasProtectedUpgrade = await runRequiredBootstrapStep(
+          'database.init',
+          () => database.init(),
+        );
+      } catch (error) {
+        console.error('Failed to initialize app:', error);
+        if (!cancelled) {
+          if (database.wasProtectedUpgradeAttempt()) {
+            setUpgradeMigrationFailed(true);
+          }
+          setBootstrapStatus('error');
+        }
+        return;
+      }
+      // dev-only: lets the "Upgrading" splash copy be visually reviewed
+      // without needing a real legacy database seeded on the device —
+      // see shouldForceUpgradeSplashForDev()'s docstring.
+      if (wasProtectedUpgrade || shouldForceUpgradeSplashForDev()) {
+        setIsUpgrading(true);
+        // Deliberately never reset to false anywhere in this file (unlike
+        // isUpgrading above, which intentionally resets every bootstrap
+        // attempt so the splash label reflects only the CURRENT attempt).
+        // This powers a separate, longer-lived confirmation message on
+        // the welcome screen — see initializationStore's own doc comment
+        // on wasJustUpgraded for why it should persist for the rest of
+        // this app session (not just the current bootstrap attempt) and
+        // why module-scoped/in-memory (not persisted to disk) is the
+        // right lifetime for it.
+        useInitializationStore.getState().setWasJustUpgraded(true);
+      }
+
+      try {
         await runRequiredBootstrapStep('loadSettings', () => loadSettings());
         // Initialize progress store from database (single source of truth)
         await runRequiredBootstrapStep('initFromDatabase', () =>
@@ -275,6 +487,12 @@ function App(): React.JSX.Element {
       await runRecoverableBootstrapStep('dev mock setup', () =>
         setupDevMockLongSyncIfEnabled(),
       );
+      // dev-only: lets the welcome screen's "Upgrade complete" card be
+      // visually reviewed alongside a real troubleshooting issue card at
+      // the same time — see shouldForceTestSyncErrorForDev()'s docstring.
+      if (shouldForceTestSyncErrorForDev()) {
+        addTestSyncErrorForDev();
+      }
       await runRecoverableBootstrapStep('tracking mode', () =>
         ensureTrackingModeRunning(),
       );
@@ -366,34 +584,88 @@ function App(): React.JSX.Element {
     welcomeReady,
   });
 
-  // Keep <WelcomeModal> mounted for as long as it should be showing OR is
-  // still playing its exit animation (see welcomeModalMounted's
-  // declaration comment above). This only ever needs to flip TRUE here —
-  // it flips back false via handleWelcomeExited, once WelcomeModal itself
-  // confirms the fade-out has actually finished.
+  // Single source of truth for the splash/error overlay element — created
+  // ONCE here, then placed into exactly one of two JSX slots below
+  // depending on whether WelcomeModal is currently mounted (never both,
+  // and never neither while this is non-null). There must only ever be
+  // one <SplashOverlay> actually rendered into the tree at a time: on
+  // Android, WelcomeModal renders through a native <Modal>, which always
+  // composites in its own top-level OS window above everything else in
+  // the main Activity, regardless of JSX order or elements underneath it.
+  // That means whenever WelcomeModal is mounted, the splash/error overlay
+  // MUST be nested inside it (via its `startupOverlay` prop) to actually
+  // be visible on top of its content — rendering a second, separate
+  // instance as a plain sibling elsewhere in the tree would just render
+  // invisibly behind WelcomeModal's window (confirmed: this was exactly
+  // how the bootstrap error screen went completely invisible once
+  // WelcomeModal had mounted, before this was fixed). Conversely, once
+  // WelcomeModal is NOT mounted (a returning user who dismissed welcome
+  // forever, so `showWelcome` is persisted false), there is no Modal
+  // window for anything to hide behind, so the same element can — and
+  // must — render directly as a standalone sibling instead, or nothing
+  // would cover the loading/error state for that user at all.
+  const splashOverlayElement = splashHidden ? null : (
+    <SplashOverlay
+      status={splashStatus}
+      label={isUpgrading ? 'Upgrading' : loadingPhrase}
+      onHidden={handleSplashHidden}
+      onRetry={() => setBootstrapAttempt(attempt => attempt + 1)}
+      errorTitle={
+        upgradeMigrationFailed ? 'Upgrade could not finish' : undefined
+      }
+      errorMessage={
+        upgradeMigrationFailed
+          ? // Deliberately does NOT claim "nothing has changed": a
+            // migration failure can leave the database partway between
+            // schemas (see database.ts's migrateWithSnapshotProtection —
+            // it reverts and retries once automatically, but a second
+            // failure is not reverted again). What IS always true, in
+            // every case, is that no existing recorded data is ever
+            // deleted by any step of the migration (it is exclusively
+            // ALTER TABLE ADD COLUMN plus one read-only aggregate
+            // query) — so this promises only that, which is both
+            // accurate and genuinely the thing a worried user needs
+            // reassurance about. Retry is worth offering here, not just
+            // a dead end: most of the migration's individual steps
+            // already skip columns a previous attempt successfully
+            // added (see isDuplicateColumnError's usage throughout
+            // runSchemaMigrations), so a retry after a transient failure
+            // (or one that got partway through) has a real chance of
+            // completing rather than just repeating the exact same
+            // failure.
+            'We hit a problem finishing your upgrade. Your recorded miles, steps, and history are safe. Try again below.'
+          : undefined
+      }
+    />
+  );
+
+  // Keep <WelcomeModal> mounted for as long as it should be showing, OR
+  // the splash/error overlay still needs somewhere to render (see
+  // splashOverlayElement's own comment above for why: WelcomeModal is the
+  // ONLY place that overlay can ever actually be visible on Android,
+  // since its native Modal window always sits above everything else in
+  // the main Activity). The `!splashHidden` half of this condition is
+  // what makes WelcomeModal mount even when `showWelcome` happens to be
+  // false at that moment (e.g. a same-session resume after Welcome was
+  // already dismissed once) — its own `visible={showWelcome}` prop still
+  // correctly keeps the actual Welcome content hidden in that case; only
+  // the overlay (nested via startupOverlay) shows. This used to require
+  // a second, separate <SplashOverlay> rendered directly as a sibling
+  // for exactly that case — removed, since it could never actually be
+  // seen once WelcomeModal was ALSO mounted (same single-top-window
+  // Android constraint), and was otherwise just dead/invisible JSX.
+  // Also keeps playing WelcomeModal's own exit animation once mounted;
+  // this only ever needs to flip TRUE here — it flips back false via
+  // handleWelcomeExited, once WelcomeModal itself confirms the fade-out
+  // has actually finished.
   useEffect(() => {
-    if (shouldShowWelcomeModal({ bootstrapStatus, showWelcome })) {
+    if (
+      shouldShowWelcomeModal({ bootstrapStatus, showWelcome }) ||
+      !splashHidden
+    ) {
       setWelcomeModalMounted(true);
     }
-  }, [bootstrapStatus, showWelcome]);
-
-  useEffect(() => {
-    console.log('[App] splash state', {
-      bootstrapStatus,
-      mapReady,
-      mapReadyTimedOut,
-      welcomeReady,
-      splashStatus,
-      splashHidden,
-    });
-  }, [
-    bootstrapStatus,
-    mapReady,
-    mapReadyTimedOut,
-    welcomeReady,
-    splashStatus,
-    splashHidden,
-  ]);
+  }, [bootstrapStatus, showWelcome, splashHidden]);
 
   // Re-reconcile tracking-mode state whenever the app returns to the
   // foreground. Catches: user granted/revoked ACTIVITY_RECOGNITION in
@@ -443,31 +715,15 @@ function App(): React.JSX.Element {
             visible={showWelcome}
             onReady={handleWelcomeReady}
             onExited={handleWelcomeExited}
-            // Only wire up the boot-time splash overlay for the genuine
-            // first-boot sequence (before splash has ever finished
-            // hiding). WelcomeModal can remount later in the app's
-            // lifetime — e.g. every time the user returns Home from
-            // Settings — and passing a non-null `startupOverlay` on
-            // those later mounts replayed the whole black splash fade
-            // again: SplashOverlay's internal opacity ref always starts
-            // at 1 (fully opaque, solid black `splashBackground`) on
-            // mount, and by the time WelcomeModal remounts here,
-            // `splashStatus` is already 'ready', so its effect
-            // immediately re-ran the 200ms-delay + 400ms fade from black
-            // — even though splash had already legitimately finished
-            // long ago. Passing undefined once splashHidden is true
-            // prevents that replay, and also stops `startupOverlay !=
-            // null` from unconditionally forcing WelcomeModal's own
-            // underlying <Modal visible> open (see modalVisible in
-            // WelcomeModal.tsx).
-            startupOverlay={
-              splashHidden ? undefined : (
-                <SplashOverlay
-                  status={splashStatus}
-                  onHidden={handleSplashHidden}
-                />
-              )
-            }
+            // This is the ONLY place the splash/error overlay element is
+            // ever rendered — see splashOverlayElement's own comment
+            // above (where it's computed once) for why there must never
+            // be a second copy rendered elsewhere as a sibling: Android
+            // always composites WelcomeModal's native Modal window above
+            // everything else in the main Activity, so anything meant to
+            // visually sit on top of it must render inside it via this
+            // prop, or it is simply invisible, hidden behind the modal.
+            startupOverlay={splashOverlayElement}
             onDismiss={() => {
               setShowWelcome(false);
               // Transition to revealing phase when welcome is dismissed
@@ -478,76 +734,6 @@ function App(): React.JSX.Element {
 
         {/* SharedModal - stack-based modal navigation */}
         <SharedModal />
-
-        {bootstrapStatus === 'error' && (
-          <View
-            style={[
-              styles.bootstrapError,
-              { backgroundColor: theme.colors.splashErrorBackground },
-            ]}
-            accessibilityRole="alert"
-          >
-            <Text
-              style={[
-                styles.bootstrapErrorTitle,
-                { color: theme.colors.splashText },
-              ]}
-            >
-              Unable to load data
-            </Text>
-            <Text
-              style={[
-                styles.bootstrapErrorMessage,
-                { color: theme.colors.splashTextSecondary },
-              ]}
-            >
-              Your saved journey has not been changed. Try loading it again.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Retry initialization"
-              onPress={() => setBootstrapAttempt(attempt => attempt + 1)}
-              style={[
-                styles.retryButton,
-                { borderColor: theme.colors.splashBorder },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.retryButtonText,
-                  { color: theme.colors.splashText },
-                ]}
-              >
-                Retry
-              </Text>
-            </Pressable>
-          </View>
-        )}
-
-        {/* Fallback splash cover for boot only — used when the app never
-            shows the welcome modal at all (showWelcome persisted false)
-            so there's still something covering the loading state.
-            Gating this on `!showWelcome` alone was the actual cause of
-            the "whole screen fades to black" bug on welcome dismiss:
-            WelcomeModal (and its own internal startupOverlay splash,
-            which already handles the boot-time fade for users who DO
-            see welcome) unmounts the instant `showWelcome` flips false,
-            and this standalone overlay — previously not rendered at all
-            — mounts FRESH at that exact moment with its internal opacity
-            starting at 1 (fully opaque). Since splashStatus is already
-            'ready' by then, it immediately started a 600ms fade from
-            solid black down to transparent, which is what actually
-            produced the "fades to black" look — not the welcome content
-            itself, which just vanished instantly underneath it.
-            `splashHidden` flips true the first time ANY splash overlay
-            (this one, or WelcomeModal's internal one) finishes its real
-            fade-out, and never resets except on a bootstrap retry — so
-            requiring `!splashHidden` here means this fallback can only
-            ever mount once, during genuine initial boot, and never
-            re-mounts just because `showWelcome` later toggles off. */}
-        {!showWelcome && !splashHidden && (
-          <SplashOverlay status={splashStatus} onHidden={handleSplashHidden} />
-        )}
       </View>
     </SafeAreaProvider>
   );
@@ -562,32 +748,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bootstrapError: {
-    ...StyleSheet.absoluteFillObject,
+  splashLabel: {
+    marginBottom: spacing.md,
+  },
+  splashErrorContent: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: spacing.xl,
   },
-  bootstrapErrorTitle: {
-    fontSize: 22,
-    fontWeight: '600',
-  },
-  bootstrapErrorMessage: {
-    fontSize: 16,
-    lineHeight: 23,
-    marginTop: 12,
+  splashErrorTitle: {
     textAlign: 'center',
   },
-  retryButton: {
-    borderRadius: 4,
-    borderWidth: 1,
-    marginTop: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  retryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  splashErrorMessage: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+    textAlign: 'center',
   },
 });
 

@@ -12,6 +12,7 @@ import {
 import { ThemeName } from '../styles/themes';
 import { AVERAGE_STRIDE_METERS, METERS_TO_MILES } from '../utils/stride';
 import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
+import { shouldForceUpgradeMigrationFailureForDev } from './devSyncMock';
 
 const CURRENT_PROGRESS_CACHE_VERSION = 1;
 export const CURRENT_HEALTH_SYNC_FORMAT_VERSION = 1;
@@ -33,6 +34,30 @@ export function needsPreMigrationSnapshot(
   currentSchemaVersion: number,
 ): boolean {
   return storedSchemaVersion > 0 && storedSchemaVersion < currentSchemaVersion;
+}
+
+// Distinguishes a genuinely brand-new install from a legacy install that
+// predates `schema_meta` entirely (e.g. a real 1.1.3 database migrating to
+// 1.1.4 for the very first time). `needsPreMigrationSnapshot` alone cannot
+// tell these apart: both read back `storedSchemaVersion === 0` the first
+// time `schema_meta` is created (`CREATE TABLE IF NOT EXISTS` + `INSERT OR
+// IGNORE ... VALUES (1, 0)` always produces that default), so the
+// version-compare check sees identical input for "nothing to protect" and
+// "this is exactly the one case that most needs protecting" — the first
+// time a real user's irreplaceable history ever runs a migration at all.
+//
+// The distinguishing fact instead has to come from table existence,
+// checked BEFORE `schema_meta` or `distance_entries` are created by this
+// run: a legacy pre-1.1.3-tracking database already has `distance_entries`
+// (created by the old app version) but has never had `schema_meta` (it
+// didn't exist as a concept yet), while a true fresh install has neither
+// table yet — `distance_entries` isn't created until later in
+// `runSchemaMigrations()`, well after this check runs.
+export function isLegacyUpgradeMissingSchemaMeta(
+  schemaMetaTableExisted: boolean,
+  distanceEntriesTableExisted: boolean,
+): boolean {
+  return !schemaMetaTableExisted && distanceEntriesTableExisted;
 }
 
 export interface DistanceEntryChanges {
@@ -143,10 +168,38 @@ class Database {
   private db: DB | null = null;
   private initPromise: Promise<void> | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
+  // Set by createTables() during this launch's init() call — true only when
+  // this launch ran a protected (pre-migration-snapshotted) schema upgrade,
+  // which includes both a normal version-behind upgrade and a legacy
+  // pre-schema_meta database's very first migration. Read by the UI layer
+  // (App.tsx) to show "Upgrading" instead of "Loading" on the splash
+  // screen — see isLegacyUpgradeMissingSchemaMeta()'s docstring for why
+  // that legacy case specifically needs its own detection.
+  private wasProtectedUpgrade = false;
 
-  async init(): Promise<void> {
-    if (this.initPromise) return this.initPromise;
-    if (this.db) return;
+  /**
+   * Whether the most recent `init()` attempt detected (and attempted, via
+   * `migrateWithSnapshotProtection`) a protected legacy-schema upgrade —
+   * readable even when that attempt ultimately threw (unlike `init()`'s own
+   * return value, which is only available on success). `createTables()`
+   * sets `wasProtectedUpgrade` BEFORE calling `migrateWithSnapshotProtection`
+   * (the step that can actually throw), so this is reliable to check
+   * immediately after catching a rejected `init()` call — it tells the
+   * caller whether the failure happened while migrating a real user's
+   * existing data (versus, say, a fresh install hitting an unrelated disk
+   * error), which is exactly the distinction the bootstrap error screen
+   * needs to show upgrade-specific guidance instead of generic copy.
+   */
+  wasProtectedUpgradeAttempt(): boolean {
+    return this.wasProtectedUpgrade;
+  }
+
+  async init(): Promise<boolean> {
+    if (this.initPromise) {
+      await this.initPromise;
+      return this.wasProtectedUpgrade;
+    }
+    if (this.db) return this.wasProtectedUpgrade;
 
     const initPromise = this.initialize();
     this.initPromise = initPromise;
@@ -160,9 +213,16 @@ class Database {
         this.initPromise = null;
       }
     }
+    return this.wasProtectedUpgrade;
   }
 
   private async initialize(): Promise<void> {
+    // Reset at the start of every real init attempt (not just once at
+    // construction) so a retry after a prior failed init — see "closes a
+    // partial handle and permits retry after initialization fails" in
+    // database.test.ts — recomputes this fresh rather than carrying over a
+    // stale value from an attempt that never actually finished.
+    this.wasProtectedUpgrade = false;
     const db = open({
       name: 'MiddleEarthSettings.db',
     });
@@ -186,6 +246,20 @@ class Database {
   private async createTables(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Checked BEFORE either table is created by this run — see
+    // isLegacyUpgradeMissingSchemaMeta()'s docstring for why table
+    // existence, not the version number read back below, is the only
+    // reliable signal for the legacy-first-migration case.
+    const existingTables = this.db.executeSync(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('schema_meta', 'distance_entries')`,
+    ).rows as { name: string }[] | undefined;
+    const existingTableNames = new Set(
+      (existingTables ?? []).map(row => row.name),
+    );
+    const schemaMetaTableExisted = existingTableNames.has('schema_meta');
+    const distanceEntriesTableExisted =
+      existingTableNames.has('distance_entries');
+
     // Tracks the last fully-applied schema version so we know whether an
     // upgrading install needs a pre-migration snapshot below. A fresh
     // install (no row yet) starts at 0 and never needs one — there is no
@@ -204,14 +278,32 @@ class Database {
     ).rows?.[0] as { version?: number } | undefined;
     const storedSchemaVersion = Number(schemaMetaRow?.version ?? 0);
 
-    // Only installs that already have a recorded version (i.e. have run
-    // this schema-tracking code before) and are behind the current version
-    // get a snapshot — see needsPreMigrationSnapshot() for the exact rule.
-    const isProtectedUpgrade = needsPreMigrationSnapshot(
-      storedSchemaVersion,
-      CURRENT_SCHEMA_VERSION,
-    );
+    // Either signal alone can indicate a protected upgrade: a recorded
+    // version behind current (needsPreMigrationSnapshot), or a legacy
+    // database migrating through schema_meta tracking for the very first
+    // time (isLegacyUpgradeMissingSchemaMeta) — see that function's
+    // docstring for why the version-compare check alone misses this case
+    // entirely (it reads storedSchemaVersion === 0 for both "nothing to
+    // protect" and "this is exactly the case that most needs protecting").
+    const isProtectedUpgrade =
+      needsPreMigrationSnapshot(storedSchemaVersion, CURRENT_SCHEMA_VERSION) ||
+      isLegacyUpgradeMissingSchemaMeta(
+        schemaMetaTableExisted,
+        distanceEntriesTableExisted,
+      );
+    this.wasProtectedUpgrade = isProtectedUpgrade;
     this.migrateWithSnapshotProtection(isProtectedUpgrade);
+
+    // dev-only: lets the upgrade-failure bootstrap error copy be visually
+    // reviewed without needing to actually break a real migration — see
+    // shouldForceUpgradeMigrationFailureForDev()'s docstring. Thrown AFTER
+    // migrateWithSnapshotProtection() succeeds (not instead of it) so the
+    // live database is left in a normal, fully-migrated state — this is
+    // purely a visual test of the error screen's copy/retry flow, not a
+    // test of actual migration-failure recovery.
+    if (shouldForceUpgradeMigrationFailureForDev()) {
+      throw new Error('[dev] Simulated upgrade migration failure');
+    }
 
     this.db.executeSync(`UPDATE schema_meta SET version = ? WHERE id = 1`, [
       CURRENT_SCHEMA_VERSION,

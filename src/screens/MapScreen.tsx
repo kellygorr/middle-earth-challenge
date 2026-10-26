@@ -618,15 +618,6 @@ export default function MapScreen({
       if (cancelled) return;
 
       reportedMapReadyTokenRef.current = mapReadyToken;
-      console.log('[MapScreen] visual ready', {
-        width,
-        height,
-        mapWidth,
-        mapHeight,
-        miles,
-        colorizeMap,
-        reducedMapTitles,
-      });
       onMapReady();
     };
 
@@ -651,17 +642,6 @@ export default function MapScreen({
   ]);
 
   // Keyboard offset handled by useKeyboardOffset
-
-  console.log('[MapScreen] render', {
-    phase,
-    showWelcome,
-    miles,
-    mapBg: theme.colors.mapBackground,
-    width,
-    height,
-    mapWidth,
-    mapHeight,
-  });
 
   return (
     <GestureHandlerRootView
@@ -1015,7 +995,7 @@ export default function MapScreen({
                 accessibilityLabel="Add distance"
                 onPress={() => {
                   clearStickyInfo();
-                  pushModal({ type: 'miles' });
+                  pushModal({ type: 'distance' });
                 }}
                 hitSlop={{ top: 8, right: 16, bottom: 16, left: 8 }}
                 disabled={isSyncing}

@@ -18,6 +18,7 @@ import { friendProgressWorkflow } from '../../../services/friendProgressWorkflow
 import { useFriendProgressStore } from '../../../stores/friendProgressStore';
 import { useProgressStore } from '../../../stores/progressStore';
 import { useSettingsStore, useTheme } from '../../../stores/settingsStore';
+import { useUIStore } from '../../../stores/uiStore';
 import { spacing } from '../../../styles/global';
 import { typographyThemed } from '../../../styles/typography';
 import {
@@ -27,7 +28,8 @@ import {
 } from '../../../utils/fantasyNameGenerator';
 import Button from '../../Buttons/Button';
 import ErrorMessageBanner from '../../ErrorMessageBanner';
-import SettingsRef from '../../SettingsRef';
+import SettingsIcon from '../../../assets/icons/SettingsIcon';
+import InlineIconLink from '../../InlineIconLink';
 import { StatusBadge } from '../../StatusBadge';
 import Section from '../Section';
 
@@ -446,7 +448,21 @@ export default function FriendProgressContent() {
             ]}
           >
             To remove shared data, stop sharing or delete data in{' '}
-            <SettingsRef />. Both actions remove your shared data.
+            <InlineIconLink
+              icon={SettingsIcon}
+              label="Settings"
+              textColor={theme.colors.textSecondary}
+              onPress={() => {
+                // Reset to a fresh Settings root rather than pushing
+                // another 'settings' screen on top of this one (this
+                // content already lives nested under Settings →
+                // friend-progress), avoiding a duplicate stack entry.
+                useUIStore.getState().closeAllModals();
+                useUIStore.getState().pushModal({ type: 'settings' });
+              }}
+              accessibilityLabel="Open Settings"
+            />
+            . Both actions remove your shared data.
           </Text>
         </View>
 

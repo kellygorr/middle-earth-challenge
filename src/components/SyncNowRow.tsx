@@ -24,17 +24,23 @@ import Button from './Buttons/Button';
 import { typographyThemed } from '../styles/typography';
 import { spacing } from '../styles/global';
 
-export function SyncNowRow() {
-  const theme = useTheme();
+export function useCanSyncNow() {
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
   const trackingMode = useSettingsStore(state => state.trackingMode);
+
+  return syncEnabled && syncProvider !== 'none' && trackingMode !== 'dual';
+}
+
+export function SyncNowRow() {
+  const theme = useTheme();
+  const canSyncNow = useCanSyncNow();
   const lastSyncTimestamp = useSettingsStore(state => state.lastSyncTimestamp);
   const isSyncing = useProgressStore(
     state => state.syncStatus.phase === 'syncing',
   );
 
-  if (!syncEnabled || syncProvider === 'none' || trackingMode === 'dual') {
+  if (!canSyncNow) {
     return null;
   }
 
