@@ -11,6 +11,7 @@ export interface Typography {
   caption: TextStyle;
   caption2: TextStyle;
   caption2Bold: TextStyle;
+  caption3Bold: TextStyle;
   buttonLarge: TextStyle;
   buttonMedium: TextStyle;
   buttonSmall: TextStyle;
@@ -53,6 +54,13 @@ export const typography: Typography = {
     fontSize: 12,
     lineHeight: 21,
     fontWeight: '600',
+  },
+  // Smallest bold text size — compact label chips (e.g. the small
+  // StatusBadge variant) where even caption2Bold (12px) reads too large.
+  caption3Bold: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '700',
   },
   buttonLarge: {
     fontSize: 18,

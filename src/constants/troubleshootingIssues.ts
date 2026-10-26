@@ -52,8 +52,10 @@ export function troubleshootingIssueSlot(
 export function troubleshootingIssueSeverity(
   error: SyncError,
 ): TroubleshootingIssueSeverity {
-  // The switch already happened and tracking continues; nothing to fix.
-  return error.kind === 'sourceFallback' ? 'info' : 'error';
+  // Neither reports an unresolved fault the user must act on.
+  return error.kind === 'sourceFallback' || error.kind === 'newUpgrade'
+    ? 'info'
+    : 'error';
 }
 
 /**

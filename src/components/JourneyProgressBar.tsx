@@ -8,6 +8,28 @@ import { useProgressStore } from '../stores/progressStore';
 
 interface JourneyProgressBarProps {
   darkMode?: boolean;
+  /**
+   * When false, the fill animation is held at its current value (defaults
+   * to not-yet-started/0) instead of tweening toward the real progress
+   * percentage. Defaults to true (animate immediately on mount/update),
+   * which is correct everywhere this component is used EXCEPT the
+   * boot-time WelcomeModal mount: there, progress data finishes loading
+   * (and this animation would otherwise start) while the opaque splash
+   * overlay is still covering the screen, so by the time the splash
+   * finishes its ~600ms fade-out, the bar's fill animation (500ms-2000ms
+   * depending on the percentage) is already partway done or fully
+   * finished underneath it — the user only ever sees the tail end, if
+   * anything. Reported directly: "the Journey progress on the home
+   * screen is already mostly done animating" at launch, vs. animating
+   * "fine" when the same Welcome screen is reached via the Home button
+   * from Settings (where there is no splash hiding it, so it was never
+   * broken there). App.tsx passes this through WelcomeModal wired to
+   * `splashHidden`, which is already true (by design) on every
+   * Home-from-Settings remount and only transitions false->true once,
+   * during the genuine first-launch splash fade — so this prop is a
+   * no-op (always true) for every case except the one it's fixing.
+   */
+  startAnimation?: boolean;
 }
 
 /**
@@ -22,6 +44,7 @@ interface JourneyProgressBarProps {
  */
 export default function JourneyProgressBar({
   darkMode = false,
+  startAnimation = true,
 }: JourneyProgressBarProps) {
   const theme = useTheme();
   const progressPercentage = useProgressStore(
@@ -32,7 +55,7 @@ export default function JourneyProgressBar({
   const fillWidth = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    if (barWidth <= 0) return;
+    if (barWidth <= 0 || !startAnimation) return;
     const pct = Math.max(0, Math.min(100, progressPercentage));
     const target = (pct / 100) * barWidth;
     let duration = 2000;
@@ -44,7 +67,7 @@ export default function JourneyProgressBar({
       easing: Easing.linear,
       useNativeDriver: false,
     }).start();
-  }, [barWidth, progressPercentage, fillWidth]);
+  }, [barWidth, progressPercentage, fillWidth, startAnimation]);
 
   const firstName = (checkpoints[0] as any)?.name ?? '';
   const lastName = (checkpoints[checkpoints.length - 1] as any)?.name ?? '';

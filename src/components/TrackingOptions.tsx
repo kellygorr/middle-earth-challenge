@@ -5,7 +5,8 @@ import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
 import ButtonRow from './Modals/ButtonRow';
 import { SyncIcon, PlusIcon, DevModeIcon } from '../assets/icons';
-import SettingsRef from './SettingsRef';
+import SettingsIcon from '../assets/icons/SettingsIcon';
+import InlineIconLink from './InlineIconLink';
 import { typographyThemed } from '../styles/typography';
 import { spacing, iconSizes } from '../styles/global';
 
@@ -52,7 +53,17 @@ export function TrackingOptions({
           ) : (
             <Text style={typographyThemed(theme).captionSecondary}>
               Sync health data from device (optional). Manage this at any time
-              from <SettingsRef />.
+              from{' '}
+              <InlineIconLink
+                icon={SettingsIcon}
+                label="Settings"
+                textColor={theme.colors.textSecondary}
+                onPress={() =>
+                  useUIStore.getState().pushModal({ type: 'settings' })
+                }
+                accessibilityLabel="Open Settings"
+              />
+              .
             </Text>
           )
         }
@@ -65,7 +76,7 @@ export function TrackingOptions({
           disabled={isSyncing}
           compact={compact}
           onPress={() => {
-            useUIStore.getState().pushModal({ type: 'miles' });
+            useUIStore.getState().pushModal({ type: 'distance' });
           }}
           caption={
             isSyncing

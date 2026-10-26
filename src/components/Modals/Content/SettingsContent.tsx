@@ -90,9 +90,6 @@ export default function SettingsContent() {
       issue => issue.dismissedAt === null && issue.resolvedAt === null,
     ),
   );
-  const hasTrackingHistory = useProgressStore(
-    state => state.troubleshootingIssues.length > 0,
-  );
 
   return (
     <>
@@ -379,14 +376,18 @@ export default function SettingsContent() {
           />
         )}
 
-        {hasTrackingHistory && (
-          <ButtonRow
-            icon={<ClockIcon size={iconSizes.medium} />}
-            label="Issue history"
-            caption="Problems we detected, including ones you dismissed"
-            onPress={() => pushModal({ type: 'troubleshooting-history' })}
-          />
-        )}
+        {/* Always shown now — Troubleshooting history also includes a
+            permanent "Upgrade" confirmation card (see
+            TroubleshootingHistoryContent.tsx) independent of whether any
+            real tracking issue has ever been recorded, so this entry
+            point must stay reachable even when hasTrackingHistory is
+            false. */}
+        <ButtonRow
+          icon={<ClockIcon size={iconSizes.medium} />}
+          label="Issue history"
+          caption="Problems we detected, including ones you dismissed"
+          onPress={() => pushModal({ type: 'troubleshooting-history' })}
+        />
       </Section>
 
       {/* Data Management */}

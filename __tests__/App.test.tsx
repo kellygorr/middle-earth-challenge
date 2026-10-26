@@ -18,6 +18,7 @@ import App, {
   shouldShowWelcomeModal,
   SplashOverlay,
 } from '../App';
+import { withTiming } from 'react-native-reanimated';
 import { database } from '../src/services/database';
 import { useInitializationStore } from '../src/stores/initializationStore';
 import { useProgressStore } from '../src/stores/progressStore';
@@ -47,7 +48,7 @@ beforeEach(() => {
   });
   useProgressStore.setState({ initFromDatabase });
   useInitializationStore.setState({ phase: 'loading' });
-  jest.spyOn(database, 'init').mockResolvedValue(undefined);
+  jest.spyOn(database, 'init').mockResolvedValue(false);
   jest
     .spyOn(trackingModeService, 'ensureTrackingModeRunning')
     .mockResolvedValue(undefined);
@@ -81,6 +82,53 @@ test('renders the map controls', async () => {
   expect(screen.getByLabelText('Open settings')).toBeOnTheScreen();
   expect(screen.getByLabelText('Recenter map')).toBeOnTheScreen();
   expect(screen.getByLabelText('Add distance')).toBeOnTheScreen();
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
+test('shows "Loading" on an ordinary launch', async () => {
+  const settingsReady = deferred();
+  loadSettings.mockReturnValue(settingsReady.promise);
+  jest.spyOn(database, 'init').mockResolvedValue(false);
+  const consoleError = jest
+    .spyOn(console, 'error')
+    .mockImplementation(() => {});
+
+  await render(<App />);
+
+  // Splash must still be up (settingsReady unresolved) for the spinner's
+  // 200ms-delay timer to have fired and the label to actually be mounted —
+  // matching the existing "keeps the splash..." test's wait pattern. The
+  // visible text is a randomly-picked Middle Earth loading phrase (see
+  // pickRandomLoadingPhrase), so assert via the stable accessibility label
+  // instead of literal "Loading" text.
+  await waitFor(() => expect(loadSettings).toHaveBeenCalledTimes(1));
+  expect(
+    await screen.findByLabelText('Loading saved journey'),
+  ).toBeOnTheScreen();
+  expect(screen.queryByText('Upgrading')).not.toBeOnTheScreen();
+
+  await act(async () => settingsReady.resolve());
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
+test('shows "Upgrading" instead of "Loading" when database.init() reports a protected schema upgrade', async () => {
+  const settingsReady = deferred();
+  loadSettings.mockReturnValue(settingsReady.promise);
+  // true = this launch ran a protected upgrade (either a normal
+  // version-behind upgrade, or — the case this feature exists for — a
+  // real legacy pre-schema_meta database's very first migration).
+  jest.spyOn(database, 'init').mockResolvedValue(true);
+  const consoleError = jest
+    .spyOn(console, 'error')
+    .mockImplementation(() => {});
+
+  await render(<App />);
+
+  await waitFor(() => expect(loadSettings).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText('Upgrading')).toBeOnTheScreen();
+  expect(screen.queryByText('Loading')).not.toBeOnTheScreen();
+
+  await act(async () => settingsReady.resolve());
   expect(consoleError).not.toHaveBeenCalled();
 });
 
@@ -268,7 +316,7 @@ test('shows bootstrap failure and reaches readiness only after retry succeeds', 
   jest
     .spyOn(database, 'init')
     .mockRejectedValueOnce(failure)
-    .mockResolvedValueOnce(undefined);
+    .mockResolvedValueOnce(false);
   const consoleError = jest
     .spyOn(console, 'error')
     .mockImplementation(() => {});
@@ -346,15 +394,43 @@ test('fades the splash only after bootstrap is ready', () => {
     renderer = ReactTestRenderer.create(<SplashOverlay status="loading" />);
     renderer.update(<SplashOverlay status="error" />);
   });
-  // The overlay stays mounted (so a retry can reset and re-fade it), but an
-  // error hides it immediately: not interactive, and no spinner.
+  // The overlay stays mounted AND interactive on error (unlike a genuine
+  // fade-out): it now renders its own error title/message/Retry button
+  // directly (see SplashOverlay's `status === 'error'` branch) rather
+  // than fading away to reveal a separate error screen elsewhere — that
+  // separate screen used to exist as a plain sibling View, but on
+  // Android it could end up invisible, hidden behind WelcomeModal's own
+  // native Modal window once WelcomeModal had mounted (Android always
+  // composites a Modal's window above everything else in the Activity,
+  // regardless of JSX order). Rendering the error UI inside this
+  // same component — which is already nested inside WelcomeModal's
+  // `startupOverlay` prop specifically so it shares that Modal's window
+  // — fixes that for good.
   expect(
     renderer!.root.findByProps({ testID: 'splash-overlay' }).props
       .pointerEvents,
-  ).toBe('none');
+  ).toBe('auto');
   expect(
     renderer!.root.findAllByType(ActivityIndicator),
   ).toHaveLength(0);
+  expect(renderer!.root.findByProps({ children: 'Retry' })).toBeTruthy();
+
+  // The default global reanimated jest mock (jest.setup.js) does not
+  // invoke withTiming's completion callback — it only returns toValue,
+  // matching real reanimated's synchronous-looking API shape but not its
+  // actual async completion behavior. Override it before the status
+  // change that triggers the real fade-out effect below, so the
+  // 200ms-delay + 400ms-fade completion callback (which flips `faded`
+  // true, the thing being asserted below) actually fires — same pattern
+  // already used in useInitialAnimation.test.ts's 'does not run the
+  // fallback after normal animation completion' test. Restored after
+  // this test so it doesn't leak into unrelated tests.
+  (withTiming as jest.Mock).mockImplementation(
+    (toValue, _config, callback) => {
+      callback?.(true);
+      return toValue;
+    },
+  );
 
   ReactTestRenderer.act(() => {
     renderer.update(<SplashOverlay status="loading" />);
@@ -368,6 +444,7 @@ test('fades the splash only after bootstrap is ready', () => {
 
   ReactTestRenderer.act(() => renderer!.unmount());
   jest.useRealTimers();
+  (withTiming as jest.Mock).mockImplementation(toValue => toValue);
 });
 
 test('cancels a stale fade when loading restarts', () => {

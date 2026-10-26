@@ -159,18 +159,6 @@ export function useSyncInterval() {
         Platform.OS === 'ios' ? 'apple-health' : 'health-connect';
       const idPrefix = Platform.OS === 'ios' ? 'ah' : 'hc';
 
-      // DEBUG: trace which service is actually wired up at sync time, to
-      // diagnose the spurious "disconnected" message on every reload.
-      if (__DEV__) {
-        console.log(
-          `[useSyncInterval] performSync start service=${
-            (fitness as object)?.constructor?.name
-          } provider=${syncProvider} force=${forceSync} initialDone=${
-            hasPerformedInitialSyncRef.current
-          }`,
-        );
-      }
-
       const currentLastSync = useSettingsStore.getState().lastSyncTimestamp;
       const healthSyncFormatVersion =
         useSettingsStore.getState().healthSyncFormatVersion;
@@ -373,14 +361,6 @@ export function useSyncInterval() {
       } catch (error) {
         console.error('[useSyncInterval] Sync error caught:', error);
         const classified = classifySyncError(error);
-        console.log('[useSyncInterval] classify error', {
-          kind: classified.kind,
-          errorName: (error as Error)?.name,
-          errorMessage:
-            classified.kind === 'unknown'
-              ? classified.message
-              : (classified as { message?: string }).message,
-        });
         if (classified.kind === 'permission') {
           // Flip syncEnabled off so we don't keep retrying with no auth.
           // The banner copy now lives in SyncErrorBanner; the typed error

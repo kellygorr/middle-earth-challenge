@@ -20,7 +20,7 @@ import { MilesFooter, InfoFooter } from '../components/Modals/Footers';
 export type ModalType =
   | 'stats'
   | 'settings'
-  | 'miles'
+  | 'distance'
   | 'sync'
   | 'info'
   | 'data'
@@ -60,7 +60,7 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     leftButton: 'home',
     scrollType: 'default',
   },
-  miles: {
+  distance: {
     title: 'Distance',
     content: DistanceContent,
     footer: MilesFooter,

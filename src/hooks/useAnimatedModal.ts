@@ -40,11 +40,6 @@ export function useAnimatedModal(
   const exitCallbackRef = useRef<(() => void) | null>(null);
   const entranceFrameRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
-  // TEMP DEBUG: tracks when the exit animation was kicked off, to measure
-  // actual elapsed wall-clock time vs the expected exitDelay + 2*exitDuration,
-  // to check whether inconsistent "sometimes smooth, sometimes instant"
-  // modal-close behavior is caused by dropped/skipped animation frames.
-  const exitStartedAtRef = useRef<number | null>(null);
 
   const backgroundOpacity = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
@@ -70,13 +65,6 @@ export function useAnimatedModal(
     // The parent keys this component by orientation, so a rotation mid-exit
     // unmounts us while the Reanimated completion is still pending.
     if (!mountedRef.current) return;
-    if (__DEV__ && exitStartedAtRef.current !== null) {
-      console.log(
-        '[useAnimatedModal] exit complete, elapsed ms:',
-        Date.now() - exitStartedAtRef.current,
-      );
-      exitStartedAtRef.current = null;
-    }
     setInternalVisible(false);
     // Execute pending callback if any
     if (exitCallbackRef.current) {
@@ -127,12 +115,6 @@ export function useAnimatedModal(
       });
     } else if (internalVisible) {
       // Exit animations
-      if (__DEV__) {
-        exitStartedAtRef.current = Date.now();
-        console.log('[useAnimatedModal] exit started, expecting ms:', {
-          expectedTotal: exitDelay + exitDuration * 2,
-        });
-      }
       contentOpacity.value = withDelay(
         exitDelay,
         withTiming(0, { duration: exitDuration, easing }),

@@ -25,6 +25,18 @@ export interface Theme {
     // UI colors
     background: string;
     surface: string;
+    // Always white, regardless of theme — some cards (e.g. the sync-error
+    // banner) need a fixed white background rather than each theme's
+    // tinted `surface` (classic's parchment tan, etc.), since their
+    // content/color coding (warning accents, button colors) is designed
+    // against white specifically.
+    errorCardBackground: string;
+    // Left-border accent color for the sync-error card. Modern/minimalist
+    // themes use the same vibrant yellow as uiWarning; classic uses the
+    // same muted tan tone as its "No active issues" neutral badge's text
+    // color, to stay in its parchment palette rather than clash with a
+    // bright yellow accent against the warm background.
+    errorCardAccent: string;
     primary: string;
     secondary: string;
     accent: string;
@@ -148,6 +160,8 @@ export const classicTheme: Theme = {
     // UI colors
     background: '#F5EFE0',
     surface: '#EDE4D3',
+    errorCardBackground: '#FFFFFF',
+    errorCardAccent: '#A0826D',
     primary: '#6a4c34ff',
     secondary: '#A0826D',
     accent: '#6a4c34ff',
@@ -251,6 +265,8 @@ export const minimalistTheme: Theme = {
     // UI colors
     background: '#FAFAFA',
     surface: '#FFFFFF',
+    errorCardBackground: '#FFFFFF',
+    errorCardAccent: '#F4B400',
     primary: '#D4AF37',
     secondary: '#546E7A',
     accent: '#2C3E50',

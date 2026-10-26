@@ -9,6 +9,7 @@ import {
   Switch,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
+import { useUIStore } from '../../../stores/uiStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
 import { fitnessService } from '../../../services/fitnessService';
@@ -21,10 +22,11 @@ import {
 import { commitPedometerRange } from '../../../services/pedometerCommit';
 import Button from '../../Buttons/Button';
 import AccessExpander, { AccessItem } from '../AccessExpander';
-import SettingsRef from '../../SettingsRef';
+import SettingsIcon from '../../../assets/icons/SettingsIcon';
+import InlineIconLink from '../../InlineIconLink';
+import CirclePlusIcon from '../../CirclePlusIcon';
 import { StatusBadge } from '../../StatusBadge';
 import { SyncNowRow } from '../../SyncNowRow';
-import { PlusIcon } from '../../../assets/icons';
 import {
   isOemBatteryOffender,
   isOemBatteryDevPreview,
@@ -739,17 +741,15 @@ export default function SyncContentAndroid() {
         <Text
           style={[typographyThemed(theme).captionSecondary, styles.introText]}
         >
-          Connecting is not required — you can add miles manually using{' '}
-          <View style={styles.inlinePlus}>
-            <View
-              style={[
-                styles.inlinePlusCircle,
-                { backgroundColor: theme.colors.buttonPrimaryBackground },
-              ]}
-            >
-              <PlusIcon size={8} color={theme.colors.iconInverted} />
-            </View>
-          </View>{' '}
+          Connecting is not required — you can add miles manually using the{' '}
+          <InlineIconLink
+            icon={CirclePlusIcon}
+            label="icon"
+            size={12}
+            textColor={theme.colors.textSecondary}
+            onPress={() => useUIStore.getState().pushModal({ type: 'distance' })}
+            accessibilityLabel="Add miles"
+          />{' '}
           from the map.
         </Text>
       </View>
@@ -1118,7 +1118,22 @@ export default function SyncContentAndroid() {
           style={[typographyThemed(theme).captionSecondary, styles.sectionText]}
         >
           Revoking access above does not automatically delete your synced data.
-          You can delete synced data at any time from <SettingsRef />.
+          You can delete synced data at any time from{' '}
+          <InlineIconLink
+            icon={SettingsIcon}
+            label="Settings"
+            textColor={theme.colors.textSecondary}
+            onPress={() => {
+              // Reset to a fresh Settings root rather than pushing another
+              // 'settings' screen on top of this one (this content already
+              // lives nested under Settings → Sync), avoiding a duplicate
+              // stack entry.
+              useUIStore.getState().closeAllModals();
+              useUIStore.getState().pushModal({ type: 'settings' });
+            }}
+            accessibilityLabel="Open Settings"
+          />
+          .
         </Text>
       </View>
 
@@ -1195,23 +1210,6 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     alignSelf: 'center',
-  },
-  // Outer wrapper is the same 14px size as the SettingsIcon in SettingsRef
-  // so both inline refs sit at the same spot on the text line. The inner
-  // circle is smaller (12px) to visually match the gear's lighter weight.
-  inlinePlus: {
-    width: 14,
-    height: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ translateY: 2 }],
-  },
-  inlinePlusCircle: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   dividerRow: {
     borderTopWidth: 1,
