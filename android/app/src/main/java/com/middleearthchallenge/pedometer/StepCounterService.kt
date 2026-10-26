@@ -16,12 +16,15 @@ import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.middleearthchallenge.R
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Foreground service that keeps the phone's [Sensor.TYPE_STEP_COUNTER]
@@ -37,10 +40,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * so Android restarts us after low-memory kills. Does *not* auto-restart
  * across device reboots; see docs/pedometer-mode.md.
  *
- * Reboots are handled via `bootId` — a UUID we regenerate whenever
- * `System.currentTimeMillis() - SystemClock.elapsedRealtime()` (i.e. the
- * moment the device booted) shifts by more than a small tolerance from
- * the last-recorded boot instant. The DB stores every sample against its
+ * Reboots are handled via `bootId` — a UUID regenerated when Android's
+ * boot counter advances. The DB stores every sample against its
  * bootId so cumulative-counter resets on reboot don't produce spurious
  * negative deltas at query time.
  */
@@ -53,11 +54,8 @@ class StepCounterService : Service(), SensorEventListener {
   /** Stable boot correlator; regenerated on boot detection. */
   private var bootId: String = ""
 
-  /** Timestamp of most recent DB write, for throttling. */
-  private var lastWriteMs: Long = 0L
-
-  /** Most recently observed cumulative step count for delta shortcut. */
-  private var lastCount: Long = -1L
+  private val samplePersistence =
+      StepSamplePersistence(MIN_STEP_DELTA.toLong(), MIN_WRITE_INTERVAL_MS)
 
   companion object {
     private const val TAG = "StepCounterService"
@@ -72,17 +70,9 @@ class StepCounterService : Service(), SensorEventListener {
     /** Skip DB write if step delta since last write is under this. */
     private const val MIN_STEP_DELTA = 5
 
-    /**
-     * Boot-instant tolerance. `currentTimeMillis - elapsedRealtime` gives
-     * the wall-clock time the device booted; NTP corrections can wobble
-     * this by a few seconds, so we treat shifts within this window as
-     * "same boot".
-     */
-    private const val BOOT_INSTANT_TOLERANCE_MS = 60_000L
-
     private const val PREFS = "middle_earth_pedometer_prefs"
     private const val PREF_BOOT_ID = "boot_id"
-    private const val PREF_BOOT_INSTANT_MS = "boot_instant_ms"
+    private const val PREF_BOOT_COUNT = "boot_count"
 
     /**
      * Live indicator of whether the service is currently running. Read by
@@ -90,6 +80,9 @@ class StepCounterService : Service(), SensorEventListener {
      * kill us?" UI in JS.
      */
     val isRunning = AtomicBoolean(false)
+
+    val samplePersistenceError = AtomicReference<String?>(null)
+    val samplePersistenceErrorAtMs = AtomicLong(0L)
   }
 
   override fun onCreate() {
@@ -170,21 +163,22 @@ class StepCounterService : Service(), SensorEventListener {
     // integer-valued but the API is float; cast for storage.
     val count = event.values.firstOrNull()?.toLong() ?: return
     val now = System.currentTimeMillis()
+    val elapsedRealtime = SystemClock.elapsedRealtime()
 
-    // Detect a boot we missed (e.g. service restarted post-reboot before
-    // our launch listener could re-init bootId).
-    val currentBootInstant = now - SystemClock.elapsedRealtime()
+    // Detect a boot we missed (e.g. service restarted post-reboot before our
+    // launch listener could re-init bootId). BOOT_COUNT is independent of
+    // user, network, timezone, and daylight-saving wall-clock changes.
+    val currentBootCount = readBootCount()
     val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    val storedBootInstant = prefs.getLong(PREF_BOOT_INSTANT_MS, 0L)
-    if (kotlin.math.abs(currentBootInstant - storedBootInstant) >
-        BOOT_INSTANT_TOLERANCE_MS) {
+    val storedBootCount = prefs.getInt(PREF_BOOT_COUNT, currentBootCount)
+    if (currentBootCount != storedBootCount) {
       bootId = UUID.randomUUID().toString()
       prefs
           .edit()
           .putString(PREF_BOOT_ID, bootId)
-          .putLong(PREF_BOOT_INSTANT_MS, currentBootInstant)
+        .putInt(PREF_BOOT_COUNT, currentBootCount)
           .apply()
-      lastCount = -1L
+      samplePersistence.reset()
       Log.i(TAG, "Boot change detected; new bootId=$bootId")
     }
 
@@ -192,14 +186,19 @@ class StepCounterService : Service(), SensorEventListener {
     // hundreds of DB rows during heavy walking bursts while still capturing
     // the shape of the walk (roughly one row every 10s of continuous
     // movement).
-    val delta = if (lastCount < 0) MIN_STEP_DELTA.toLong() else count - lastCount
-    if (delta < MIN_STEP_DELTA && now - lastWriteMs < MIN_WRITE_INTERVAL_MS) {
-      return
+    try {
+      val persisted = samplePersistence.persistIfDue(count, elapsedRealtime) {
+        dbHelper.insertSample(now, count, bootId, elapsedRealtime)
+      }
+      if (persisted) {
+        samplePersistenceError.set(null)
+        samplePersistenceErrorAtMs.set(0L)
+      }
+    } catch (t: Throwable) {
+      samplePersistenceError.set(t.message ?: t.javaClass.simpleName)
+      samplePersistenceErrorAtMs.set(now)
+      Log.e(TAG, "Failed to persist step-counter sample; next event will retry", t)
     }
-
-    dbHelper.insertSample(now, count, bootId)
-    lastCount = count
-    lastWriteMs = now
   }
 
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -250,21 +249,23 @@ class StepCounterService : Service(), SensorEventListener {
 
   private fun resolveBootId(): String {
     val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    val nowInstant = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-    val storedInstant = prefs.getLong(PREF_BOOT_INSTANT_MS, 0L)
+    val bootCount = readBootCount()
+    val storedBootCount = prefs.getInt(PREF_BOOT_COUNT, -1)
     val storedId = prefs.getString(PREF_BOOT_ID, null)
 
-    return if (storedId != null &&
-        kotlin.math.abs(nowInstant - storedInstant) <= BOOT_INSTANT_TOLERANCE_MS) {
+    return if (storedId != null && storedBootCount == bootCount) {
       storedId
     } else {
       val newId = UUID.randomUUID().toString()
       prefs
           .edit()
           .putString(PREF_BOOT_ID, newId)
-          .putLong(PREF_BOOT_INSTANT_MS, nowInstant)
+          .putInt(PREF_BOOT_COUNT, bootCount)
           .apply()
       newId
     }
   }
+
+  private fun readBootCount(): Int =
+      Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, 0)
 }

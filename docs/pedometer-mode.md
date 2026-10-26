@@ -99,6 +99,9 @@ Both directions (health-app → pedometer, pedometer → health-app):
 - [ ] `progressStore.syncStatus = initialSyncStatus` — clears syncing/error
 - [ ] `progressStore.lastSyncError = null`, `lastSyncErrorAt = null`
 - [ ] Start or stop the pedometer foreground service accordingly
+- [ ] When stopping, persist `pedometerCleanupPending = true` with the source
+      transition, then clear it only after native cleanup succeeds. Cold start
+      and foreground resume retry this idempotent cleanup before mode checks.
 
 health-app → pedometer specifically:
 
@@ -266,20 +269,23 @@ android:foregroundServiceType="health" android:exported="false" />`
 
 ### Phase 3b: Background execution — WorkManager + Headless JS
 
-- [ ] Add `androidx.work:work-runtime-ktx` (or KTX equivalent) to
+- [x] Add `androidx.work:work-runtime-ktx` (or KTX equivalent) to
       `android/app/build.gradle`.
-- [ ] `PedometerBackgroundWorker.kt`:
-  - [ ] Extends `Worker` / `CoroutineWorker`
-  - [ ] Schedules a Headless JS task
-- [ ] JS side: `AppRegistry.registerHeadlessTask('PedometerSweep', () =>
+- [x] `PedometerBackgroundWorker.kt`:
+  - [x] Extends `CoroutineWorker`
+  - [x] Starts Headless JS through `ReactHost` / `HeadlessJsTaskContext`
+        without launching a second Android service
+  - [x] Suspends until the JS promise completes; retries on launch failure or
+        a 60-second timeout
+- [x] JS side: `AppRegistry.registerHeadlessTask('PedometerSweep', () =>
 pedometerBackgroundTask)`
-  - [ ] Same `commitPedometerRange()` used by live path
-  - [ ] Also checks whether any journey checkpoint was crossed since last
+  - [x] Same `commitPedometerRange()` used by live path
+  - [x] Also checks whether any journey checkpoint was crossed since last
         run; if so, fires a local notification
-- [ ] Schedule as `PeriodicWorkRequest` with 4-hour interval (min allowed
+- [x] Schedule as `PeriodicWorkRequest` with 4-hour interval (min allowed
       is 15 min; ~4-5 hours = 5×/day is enough for our commit cadence and
       milestone-notification purposes).
-- [ ] Only schedule when `trackingMode === 'pedometer'`; cancel work on
+- [x] Only schedule for pedometer-backed tracking; cancel work on
       mode switch away.
 
 ### Phase 3c: Milestone notifications
@@ -330,7 +336,7 @@ pedometerBackgroundTask)`
       yet been rolled up into a persisted range. Sourced by the shared
       `useLivePedometerDelta()` hook (also used by the map-screen
       total-steps chip) — polls `pedometerService.getStepsBetween(
-    lastSyncTimestamp, now)` every 5 s and on foreground-return.
+lastSyncTimestamp, now)` every 5 s and on foreground-return.
       Row has no edit affordance and its "live" label flashes between
       the theme text color and yellow (`#F5A623`) so it clearly reads
       as in-flight. When the next commit lands the live delta drops to
@@ -493,10 +499,9 @@ FACTURER` and, when possible, deep-link the user to the correct
 - **2026-07-22** — Two Android native crashes fixed:
   1. `SecurityException: Starting FGS with type health` — added
      `FOREGROUND_SERVICE_HEALTH` to the manifest (required for typed
-     foreground services on targetSdk 34+).
-  2. `IllegalStateException: Tried to start task PedometerSweep while in
-foreground` — flipped `allowedInForeground` to `true` in
-     `PedometerHeadlessJsService.getTaskConfig`. WorkManager may fire the
+     foreground services on targetSdk 34+). 2. `IllegalStateException: Tried to start task PedometerSweep while in
+foreground` — set `allowedInForeground` to `true` in the Worker-owned task
+     config. WorkManager may fire the
      sweep while the app is foregrounded, and the watermark-based commit
      is idempotent so a foreground-run is harmless (worst case: a
      near-zero-step row for a near-empty window).

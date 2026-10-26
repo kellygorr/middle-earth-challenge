@@ -1,4 +1,27 @@
 /**
+ * Local midnight for a timestamp. A "day" is the user's calendar day, not a
+ * UTC day, so a 10 PM entry belongs to the day the user experienced it.
+ */
+export function getStartOfDay(timestamp: number): number {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Whole calendar days between two local midnights. Rounding is what makes this
+ * correct: spring-forward days are 23 hours and fall-back days are 25.
+ */
+export function differenceInCalendarDays(
+  laterDayStart: number,
+  earlierDayStart: number,
+): number {
+  return Math.round((laterDayStart - earlierDayStart) / MS_PER_DAY);
+}
+
+/**
  * Format a timestamp or YYYY-MM-DD string into a user-friendly date label,
  * e.g., "Dec 31, 2025".
  */

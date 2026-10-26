@@ -9,7 +9,9 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import { SyncIcon } from '../assets/icons';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import { borderRadius } from '../styles/global';
+import { useTheme } from '../stores/settingsStore';
 
 interface SyncSpinnerProps {
   /** Outer diameter of the black circle. */
@@ -31,14 +33,19 @@ interface SyncSpinnerProps {
 export default function SyncSpinner({
   size = 28,
   iconSize,
-  backgroundColor = '#000000',
-  iconColor = '#FFFFFF',
+  backgroundColor,
+  iconColor,
   durationMs = 1200,
 }: SyncSpinnerProps) {
+  const theme = useTheme();
+  const reduceMotionEnabled = useReduceMotion();
   const rotation = useSharedValue(0);
 
   useEffect(() => {
+    cancelAnimation(rotation);
     rotation.value = 0;
+    if (reduceMotionEnabled) return;
+
     rotation.value = withRepeat(
       withTiming(360, {
         duration: durationMs,
@@ -50,7 +57,7 @@ export default function SyncSpinner({
     return () => {
       cancelAnimation(rotation);
     };
-  }, [rotation, durationMs]);
+  }, [rotation, durationMs, reduceMotionEnabled]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
@@ -66,12 +73,16 @@ export default function SyncSpinner({
           width: size,
           height: size,
           borderRadius: borderRadius.full,
-          backgroundColor,
+          backgroundColor:
+            backgroundColor ?? theme.colors.buttonPrimaryBackground,
         },
       ]}
     >
       <Animated.View style={animatedStyle}>
-        <SyncIcon size={resolvedIconSize} color={iconColor} />
+        <SyncIcon
+          size={resolvedIconSize}
+          color={iconColor ?? theme.colors.iconInverted}
+        />
       </Animated.View>
     </View>
   );

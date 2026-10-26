@@ -47,6 +47,8 @@ interface IconButtonProps {
   showBadge?: boolean;
   /** Optional override color for the badge dot. */
   badgeColor?: string;
+  /** Announced by screen readers; an icon alone conveys nothing to them. */
+  accessibilityLabel?: string;
 }
 
 /**
@@ -75,6 +77,7 @@ export default function IconButton({
   disabled = false,
   showBadge = false,
   badgeColor,
+  accessibilityLabel,
 }: IconButtonProps) {
   const theme = useTheme();
 
@@ -129,7 +132,7 @@ export default function IconButton({
           width: badgeSize,
           height: badgeSize,
           borderRadius: badgeSize / 2,
-          backgroundColor: badgeColor ?? '#F4B400',
+          backgroundColor: badgeColor ?? theme.colors.uiWarning,
           borderColor: theme.colors.background,
         },
       ]}
@@ -141,9 +144,7 @@ export default function IconButton({
     return (
       <View
         style={[
-          isTransparent
-            ? styles.centered
-            : { ...baseStyle, backgroundColor },
+          isTransparent ? styles.centered : { ...baseStyle, backgroundColor },
           style,
         ]}
       >
@@ -172,6 +173,8 @@ export default function IconButton({
         onPress={onPress}
         hitSlop={normalizedHitSlop}
         disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
       >
         {({ pressed }) => (
           <>
@@ -201,6 +204,8 @@ export default function IconButton({
       onPress={onPress}
       hitSlop={normalizedHitSlop}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
     >
       {renderIcon(icon)}
       {badge}

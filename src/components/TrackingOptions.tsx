@@ -1,29 +1,30 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useTheme, useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
-import { IconButton } from './Buttons';
+import ButtonRow from './Modals/ButtonRow';
 import { SyncIcon, PlusIcon, DevModeIcon } from '../assets/icons';
-import SettingsRef from './SettingsRef';
+import SettingsIcon from '../assets/icons/SettingsIcon';
+import InlineIconLink from './InlineIconLink';
 import { typographyThemed } from '../styles/typography';
 import { spacing, iconSizes } from '../styles/global';
 
 interface TrackingOptionsProps {
-  /** Required when `showAddOption` is true (default). */
-  onDismiss?: (afterCallback?: () => void) => void;
   onOpenSyncModal: () => void;
   /** Show the manual "Add or edit miles" row. Default true. */
   showAddOption?: boolean;
   /** Show the dev-mode toggle row. Default true. */
   showDevToggle?: boolean;
+  /** Reduce vertical spacing for embedded contexts. */
+  compact?: boolean;
 }
 
 export function TrackingOptions({
-  onDismiss,
   onOpenSyncModal,
   showAddOption = true,
   showDevToggle = true,
+  compact = false,
 }: TrackingOptionsProps) {
   const theme = useTheme();
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
@@ -37,84 +38,67 @@ export function TrackingOptions({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, compact && styles.containerCompact]}>
       {/* Sync button - opens sync modal overlay on top of InfoModal */}
-      <Pressable style={styles.option} onPress={onOpenSyncModal}>
-        <IconButton
-          icon={<SyncIcon size={iconSizes.medium} />}
-          variant={syncEnabled ? 'brand' : 'outline'}
-        />
-        {syncEnabled ? (
-          <Text
-            style={[
-              typographyThemed(theme).captionSecondary,
-              styles.optionText,
-            ]}
-          >
-            Health sync enabled. Tap to manage sync options
-          </Text>
-        ) : (
-          <Text
-            style={[
-              typographyThemed(theme).captionSecondary,
-              styles.optionText,
-            ]}
-          >
-            Sync health data from device (optional). Manage this at any time
-            from <SettingsRef />.
-          </Text>
-        )}
-      </Pressable>
+      <ButtonRow
+        icon={<SyncIcon size={iconSizes.medium} />}
+        active={syncEnabled}
+        compact={compact}
+        onPress={onOpenSyncModal}
+        caption={
+          syncEnabled ? (
+            <Text style={typographyThemed(theme).captionSecondary}>
+              Health sync enabled. Tap to manage sync options
+            </Text>
+          ) : (
+            <Text style={typographyThemed(theme).captionSecondary}>
+              Sync health data from device (optional). Manage this at any time
+              from{' '}
+              <InlineIconLink
+                icon={SettingsIcon}
+                label="Settings"
+                textColor={theme.colors.textSecondary}
+                onPress={() =>
+                  useUIStore.getState().pushModal({ type: 'settings' })
+                }
+                accessibilityLabel="Open Settings"
+              />
+              .
+            </Text>
+          )
+        }
+      />
 
-      {/* Manual add button - dismisses InfoModal first, then opens MilesModal */}
+      {/* Manual add button - pushes Distance on top so back returns here */}
       {showAddOption && (
-        <Pressable
-          style={[styles.option, isSyncing && styles.optionDisabled]}
+        <ButtonRow
+          icon={<PlusIcon size={iconSizes.medium} />}
           disabled={isSyncing}
+          compact={compact}
           onPress={() => {
-            // Set returnTo so MilesModal returns to info when closed
-            useUIStore.getState().setReturnTo({ modal: 'info' });
-            // Dismiss InfoModal, then open Miles modal after exit animation completes
-            onDismiss?.(() => {
-              useUIStore.getState().pushModal({ type: 'miles' });
-            });
+            useUIStore.getState().pushModal({ type: 'distance' });
           }}
-        >
-          <IconButton
-            icon={<PlusIcon size={iconSizes.medium} />}
-            disabled={isSyncing}
-          />
-          <Text
-            style={[
-              typographyThemed(theme).captionSecondary,
-              styles.optionText,
-            ]}
-          >
-            {isSyncing
+          caption={
+            isSyncing
               ? `Add ${useMiles ? 'miles' : 'kilometers'} after syncing\u2026`
-              : `Add or edit ${useMiles ? 'miles' : 'kilometers'}`}
-          </Text>
-        </Pressable>
+              : `Add or edit ${useMiles ? 'miles' : 'kilometers'}`
+          }
+        />
       )}
 
       {/* Dev mode toggle */}
       {showDevToggle && (
-        <Pressable style={styles.option} onPress={() => setDevMode(!devMode)}>
-          <IconButton
-            icon={<DevModeIcon size={iconSizes.medium} />}
-            variant={devMode ? 'brand' : 'outline'}
-          />
-          <Text
-            style={[
-              typographyThemed(theme).captionSecondary,
-              styles.optionText,
-            ]}
-          >
-            {devMode
-              ? 'Dev mode is enabled. Tap to disable'
-              : 'Not ready to commit? Explore the map in dev mode'}
-          </Text>
-        </Pressable>
+        <ButtonRow
+          icon={<DevModeIcon size={iconSizes.medium} />}
+          active={devMode}
+          compact={compact}
+          onPress={() => setDevMode(!devMode)}
+          caption={
+            devMode
+              ? 'Dev mode is enabled'
+              : 'Not ready to commit? Explore the map in dev mode'
+          }
+        />
       )}
     </View>
   );
@@ -125,6 +109,9 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignSelf: 'stretch',
     gap: spacing.md,
+  },
+  containerCompact: {
+    gap: 0,
   },
   option: {
     flexDirection: 'row',

@@ -29,7 +29,11 @@ function setMiles(miles: number) {
 function setEntries(
   entries: Array<{ miles: number; steps: number; date?: number }>,
 ) {
+  const miles = entries.reduce((sum, entry) => sum + entry.miles, 0);
+  const steps = entries.reduce((sum, entry) => sum + entry.steps, 0);
   useProgressStore.setState({
+    miles,
+    steps,
     distanceEntries: entries.map((e, i) => ({
       id: `test-${i}`,
       saveId: 'default',
@@ -105,8 +109,10 @@ describe('getTotalMiles / getTotalSteps', () => {
     expect(useProgressStore.getState().getTotalSteps()).toBe(11_500);
   });
 
-  it('tolerate missing/nullish fields on an entry', () => {
+  it('uses committed totals when legacy entries have missing fields', () => {
     useProgressStore.setState({
+      miles: 2,
+      steps: 0,
       distanceEntries: [
         { id: 'a', saveId: 'default', date: 0, miles: 2 } as any,
         { id: 'b', saveId: 'default', date: 1 } as any,
@@ -389,6 +395,52 @@ describe('isLockedCheckpoint', () => {
   it('is false when target miles is exactly equal', () => {
     setMiles(200);
     expect(useProgressStore.getState().isLockedCheckpoint(200)).toBe(false);
+  });
+});
+
+describe('isNextLockedCheckpoint', () => {
+  it('is true for the closest checkpoint still ahead of progress', () => {
+    setMiles(100);
+    // Real checkpoints.json is [0, 120, 420, 595, 895, 1055, 1165, 1235];
+    // 120 is the first one still ahead of 100 miles.
+    expect(useProgressStore.getState().isNextLockedCheckpoint(120)).toBe(
+      true,
+    );
+  });
+
+  it('is false for a locked checkpoint that is not the immediate next one', () => {
+    setMiles(100);
+    expect(useProgressStore.getState().isNextLockedCheckpoint(420)).toBe(
+      false,
+    );
+  });
+
+  it('is false for an already-reached checkpoint', () => {
+    setMiles(300);
+    expect(useProgressStore.getState().isNextLockedCheckpoint(120)).toBe(
+      false,
+    );
+  });
+
+  it('updates to the new closest checkpoint once the previous one is reached', () => {
+    setMiles(120);
+    expect(useProgressStore.getState().isNextLockedCheckpoint(420)).toBe(
+      true,
+    );
+    expect(useProgressStore.getState().isNextLockedCheckpoint(120)).toBe(
+      false,
+    );
+  });
+
+  it('is false for every checkpoint once the journey is complete', () => {
+    setMiles(1235);
+    for (const cp of checkpoints) {
+      expect(
+        useProgressStore
+          .getState()
+          .isNextLockedCheckpoint(cp.CUMULATIVE_MILES ?? 0),
+      ).toBe(false);
+    }
   });
 });
 

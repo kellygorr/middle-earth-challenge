@@ -23,6 +23,28 @@
   },
   {
     "type": "trivia",
+    "name": "Ford the River?",
+    "description": {
+      "text": "The road crosses the River Mitheithel at the Last Bridge. Travelers following an older trail might pause here to consider their supplies, inspect the current, and decide whether to ford the river. Or, just use the bridge?",
+      "image": "oregon-trail.jpg"
+    },
+    "x": 1304,
+    "y": 628,
+    "CUMULATIVE_MILES": 308
+  },
+  {
+    "type": "trivia",
+    "name": "The Pass of Caradhras",
+    "description": {
+      "text": "Do you hear a voice on the wind? The Fellowship first tried to cross the Pass of Caradhras. You will have to find another route too.",
+      "image": "caradhras.jpg"
+    },
+    "x": 1491,
+    "y": 797,
+    "CUMULATIVE_MILES": 492
+  },
+  {
+    "type": "trivia",
     "name": "Hollin Gate",
     "description": {
       "text": "The Doors of Durin mark the secret entrance to the ancient Dwarven city of Moria. They guard a vast network of mines and halls, once filled with wealth and life but now abandoned to shadow and danger.",
@@ -42,6 +64,17 @@
     "x": 1480,
     "y": 924,
     "CUMULATIVE_MILES": 551
+  },
+  {
+    "type": "trivia",
+    "name": "Lembas Bread",
+    "description": {
+      "text": "I hope you haven't eaten all your lembas bread yet. One small bite is enough to fill the stomach of a grown man.",
+      "image": "lembas-bread.jpg"
+    },
+    "x": 1755,
+    "y": 1150,
+    "CUMULATIVE_MILES": 700
   },
   {
     "type": "trivia",

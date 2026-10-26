@@ -1,0 +1,77 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /friend_progress/{userId} {
+      allow read: if request.auth != null;
+      allow create, update: if isOwner(userId) && validParticipant(request.resource.data);
+      allow delete: if isOwner(userId) || canDeleteStaleParticipant(resource.data);
+    }
+
+    match /friend_progress_debug/{userId} {
+      allow read: if request.auth != null;
+      allow create, update: if isOwner(userId) && validParticipant(request.resource.data);
+      allow delete: if isOwner(userId) || canDeleteStaleParticipant(resource.data);
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Supports deleteFriendProgressByUserId's post-migration cleanup (see
+    // friendProgressService.ts): a device that just imported a backup must
+    // be able to delete the stale row left under the old device's UID
+    // without becoming the owner of that document. Without a staleness
+    // gate, any authenticated user could delete any other live
+    // participant's row at any time (confirmed by the pre-fix
+    // "cross-UID delete" rules test, which had no relationship check
+    // between the deleter and the doc owner) — a griefing vector, not
+    // just a migration convenience.
+    //
+    // The app republishes a participant's distance every ~2 minutes while
+    // foregrounded, plus on launch/resume (see docs/shared-progress.md).
+    // The 15-minute threshold below is well above that cadence so a
+    // genuinely active participant's row is essentially never eligible for
+    // non-owner deletion, while a row whose owning device has stopped
+    // publishing (the actual migration-cleanup scenario) becomes
+    // deletable. deleteFriendProgressByUserId has no local retry/backoff
+    // logic of its own, but it needs none: when this condition denies the
+    // delete, deleteDoc() throws, the caller's `sharingMigrationSourceUserId`
+    // is deliberately left set (see friendProgressWorkflow.ts), and the next
+    // ~2-minute sync cycle retries automatically until the source row goes
+    // stale.
+    function canDeleteStaleParticipant(data) {
+      return request.auth != null
+        && request.time > data.updatedAt + duration.value(15, 'm');
+    }
+
+    function validParticipant(data) {
+      return data.keys().hasOnly([
+          'displayName',
+          'affinity',
+          'distanceMiles',
+          'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'displayName',
+          'affinity',
+          'distanceMiles',
+          'updatedAt'
+        ])
+        && data.displayName is string
+        && data.displayName.trim().size() > 0
+        && data.displayName.size() <= 60
+        && data.affinity in [
+          'woodland',
+          'river',
+          'hills',
+          'coast',
+          'cottage'
+        ]
+        && data.distanceMiles is number
+        && data.distanceMiles >= 0
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+  }
+}

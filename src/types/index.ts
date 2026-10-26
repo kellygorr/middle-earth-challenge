@@ -8,10 +8,15 @@ export interface PointType {
   name: string;
   x: number;
   y: number;
-  labelPosition?: 'top' | 'right';
+  labelPosition?: 'top' | 'right' | 'left';
   description?: {
     text: string;
     image?: string;
+    // Pre-authored teaser shown only for the immediate-next locked
+    // checkpoint, hinting at what's ahead without revealing the full
+    // description. Hand-written per checkpoint rather than derived at
+    // runtime so wording can be tuned intentionally.
+    teaser?: string;
   };
   image?: string; // Checkpoint image filename
   CUMULATIVE_MILES: number;
@@ -42,11 +47,13 @@ export interface Save {
 // in the same mode the user originally typed in.
 export type DistanceSource =
   | 'manual'
+  | 'synced'
   | 'manual-distance'
   | 'manual-steps'
   | 'health-connect'
   | 'apple-health'
-  | 'pedometer';
+  | 'pedometer'
+  | 'health-reconciliation';
 
 // Distance entry types
 export interface DistanceEntry {
@@ -77,7 +84,17 @@ export type SyncProvider = 'none' | 'health-connect' | 'apple-health';
  *  - 'pedometer'   Raw step counter via a foreground service on Android.
  *                  Not yet supported on iOS — see docs/pedometer-mode.md.
  */
-export type TrackingMode = 'health-app' | 'pedometer';
+export type TrackingMode = 'health-app' | 'pedometer' | 'dual';
+
+export interface PedometerCursor {
+  sampleId: number;
+  timestampMs: number;
+  elapsedRealtimeMs: number | null;
+  stepCount: number;
+  bootId: string;
+}
+
+export type { FriendAffinity } from '../constants/friendAffinities';
 
 export interface UserSettings {
   id: string;
@@ -94,6 +111,10 @@ export interface UserSettings {
   syncProvider: SyncProvider; // Which fitness service to sync with
   syncStartDate: number | null; // Unix timestamp when sync was enabled
   lastSyncTimestamp: number | null; // Last successful sync timestamp
+  pedometerCursor: PedometerCursor | null; // Durable native sample position
+  healthSyncFormatVersion: number; // Android HC entry-ID format; 0=LIVE raw, 1=aggregate
+  healthLookbackStartTimestamp: number | null; // Earliest range safe to replay with aggregate IDs
+  lastHealthReconciledThrough: number | null; // Exclusive local-midnight boundary for dual mode
   liveSyncEnabled: boolean; // Auto-sync while app is open (health-app mode only)
   trackingMode: TrackingMode; // Source of step / distance data
   /**
@@ -114,6 +135,8 @@ export interface UserSettings {
    * reports the grants as revoked (i.e. after a real restart).
    */
   hcRevokePendingRestart: boolean;
+  /** True until a requested native pedometer stop completes successfully. */
+  pedometerCleanupPending: boolean;
   /**
    * Highest checkpoint index (0-based) for which we've already fired a
    * "You reached {checkpoint}!" system notification. `-1` means no
@@ -122,6 +145,18 @@ export interface UserSettings {
    * re-processed for any reason (backfill, dev tools, retry).
    */
   lastNotifiedCheckpointIndex: number;
+  // Friend-progress settings
+  sharingEnabled: boolean;
+  sharingDisplayName: string | null;
+  sharingAffinity:
+    | import('../constants/friendAffinities').FriendAffinity
+    | null;
+  sharingProvisioningPending: boolean;
+  sharingDeletionPending: boolean;
+  sharingMigrationSourceUserId: string | null;
+  lastPublishedMiles: number | null;
+  lastSharedProgressSyncAt: number | null;
+  lastJourneyBackupFileName: string | null;
 }
 
 // Journey segment definition (from distance.md)

@@ -9,6 +9,46 @@ import { typographyThemed } from '../../styles/typography';
 import { spacing, borderRadius } from '../../styles/global';
 import { formatDistance } from '../../utils/date';
 
+interface DistanceValueProps {
+  value: string;
+  unitLabel: string;
+  color: string;
+}
+
+function DistanceValue({ value, unitLabel, color }: DistanceValueProps) {
+  const theme = useTheme();
+  const themedTypography = typographyThemed(theme);
+  const valueLineHeight = Number(themedTypography.titleLarge.fontSize) + 2;
+  const unitLineHeight = Number(themedTypography.buttonSmall.fontSize) + 2;
+  const [unitWrapped, setUnitWrapped] = React.useState(false);
+
+  return (
+    <View style={[styles.valueGroup, unitWrapped && styles.valueGroupWrapped]}>
+      <Text
+        style={[
+          themedTypography.titleLarge,
+          styles.value,
+          { color, lineHeight: valueLineHeight },
+        ]}
+      >
+        {value}
+      </Text>
+      <Text
+        onLayout={event =>
+          setUnitWrapped(event.nativeEvent.layout.y >= valueLineHeight - 1)
+        }
+        style={[
+          themedTypography.buttonSmall,
+          styles.suffix,
+          { color, lineHeight: unitLineHeight },
+        ]}
+      >
+        {unitLabel}
+      </Text>
+    </View>
+  );
+}
+
 /**
  * DistanceDisplay - Shows the 2-column distance information
  * Handles all the calculations internally based on the current item
@@ -16,7 +56,7 @@ import { formatDistance } from '../../utils/date';
 export function DistanceDisplay() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
-  const unitLabel = useMiles ? ' miles' : ' kilometers';
+  const unitLabel = useMiles ? 'miles' : 'kilometers';
 
   // Get item from modal params - this is the source of truth
   const modalStack = useUIStore(state => state.modalStack);
@@ -83,10 +123,26 @@ export function DistanceDisplay() {
       : Math.round(getRemainingMilesTo(milesVal));
 
   const isLocked = isCheckpointView && isLockedCheckpoint;
+  // Every locked checkpoint's "Remaining" pill uses the same
+  // checkpointTextBackground/checkpointLabel tokens as the journey
+  // progress bar's percentage pill (JourneyProgressBar.tsx) — not just
+  // the immediate next one. (Neutral progress-bar-track, green, and brand
+  // treatments were all tried and looked worse in testing.) The left
+  // ("Checkpoint") pill is untouched and keeps its original grey/inactive
+  // look when locked. (isNextLockedCheckpoint from progressStore drives a
+  // separate feature — the next-checkpoint description teaser in
+  // InfoContent.tsx — not this pill's color.) The title text above the
+  // pill uses the same color as the "Checkpoint" title so both titles
+  // read consistently against the modal's light background.
   const pillBackground = isLocked
     ? theme.colors.infoModalInactive
     : theme.colors.checkpointTextBackground;
+  const remainingPillBackground = isLocked
+    ? theme.colors.checkpointTextBackground
+    : pillBackground;
+  const remainingValueColor = theme.colors.checkpointLabel;
   const titleColor = isLocked ? theme.colors.infoModalInactive : undefined;
+  const remainingTitleColor = titleColor;
 
   return (
     <View style={styles.container}>
@@ -108,7 +164,7 @@ export function DistanceDisplay() {
             style={[
               typographyThemed(theme).captionPrimaryBold,
               styles.title,
-              titleColor ? { color: titleColor } : null,
+              remainingTitleColor ? { color: remainingTitleColor } : null,
             ]}
           >
             {isLocked ? 'Remaining' : nextCheckpointName || 'Next checkpoint'}
@@ -120,60 +176,38 @@ export function DistanceDisplay() {
       <View style={styles.row}>
         <View style={[styles.col, !showLeftColumn && styles.hidden]}>
           <View style={[styles.pill, { backgroundColor: pillBackground }]}>
-            <Text
-              style={[
-                typographyThemed(theme).titleLarge,
-                styles.value,
-                { color: theme.colors.checkpointLabel },
-              ]}
-            >
-              {formatDistance(checkpointMiles, {
+            <DistanceValue
+              value={formatDistance(checkpointMiles, {
                 useLargeUnit: true,
                 noDecimals: true,
                 useMiles,
               })}
-              <Text
-                style={[
-                  typographyThemed(theme).button,
-                  styles.suffix,
-                  { color: theme.colors.checkpointLabel },
-                ]}
-              >
-                {unitLabel}
-              </Text>
-            </Text>
+              unitLabel={unitLabel}
+              color={theme.colors.checkpointLabel}
+            />
           </View>
         </View>
         <View style={[styles.col, !showRightColumn && styles.hidden]}>
-          <View style={[styles.pill, { backgroundColor: pillBackground }]}>
-            <Text
-              style={[
-                typographyThemed(theme).titleLarge,
-                styles.value,
-                { color: theme.colors.checkpointLabel },
-              ]}
-            >
-              {isLocked
-                ? formatDistance(Math.abs(remaining), {
-                    useLargeUnit: true,
-                    noDecimals: true,
-                    useMiles,
-                  })
-                : formatDistance(milesToNextCheckpoint ?? remaining, {
-                    useLargeUnit: true,
-                    noDecimals: true,
-                    useMiles,
-                  })}
-              <Text
-                style={[
-                  typographyThemed(theme).button,
-                  styles.suffix,
-                  { color: theme.colors.checkpointLabel },
-                ]}
-              >
-                {unitLabel}
-              </Text>
-            </Text>
+          <View
+            style={[styles.pill, { backgroundColor: remainingPillBackground }]}
+          >
+            <DistanceValue
+              value={
+                isLocked
+                  ? formatDistance(Math.abs(remaining), {
+                      useLargeUnit: true,
+                      noDecimals: true,
+                      useMiles,
+                    })
+                  : formatDistance(milesToNextCheckpoint ?? remaining, {
+                      useLargeUnit: true,
+                      noDecimals: true,
+                      useMiles,
+                    })
+              }
+              unitLabel={unitLabel}
+              color={remainingValueColor}
+            />
           </View>
         </View>
       </View>
@@ -206,15 +240,27 @@ const styles = StyleSheet.create({
   pill: {
     borderRadius: borderRadius.sm,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+    paddingVertical: spacing.sm,
     alignItems: 'flex-start',
     justifyContent: 'center',
     width: '100%',
   },
   value: {
+    includeFontPadding: false,
     textAlign: 'left',
+  },
+  valueGroup: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    columnGap: spacing.xs,
+    rowGap: 0,
+  },
+  valueGroupWrapped: {
+    transform: [{ translateY: -2 }],
   },
   suffix: {
     fontWeight: '600',
+    includeFontPadding: false,
   },
 });

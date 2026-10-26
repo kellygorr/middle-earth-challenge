@@ -8,7 +8,7 @@
  * on the map or duplicated distance rows.
  */
 
-import { buildChunks } from '../chunkRange';
+import { buildAlignedChunks, buildChunks } from '../chunkRange';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -93,5 +93,20 @@ describe('buildChunks', () => {
     for (const c of chunks) {
       expect(c.end.getTime() - c.start.getTime()).toBe(DAY);
     }
+  });
+});
+
+describe('buildAlignedChunks', () => {
+  it('uses stable epoch-aligned boundaries after an initial partial chunk', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const chunks = buildAlignedChunks(new Date(day), new Date(8 * day), 3);
+
+    expect(
+      chunks.map(chunk => [chunk.start.getTime(), chunk.end.getTime()]),
+    ).toEqual([
+      [day, 3 * day],
+      [3 * day, 6 * day],
+      [6 * day, 8 * day],
+    ]);
   });
 });

@@ -64,14 +64,6 @@
         android:exported="false"
         android:foregroundServiceType="health" />
 
-      <!-- Pedometer mode: HeadlessJsTaskService that WorkManager launches on
-           the ~5x/day background sweep. Runs the "PedometerSweep" JS task
-           registered in index.js, which commits a pedometer row for the
-           watermark window. See docs/pedometer-mode.md § Phase 3b. -->
-      <service
-        android:name=".pedometer.PedometerHeadlessJsService"
-        android:exported="false" />
-
       <!-- Pedometer mode: restarts the step-counter foreground service after
            device reboot if the user had pedometer tracking active before the
            reboot. Reads a persisted flag from SharedPreferences (direct-boot

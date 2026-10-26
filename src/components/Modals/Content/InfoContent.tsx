@@ -35,8 +35,11 @@ const checkpointImages: Record<string, any> = {
 const triviaImages: Record<string, any> = {
   'the-old-forest.jpg': require('../../../assets/trivia/the-old-forest.jpg'),
   'weathertop.jpg': require('../../../assets/trivia/weathertop.jpg'),
+  'oregon-trail.jpg': require('../../../assets/trivia/oregon-trail.jpg'),
+  'caradhras.jpg': require('../../../assets/trivia/caradhras.jpg'),
   'hollin-gate.jpg': require('../../../assets/trivia/hollin-gate.jpg'),
   'khazad-dum.jpg': require('../../../assets/trivia/khazad-dum.jpg'),
+  'lembas-bread.jpg': require('../../../assets/trivia/lembas-bread.jpg'),
   'the-argonath.jpg': require('../../../assets/trivia/the-argonath.jpg'),
   'emyn-muil.jpg': require('../../../assets/trivia/emyn-muil.jpg'),
   'dead-marshes.jpg': require('../../../assets/trivia/dead-marshes.jpg'),
@@ -62,7 +65,6 @@ export default function InfoContent() {
   );
   const getPreviousTrivia = useProgressStore(state => state.getPreviousTrivia);
   const pushModal = useUIStore(state => state.pushModal);
-  const closeAllModals = useUIStore(state => state.closeAllModals);
 
   // Celebration timer ref
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -77,6 +79,22 @@ export default function InfoContent() {
     useProgressStore
       .getState()
       .isLockedCheckpoint(currentItem.CUMULATIVE_MILES || 0);
+
+  // The single immediate-next locked checkpoint gets a teaser: a
+  // pre-authored hint (checkpoints.json's description.teaser) shown even
+  // though the rest of the description/image stays hidden like any other
+  // locked checkpoint.
+  const isNextLockedCheckpoint =
+    isLockedCheckpoint &&
+    currentItem &&
+    'CUMULATIVE_MILES' in currentItem &&
+    useProgressStore
+      .getState()
+      .isNextLockedCheckpoint(currentItem.CUMULATIVE_MILES || 0);
+  const nextCheckpointTeaser =
+    isNextLockedCheckpoint && currentItem?.description?.teaser
+      ? currentItem.description.teaser
+      : null;
 
   // Show tracking options on first checkpoint (Hobbiton)
   const isFirstCheckpoint =
@@ -136,16 +154,6 @@ export default function InfoContent() {
     const trivia = getPreviousTrivia(idx);
     return trivia && trivia.length > 0 ? trivia : null;
   })();
-
-  // Handle dismiss for TrackingOptions callback
-  // Uses closeAllModalsWithCallback to run callback after animation completes
-  const handleDismiss = (afterCallback?: () => void) => {
-    if (afterCallback) {
-      useUIStore.getState().closeAllModalsWithCallback(afterCallback);
-    } else {
-      closeAllModals();
-    }
-  };
 
   if (!currentItem || !itemType) {
     return null;
@@ -212,13 +220,13 @@ export default function InfoContent() {
       <View style={styles.bottomSection}>
         {/* Locked checkpoint message */}
         {itemType === 'checkpoint' && isLockedCheckpoint && (
-          <LockedCheckpointBanner />
+          <LockedCheckpointBanner teaser={nextCheckpointTeaser} />
         )}
 
         {/* Tracking options for first checkpoint */}
         {showTrackingOptions && (
           <TrackingOptions
-            onDismiss={handleDismiss}
+            compact
             onOpenSyncModal={() => pushModal({ type: 'sync' })}
           />
         )}

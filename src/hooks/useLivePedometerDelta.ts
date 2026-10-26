@@ -13,66 +13,100 @@
  *   - There is no `lastSyncTimestamp` yet (fresh install / just switched
  *     modes) — there's no meaningful "since when" to measure against
  *
- * Poll cadence is 2 seconds while mounted. Also refreshes when the app
- * returns to the foreground so the chip is accurate after a
- * background/foreground round-trip.
+ * One app-level owner polls while pedometer-backed tracking is active.
+ * Consumers only select the shared value, so mounting another screen cannot
+ * create another native request loop.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
+import { create } from 'zustand';
+import { PEDOMETER_DISPLAY_REFRESH_MS } from '../constants/sync';
 import { pedometerService } from '../services/pedometerService';
 import { useSettingsStore } from '../stores/settingsStore';
 
-const POLL_INTERVAL_MS = 2000;
+interface LivePedometerDeltaState {
+  steps: number;
+  setSteps: (steps: number) => void;
+}
+
+export const useLivePedometerDeltaStore = create<LivePedometerDeltaState>(
+  set => ({
+    steps: 0,
+    setSteps: steps => set({ steps }),
+  }),
+);
 
 export function useLivePedometerDelta(): number {
+  return useLivePedometerDeltaStore(state => state.steps);
+}
+
+export function useLivePedometerDeltaOwner(): void {
   const trackingMode = useSettingsStore(state => state.trackingMode);
   const lastSyncTimestamp = useSettingsStore(state => state.lastSyncTimestamp);
-  const [liveDelta, setLiveDelta] = useState(0);
+  const pedometerCursor = useSettingsStore(state => state.pedometerCursor);
+  const generationRef = useRef(0);
+  const inFlightRef = useRef<Promise<{ steps: number }> | null>(null);
 
   useEffect(() => {
-    if (trackingMode !== 'pedometer' || !pedometerService.isSupported()) {
-      setLiveDelta(0);
+    const generation = ++generationRef.current;
+    const setSteps = useLivePedometerDeltaStore.getState().setSteps;
+    if (
+      (trackingMode !== 'pedometer' && trackingMode !== 'dual') ||
+      !pedometerService.isSupported()
+    ) {
+      setSteps(0);
       return;
     }
 
-    let cancelled = false;
-
     const refresh = async () => {
-      if (!lastSyncTimestamp) {
-        if (!cancelled) setLiveDelta(0);
+      if (inFlightRef.current) return;
+      if (!lastSyncTimestamp && !pedometerCursor) {
+        setSteps(0);
         return;
       }
+
+      let request: Promise<{ steps: number }> | null = null;
       try {
-        const window = await pedometerService.getStepsBetween(
-          lastSyncTimestamp,
-          Date.now(),
-        );
-        // Re-check after the await — the hook may have unmounted or the
-        // effect re-run while we were waiting on the native module. Without
-        // this guard React warns about setting state on an unmounted
-        // component (and we'd briefly show a stale value from the previous
-        // deps just before the new effect runs).
-        if (cancelled) return;
-        setLiveDelta(window.steps);
+        request = pedometerCursor
+          ? pedometerService.getStepsSinceCursor(pedometerCursor)
+          : pedometerService.getStepsBetween(
+              lastSyncTimestamp as number,
+              Date.now(),
+            );
+        inFlightRef.current = request;
+        const window = await request;
+        if (generation === generationRef.current) setSteps(window.steps);
       } catch {
         // Swallow: transient pedometer read failures shouldn't disrupt
         // the UI. Keep the previous value so counters don't flicker.
+      } finally {
+        if (request && inFlightRef.current === request) {
+          inFlightRef.current = null;
+        }
       }
     };
 
     refresh();
-    const interval = setInterval(refresh, POLL_INTERVAL_MS);
+    const interval = setInterval(refresh, PEDOMETER_DISPLAY_REFRESH_MS);
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') refresh();
     });
 
     return () => {
-      cancelled = true;
+      generationRef.current += 1;
+      // Reset the in-flight guard too, not just the generation counter. If
+      // the native read this effect started never settles, refresh()'s own
+      // finally (which clears the guard) never runs, and since inFlightRef
+      // persists across this hook's effect re-runs, a stuck old request
+      // would silently block every future refresh() forever — even after a
+      // mode switch spins up a brand-new interval. A stale resolution of
+      // the abandoned request is already harmless: its own finally checks
+      // identity before touching inFlightRef, and the generation check
+      // above already prevents it from writing a stale steps value.
+      inFlightRef.current = null;
       clearInterval(interval);
       sub.remove();
     };
-  }, [trackingMode, lastSyncTimestamp]);
-
-  return liveDelta;
+  }, [trackingMode, lastSyncTimestamp, pedometerCursor]);
 }

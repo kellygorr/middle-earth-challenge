@@ -1,5 +1,8 @@
 // Spacing scale for consistent margins, padding, and gaps
 export const spacing = {
+  // Smallest step — tight padding for compact chips/badges where even
+  // `xs` (4) reads as too loose (e.g. the small StatusBadge variant).
+  xxs: 2,
   xs: 4,
   sm: 8,
   md: 16,

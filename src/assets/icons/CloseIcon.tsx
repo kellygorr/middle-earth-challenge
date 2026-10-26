@@ -6,10 +6,7 @@ interface CloseIconProps {
   color?: string;
 }
 
-export default function CloseIcon({
-  size = 24,
-  color = '#FFFFFF',
-}: CloseIconProps) {
+export default function CloseIcon({ size = 24, color }: CloseIconProps) {
   const strokeWidth = Math.max(2, Math.round(size / 12));
   const inset = Math.round(size * 0.22);
   const end = size - inset;

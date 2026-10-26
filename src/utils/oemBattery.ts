@@ -72,41 +72,39 @@ export interface OemBatteryPromptCopy {
   body: string;
 }
 
-const GENERIC_PROMPT_BODY =
-  "Your phone's battery manager can pause step tracking in the " +
-  'background. Allow Middle Earth Challenge to run in the background ' +
-  'to keep it reliable.';
+export interface OemBatteryGuidance {
+  problem: string;
+  solution: string;
+}
 
-export function getOemBatteryPromptCopy(
+export function getOemBatteryGuidance(
   rawManufacturer: string,
-): OemBatteryPromptCopy | null {
+): OemBatteryGuidance {
   const m = (rawManufacturer || '').toLowerCase();
 
   if (m.includes('samsung')) {
     return {
-      title: 'Allow background activity',
-      body:
-        "Samsung's Device Care can pause step tracking after a few days. " +
-        'Add Middle Earth Challenge to your allowed apps to keep it running.',
+      problem:
+        "Samsung's Device Care can put apps to sleep, which can stop step tracking.",
+      solution:
+        'In Sync settings, open Battery settings and add Middle Earth Challenge to Never auto sleeping apps.',
     };
   }
 
   if (m.includes('xiaomi') || m.includes('redmi') || m.includes('poco')) {
     return {
-      title: 'Allow background activity',
-      body:
-        'MIUI blocks background activity by default. Enable autostart ' +
-        'for Middle Earth Challenge to keep step tracking running.',
+      problem: 'MIUI can block background activity and stop step tracking.',
+      solution:
+        'In Sync settings, open Battery settings and enable autostart for Middle Earth Challenge.',
     };
   }
 
   if (m.includes('huawei') || m.includes('honor')) {
     return {
-      title: 'Allow background activity',
-      body:
-        'Huawei closes background apps within about an hour. Add Middle ' +
-        'Earth Challenge to your Protected apps to keep step tracking ' +
-        'running.',
+      problem:
+        'Huawei can close background apps and stop step tracking within about an hour.',
+      solution:
+        'In Sync settings, open Battery settings and add Middle Earth Challenge to Protected apps.',
     };
   }
 
@@ -116,18 +114,41 @@ export function getOemBatteryPromptCopy(
     m.includes('realme') ||
     m.includes('vivo')
   ) {
-    return { title: 'Allow background activity', body: GENERIC_PROMPT_BODY };
+    return {
+      problem:
+        "Your phone's battery manager can pause step tracking in the background.",
+      solution:
+        'In Sync settings, open Battery settings and allow Middle Earth Challenge to run in the background.',
+    };
   }
 
   if (__DEV__ && m.includes('google')) {
     return {
-      title: 'Allow background activity',
-      body:
-        '[DEV PREVIEW] Pixel is not actually affected by this issue. This ' +
-        'prompt is only shown in dev builds so the OEM follow-up UI is ' +
-        'inspectable on Pixel dev hardware.',
+      problem:
+        '[DEV PREVIEW] Pixel is not actually affected by this OEM battery issue.',
+      solution:
+        'This guidance is shown only so the OEM recovery UI can be previewed on development hardware.',
     };
   }
 
-  return null;
+  return {
+    problem:
+      "Your phone's battery manager may have stopped step tracking in the background.",
+    solution:
+      'Open Sync settings and check the background activity and battery settings.',
+  };
+}
+
+export function getOemBatteryPromptCopy(
+  rawManufacturer: string,
+): OemBatteryPromptCopy | null {
+  const m = (rawManufacturer || '').toLowerCase();
+
+  if (!isOemBatteryOffender(m)) return null;
+
+  const guidance = getOemBatteryGuidance(m);
+  return {
+    title: 'Allow background activity',
+    body: `${guidance.problem} ${guidance.solution}`,
+  };
 }

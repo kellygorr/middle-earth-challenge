@@ -1,14 +1,21 @@
 import { create } from 'zustand';
-import { DistanceEntry } from '../types';
+import type { DistanceEntry } from '../types';
+import { getStartOfDay, differenceInCalendarDays } from '../utils/date';
 import { TOTAL_JOURNEY_MILES } from '../constants/gameConstants';
 import checkpoints from '../constants/checkpoints.json';
 
 interface StatsStore {
-  // Selectors (computed values from distanceEntries)
-  getStats: (distanceEntries: DistanceEntry[], miles: number) => Stats | null;
-  hasEnoughDataForStats: (distanceEntries: DistanceEntry[]) => boolean;
-  getDateStarted: (distanceEntries: DistanceEntry[]) => Date | null;
+  // Selectors computed from one aggregate row per active day.
+  getStats: (
+    distanceEntries: DistanceSummary[],
+    miles: number,
+    steps: number,
+  ) => Stats | null;
+  hasEnoughDataForStats: (distanceEntries: DistanceSummary[]) => boolean;
+  getDateStarted: (distanceEntries: DistanceSummary[]) => Date | null;
 }
+
+type DistanceSummary = Pick<DistanceEntry, 'date' | 'miles' | 'steps'>;
 
 export interface Stats {
   // Journey Progress
@@ -16,6 +23,7 @@ export interface Stats {
     checkpointsCompleted: number;
     checkpointsTotal: number;
     milesCompleted: number;
+    stepsCompleted: number;
     milesTotalJourney: number;
     milesRemaining: number;
     milesUntilNextCheckpoint: number;
@@ -27,32 +35,31 @@ export interface Stats {
     dateStarted: Date | null;
     totalActiveDays: number;
     bestDayMiles: number;
+    bestDaySteps: number;
     bestDayDate: Date | null;
     currentStreak: number;
     longestStreak: number;
     milesThisWeek: number;
+    stepsThisWeek: number;
     milesLastWeek: number;
+    stepsLastWeek: number;
     milesThisMonth: number;
+    stepsThisMonth: number;
   };
   // Pace & Projections
   pace: {
     averageMilesPerDay: number;
+    averageStepsPerDay: number;
     averageMilesPerActiveDay: number;
+    averageStepsPerActiveDay: number;
     estimatedDaysRemaining: number;
     estimatedCompletionDate: Date | null;
   };
 }
 
-// Helper: Get start of day for a timestamp
-const getStartOfDay = (timestamp: number): number => {
-  const date = new Date(timestamp);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-};
-
 // Helper: Calculate streaks from sorted entries
 const calculateStreaks = (
-  entries: DistanceEntry[],
+  entries: DistanceSummary[],
 ): { current: number; longest: number } => {
   if (entries.length === 0) return { current: 0, longest: 0 };
 
@@ -71,12 +78,10 @@ const calculateStreaks = (
   let currentStreak = 1;
   let tempStreak = 1;
 
-  const ONE_DAY = 24 * 60 * 60 * 1000;
   const today = getStartOfDay(Date.now());
 
   for (let i = 1; i < sortedDays.length; i++) {
-    const diff = sortedDays[i] - sortedDays[i - 1];
-    if (diff === ONE_DAY) {
+    if (differenceInCalendarDays(sortedDays[i], sortedDays[i - 1]) === 1) {
       tempStreak++;
     } else {
       longestStreak = Math.max(longestStreak, tempStreak);
@@ -87,12 +92,13 @@ const calculateStreaks = (
 
   // Calculate current streak (consecutive days ending today or yesterday)
   const lastDay = sortedDays[sortedDays.length - 1];
-  if (lastDay !== today && lastDay !== today - ONE_DAY) {
+  const daysSinceLast = differenceInCalendarDays(today, lastDay);
+  if (daysSinceLast !== 0 && daysSinceLast !== 1) {
     currentStreak = 0;
   } else {
     currentStreak = 1;
     for (let i = sortedDays.length - 2; i >= 0; i--) {
-      if (sortedDays[i + 1] - sortedDays[i] === ONE_DAY) {
+      if (differenceInCalendarDays(sortedDays[i + 1], sortedDays[i]) === 1) {
         currentStreak++;
       } else {
         break;
@@ -105,7 +111,7 @@ const calculateStreaks = (
 
 // Helper: Get miles within a date range
 const getMilesInRange = (
-  entries: DistanceEntry[],
+  entries: DistanceSummary[],
   startDate: Date,
   endDate: Date,
 ): number => {
@@ -114,6 +120,18 @@ const getMilesInRange = (
   return entries
     .filter(e => e.date >= start && e.date <= end)
     .reduce((sum, e) => sum + e.miles, 0);
+};
+
+const getStepsInRange = (
+  entries: DistanceSummary[],
+  startDate: Date,
+  endDate: Date,
+): number => {
+  const start = startDate.getTime();
+  const end = endDate.getTime();
+  return entries
+    .filter(entry => entry.date >= start && entry.date <= end)
+    .reduce((sum, entry) => sum + entry.steps, 0);
 };
 
 // Helper: Get start of week (Sunday)
@@ -131,11 +149,11 @@ const getStartOfMonth = (date: Date): Date => {
 };
 
 export const useStatsStore = create<StatsStore>(() => ({
-  hasEnoughDataForStats: (distanceEntries: DistanceEntry[]): boolean => {
+  hasEnoughDataForStats: (distanceEntries: DistanceSummary[]): boolean => {
     return distanceEntries.length > 0;
   },
 
-  getDateStarted: (distanceEntries: DistanceEntry[]): Date | null => {
+  getDateStarted: (distanceEntries: DistanceSummary[]): Date | null => {
     if (distanceEntries.length === 0) return null;
     const oldest = distanceEntries.reduce((min, entry) =>
       entry.date < min.date ? entry : min,
@@ -143,7 +161,11 @@ export const useStatsStore = create<StatsStore>(() => ({
     return new Date(oldest.date);
   },
 
-  getStats: (distanceEntries: DistanceEntry[], miles: number): Stats | null => {
+  getStats: (
+    distanceEntries: DistanceSummary[],
+    miles: number,
+    steps: number,
+  ): Stats | null => {
     if (distanceEntries.length === 0) return null;
 
     const cps = checkpoints as any[];
@@ -157,6 +179,7 @@ export const useStatsStore = create<StatsStore>(() => ({
       ).length + 1;
     const checkpointsTotal = cps.length;
     const milesCompleted = Math.min(miles, TOTAL_JOURNEY_MILES);
+    const stepsCompleted = Math.max(0, Math.round(steps));
     const milesRemaining = Math.max(0, TOTAL_JOURNEY_MILES - miles);
     const progressPercentage = Math.round((miles / TOTAL_JOURNEY_MILES) * 100);
 
@@ -180,16 +203,22 @@ export const useStatsStore = create<StatsStore>(() => ({
     const totalActiveDays = uniqueDays.size;
 
     // Best day
-    const dayTotals = new Map<number, number>();
+    const dayTotals = new Map<number, { miles: number; steps: number }>();
     for (const entry of distanceEntries) {
       const dayStart = getStartOfDay(entry.date);
-      dayTotals.set(dayStart, (dayTotals.get(dayStart) || 0) + entry.miles);
+      const total = dayTotals.get(dayStart) ?? { miles: 0, steps: 0 };
+      dayTotals.set(dayStart, {
+        miles: total.miles + entry.miles,
+        steps: total.steps + entry.steps,
+      });
     }
     let bestDayMiles = 0;
+    let bestDaySteps = 0;
     let bestDayTimestamp = 0;
     for (const [day, total] of dayTotals) {
-      if (total > bestDayMiles) {
-        bestDayMiles = total;
+      if (total.miles > bestDayMiles) {
+        bestDayMiles = total.miles;
+        bestDaySteps = total.steps;
         bestDayTimestamp = day;
       }
     }
@@ -209,6 +238,11 @@ export const useStatsStore = create<StatsStore>(() => ({
       startOfWeek,
       endOfWeek,
     );
+    const stepsThisWeek = getStepsInRange(
+      distanceEntries,
+      startOfWeek,
+      endOfWeek,
+    );
 
     // Last week
     const startOfLastWeek = new Date(startOfWeek);
@@ -221,11 +255,21 @@ export const useStatsStore = create<StatsStore>(() => ({
       startOfLastWeek,
       endOfLastWeek,
     );
+    const stepsLastWeek = getStepsInRange(
+      distanceEntries,
+      startOfLastWeek,
+      endOfLastWeek,
+    );
 
     const startOfMonth = getStartOfMonth(now);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     endOfMonth.setHours(23, 59, 59, 999);
     const milesThisMonth = getMilesInRange(
+      distanceEntries,
+      startOfMonth,
+      endOfMonth,
+    );
+    const stepsThisMonth = getStepsInRange(
       distanceEntries,
       startOfMonth,
       endOfMonth,
@@ -243,12 +287,16 @@ export const useStatsStore = create<StatsStore>(() => ({
     const dayStartNow = getStartOfDay(now.getTime());
     const totalDays = Math.max(
       1,
-      Math.floor((dayStartNow - dayStartFirst) / (24 * 60 * 60 * 1000)) + 1,
+      differenceInCalendarDays(dayStartNow, dayStartFirst) + 1,
     );
     const averageMilesPerDay =
       totalDays > 0 ? Math.round((miles / totalDays) * 10) / 10 : 0;
+    const averageStepsPerDay =
+      totalDays > 0 ? Math.round(stepsCompleted / totalDays) : 0;
     const averageMilesPerActiveDay =
       totalActiveDays > 0 ? Math.round((miles / totalActiveDays) * 10) / 10 : 0;
+    const averageStepsPerActiveDay =
+      totalActiveDays > 0 ? Math.round(stepsCompleted / totalActiveDays) : 0;
 
     const estimatedDaysRemaining =
       averageMilesPerDay > 0
@@ -265,6 +313,7 @@ export const useStatsStore = create<StatsStore>(() => ({
         checkpointsCompleted,
         checkpointsTotal,
         milesCompleted,
+        stepsCompleted,
         milesTotalJourney: TOTAL_JOURNEY_MILES,
         milesRemaining,
         milesUntilNextCheckpoint,
@@ -275,16 +324,22 @@ export const useStatsStore = create<StatsStore>(() => ({
         dateStarted,
         totalActiveDays,
         bestDayMiles,
+        bestDaySteps,
         bestDayDate,
         currentStreak,
         longestStreak,
         milesThisWeek,
+        stepsThisWeek,
         milesLastWeek,
+        stepsLastWeek,
         milesThisMonth,
+        stepsThisMonth,
       },
       pace: {
         averageMilesPerDay,
+        averageStepsPerDay,
         averageMilesPerActiveDay,
+        averageStepsPerActiveDay,
         estimatedDaysRemaining,
         estimatedCompletionDate,
       },
