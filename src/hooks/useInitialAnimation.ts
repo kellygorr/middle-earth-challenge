@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   useAnimatedStyle,
   useSharedValue,
@@ -9,9 +9,13 @@ import {
   runOnJS,
 } from 'react-native-reanimated';
 import { motion } from '../styles/motion';
+import { useReduceMotion } from './useReduceMotion';
+
+const PATH_REVEAL_WATCHDOG_BUFFER_MS = 1000;
 
 interface UseInitialAnimationOptions {
   showWelcome: boolean;
+  pathRevealStart?: number;
   // Latest sync state. When the welcome modal dismisses while a sync is in
   // progress, the path reveal animation is skipped (set to full) because
   // the screen already has competing motion (bg pulse, shimmer) and the
@@ -36,12 +40,12 @@ interface UseInitialAnimationReturn {
 
   // Button opacity animated styles
   settingsEnterStyle: ReturnType<typeof useAnimatedStyle>;
-  labelsEnterStyle: ReturnType<typeof useAnimatedStyle>;
   infoEnterStyle: ReturnType<typeof useAnimatedStyle>;
 }
 
 export function useInitialAnimation({
   showWelcome,
+  pathRevealStart = 0,
   isSyncing = false,
   recenterOpacity,
   originMonitorEnabled,
@@ -49,16 +53,18 @@ export function useInitialAnimation({
   onStartupReady,
   onPathRevealComplete,
 }: UseInitialAnimationOptions): UseInitialAnimationReturn {
+  const reduceMotionEnabled = useReduceMotion();
   // Mirror `isSyncing` into a ref so changes don't retrigger the dismissal
   // effect; we only need its value at the moment welcome dismisses.
   const isSyncingRef = useRef(isSyncing);
   isSyncingRef.current = isSyncing;
   // Initial path reveal animation (0 to 1)
-  const initialBasePathProgress = useSharedValue(showWelcome ? 0 : 1);
+  const initialBasePathProgress = useSharedValue(
+    showWelcome ? pathRevealStart : 1,
+  );
 
   // UI button opacities
   const settingsOpacity = useSharedValue(showWelcome ? 0 : 1);
-  const labelsOpacity = useSharedValue(showWelcome ? 0 : 1);
   const infoOpacity = useSharedValue(showWelcome ? 0 : 1);
 
   // Sentinel shared value used purely to sequence the startup-ready
@@ -68,18 +74,60 @@ export function useInitialAnimation({
 
   // Track if animations have completed to prevent restarts
   const hasSettingsAnimated = useSharedValue(!showWelcome);
-  const hasLabelsAnimated = useSharedValue(!showWelcome);
   const hasInfoAnimated = useSharedValue(!showWelcome);
   const hasPathRevealed = useSharedValue(!showWelcome);
   const hasStartupSignaled = useSharedValue(!showWelcome);
+  const pathRevealCompletedRef = useRef(false);
+  const startedWithoutWelcomeRef = useRef(!showWelcome);
+  const pathRevealWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const onPathRevealCompleteRef = useRef(onPathRevealComplete);
+  onPathRevealCompleteRef.current = onPathRevealComplete;
+
+  const clearPathRevealWatchdog = useCallback(() => {
+    if (pathRevealWatchdogRef.current !== null) {
+      clearTimeout(pathRevealWatchdogRef.current);
+      pathRevealWatchdogRef.current = null;
+    }
+  }, []);
+
+  const completePathReveal = useCallback(() => {
+    if (pathRevealCompletedRef.current) return;
+    pathRevealCompletedRef.current = true;
+    clearPathRevealWatchdog();
+    initialBasePathProgress.value = 1;
+    onPathRevealCompleteRef.current?.();
+  }, [clearPathRevealWatchdog, initialBasePathProgress]);
+
+  useEffect(
+    () => () => {
+      clearPathRevealWatchdog();
+    },
+    [clearPathRevealWatchdog],
+  );
+
+  useEffect(() => {
+    if (startedWithoutWelcomeRef.current) {
+      completePathReveal();
+    }
+  }, [completePathReveal]);
+
+  useEffect(() => {
+    if (reduceMotionEnabled && !showWelcome) {
+      cancelAnimation(initialBasePathProgress);
+      completePathReveal();
+    }
+  }, [
+    completePathReveal,
+    initialBasePathProgress,
+    reduceMotionEnabled,
+    showWelcome,
+  ]);
 
   // Animated styles for buttons
   const settingsEnterStyle = useAnimatedStyle(() => ({
     opacity: settingsOpacity.value,
-  }));
-
-  const labelsEnterStyle = useAnimatedStyle(() => ({
-    opacity: labelsOpacity.value,
   }));
 
   const infoEnterStyle = useAnimatedStyle(() => ({
@@ -98,18 +146,6 @@ export function useInitialAnimation({
         });
       }
 
-      // Labels animation (only once)
-      if (!hasLabelsAnimated.value) {
-        hasLabelsAnimated.value = true;
-        labelsOpacity.value = 0;
-        labelsOpacity.value = withDelay(
-          motion.button.enterDelayLabels,
-          withTiming(1, {
-            duration: motion.button.enterDuration,
-          }),
-        );
-      }
-
       // Only reset info opacity if animation hasn't run yet
       if (!hasInfoAnimated.value) {
         infoOpacity.value = 0;
@@ -123,12 +159,15 @@ export function useInitialAnimation({
       // on top of the bg pulse + shimmer animations.
       if (!hasPathRevealed.value) {
         hasPathRevealed.value = true;
-        if (isSyncingRef.current) {
-          initialBasePathProgress.value = 1;
-          if (onPathRevealComplete) {
-            runOnJS(onPathRevealComplete)();
-          }
+        if (isSyncingRef.current || reduceMotionEnabled) {
+          completePathReveal();
         } else {
+          pathRevealWatchdogRef.current = setTimeout(
+            completePathReveal,
+            motion.pathReveal.delay +
+              motion.pathReveal.duration +
+              PATH_REVEAL_WATCHDOG_BUFFER_MS,
+          );
           initialBasePathProgress.value = withDelay(
             motion.pathReveal.delay,
             withTiming(
@@ -136,8 +175,8 @@ export function useInitialAnimation({
               { duration: motion.pathReveal.duration },
               finished => {
                 'worklet';
-                if (finished && onPathRevealComplete) {
-                  runOnJS(onPathRevealComplete)();
+                if (finished) {
+                  runOnJS(completePathReveal)();
                 }
               },
             ),
@@ -171,19 +210,17 @@ export function useInitialAnimation({
       }
     } else {
       // Reset opacities when welcome shows
+      clearPathRevealWatchdog();
       cancelAnimation(settingsOpacity);
-      cancelAnimation(labelsOpacity);
       cancelAnimation(infoOpacity);
       cancelAnimation(startupSignal);
+      cancelAnimation(initialBasePathProgress);
       hasSettingsAnimated.value = false;
-      hasLabelsAnimated.value = false;
       hasInfoAnimated.value = false;
       hasPathRevealed.value = false;
       hasStartupSignaled.value = false;
+      pathRevealCompletedRef.current = false;
       settingsOpacity.value = withTiming(0, {
-        duration: motion.button.exitDuration,
-      });
-      labelsOpacity.value = withTiming(0, {
         duration: motion.button.exitDuration,
       });
       infoOpacity.value = withTiming(0, {
@@ -202,31 +239,31 @@ export function useInitialAnimation({
       resetToOrigin();
 
       // Hide path so it can re-run on next dismissal
-      initialBasePathProgress.value = 0;
+      initialBasePathProgress.value = pathRevealStart;
     }
   }, [
     showWelcome,
+    pathRevealStart,
     initialBasePathProgress,
     settingsOpacity,
-    labelsOpacity,
     infoOpacity,
     startupSignal,
     recenterOpacity,
     originMonitorEnabled,
     resetToOrigin,
     hasSettingsAnimated,
-    hasLabelsAnimated,
     hasInfoAnimated,
     hasPathRevealed,
     hasStartupSignaled,
+    clearPathRevealWatchdog,
+    completePathReveal,
+    reduceMotionEnabled,
     onStartupReady,
-    onPathRevealComplete,
   ]);
 
   return {
     initialBasePathProgress,
     settingsEnterStyle,
-    labelsEnterStyle,
     infoEnterStyle,
   };
 }

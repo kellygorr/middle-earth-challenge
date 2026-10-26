@@ -1,15 +1,16 @@
 import React from 'react';
 import { View, Text, StyleSheet, Alert, Linking } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
-import { useProgressStore } from '../../../stores/progressStore';
+import { useUIStore } from '../../../stores/uiStore';
 import { typographyThemed } from '../../../styles/typography';
 import { spacing } from '../../../styles/global';
 import { fitnessService } from '../../../services/fitnessService';
 import Button from '../../Buttons/Button';
-import SectionHeader from '../SectionHeader';
-import SettingsRef from '../../SettingsRef';
+import SettingsIcon from '../../../assets/icons/SettingsIcon';
+import InlineIconLink from '../../InlineIconLink';
+import CirclePlusIcon from '../../CirclePlusIcon';
 import { SyncNowRow } from '../../SyncNowRow';
-import { PlusIcon } from '../../../assets/icons';
+import { StatusBadge } from '../../StatusBadge';
 
 /**
  * SyncContentIOS - iOS-only Sync modal content.
@@ -23,14 +24,10 @@ export default function SyncContentIOS() {
   const theme = useTheme();
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
-  const setSyncEnabled = useSettingsStore(state => state.setSyncEnabled);
-  const setSyncProvider = useSettingsStore(state => state.setSyncProvider);
-  const setSyncStartDate = useSettingsStore(state => state.setSyncStartDate);
-  const setLastSyncTimestamp = useSettingsStore(
-    state => state.setLastSyncTimestamp,
+  const updateSyncSettings = useSettingsStore(
+    state => state.updateSyncSettings,
   );
-  const miles = useProgressStore(state => state.miles) || 0;
-  const showSyncNow = syncEnabled && miles > 0;
+  const showSyncNow = syncEnabled && syncProvider !== 'none';
 
   const [busy, setBusy] = React.useState(false);
 
@@ -54,9 +51,11 @@ export default function SyncContentIOS() {
       }
 
       if (granted) {
-        setSyncProvider('apple-health');
-        setSyncStartDate(Date.now());
-        setSyncEnabled(true);
+        await updateSyncSettings({
+          syncProvider: 'apple-health',
+          syncStartDate: Date.now(),
+          syncEnabled: true,
+        });
         return;
       }
 
@@ -94,9 +93,11 @@ export default function SyncContentIOS() {
           console.warn('[SyncContentIOS] stop-syncing disconnect:', error);
         }
       }
-      setSyncEnabled(false);
-      setSyncProvider('none');
-      setLastSyncTimestamp(null);
+      await updateSyncSettings({
+        syncEnabled: false,
+        syncProvider: 'none',
+        lastSyncTimestamp: null,
+      });
     } finally {
       setBusy(false);
     }
@@ -116,22 +117,11 @@ export default function SyncContentIOS() {
 
   return (
     <>
-      <SectionHeader title="Sync options" />
-
-      {syncEnabled && (
-        <Text
-          style={[
-            typographyThemed(theme).bodyPrimary,
-            styles.connectedMessage,
-            {
-              backgroundColor: theme.colors.successBg,
-              color: theme.colors.successText,
-            },
-          ]}
-        >
-          ✓ You are connected to Apple Health
-        </Text>
-      )}
+      <StatusBadge
+        label="Syncing enabled"
+        visible={syncEnabled}
+        style={styles.statusBadge}
+      />
       <View style={styles.buttonRow}>
         <Button
           variant={isHealthAppActive ? 'brand' : 'primary'}
@@ -192,12 +182,15 @@ export default function SyncContentIOS() {
           style={[typographyThemed(theme).captionSecondary, styles.sectionText]}
         >
           Connecting your distance and steps is not required to use the app. If
-          you prefer to manually add miles, use{' '}
-          <View style={styles.inlinePlus}>
-            <View style={styles.inlinePlusCircle}>
-              <PlusIcon size={8} color="#fff" />
-            </View>
-          </View>{' '}
+          you prefer to manually add miles, use the{' '}
+          <InlineIconLink
+            icon={CirclePlusIcon}
+            label="icon"
+            size={12}
+            textColor={theme.colors.textSecondary}
+            onPress={() => useUIStore.getState().pushModal({ type: 'distance' })}
+            accessibilityLabel="Add miles"
+          />{' '}
           from the map.
         </Text>
       </View>
@@ -213,7 +206,21 @@ export default function SyncContentIOS() {
         >
           You can disable syncing above. Disabling sync does not automatically
           delete your synced data. You can delete synced data at any time from{' '}
-          <SettingsRef />.
+          <InlineIconLink
+            icon={SettingsIcon}
+            label="Settings"
+            textColor={theme.colors.textSecondary}
+            onPress={() => {
+              // Reset to a fresh Settings root rather than pushing another
+              // 'settings' screen on top of this one (this content already
+              // lives nested under Settings → Sync), avoiding a duplicate
+              // stack entry.
+              useUIStore.getState().closeAllModals();
+              useUIStore.getState().pushModal({ type: 'settings' });
+            }}
+            accessibilityLabel="Open Settings"
+          />
+          .
         </Text>
       </View>
 
@@ -230,6 +237,16 @@ export default function SyncContentIOS() {
           revoke access, go to Settings → Health → Middle Earth Challenge and
           turn off all permissions.
         </Text>
+        <View style={styles.revokeButtonRow}>
+          <Button
+            variant="primary"
+            size="default"
+            onPress={() => Linking.openSettings()}
+            disabled={busy}
+          >
+            Open app settings
+          </Button>
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -251,10 +268,18 @@ export default function SyncContentIOS() {
 }
 
 const styles = StyleSheet.create({
+  statusBadge: {
+    alignSelf: 'center',
+  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  revokeButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
     marginTop: spacing.md,
   },
   infoText: {
@@ -266,24 +291,6 @@ const styles = StyleSheet.create({
   },
   approveSection: {
     marginTop: spacing.xl,
-  },
-  // Outer wrapper is the same 14px size as the SettingsIcon in SettingsRef
-  // so both inline refs sit at the same spot on the text line. The inner
-  // circle is smaller (12px) to visually match the gear's lighter weight.
-  inlinePlus: {
-    width: 14,
-    height: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ translateY: 2 }],
-  },
-  inlinePlusCircle: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#000',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   dividerRow: {
     borderTopWidth: 1,
@@ -298,13 +305,5 @@ const styles = StyleSheet.create({
   sectionText: {
     textAlign: 'left',
     marginTop: spacing.xs,
-  },
-  connectedMessage: {
-    textAlign: 'center',
-    marginBottom: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: 8,
-    overflow: 'hidden',
   },
 });

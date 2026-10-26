@@ -122,53 +122,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
     translateDistance: -spacing.lg,
   });
 
-  // Handle dismiss - closes all modals and commits pending changes
-  const handleDismiss = async (afterCallback?: () => void) => {
-    // Commit pending miles if any
-    const uiState = useUIStore.getState();
-    if (
-      uiState.pendingEntries.length > 0 ||
-      uiState.pendingDeletions.length > 0
-    ) {
-      const progressState = useProgressStore.getState();
-      const baseMiles = progressState.miles ?? 0;
-      const pendingTotal = uiState.pendingEntries.reduce(
-        (sum, e) => sum + (e?.miles ?? 0),
-        0,
-      );
-      const deletionTotal = uiState.pendingDeletions.reduce(
-        (sum, e) => sum + (e?.miles ?? 0),
-        0,
-      );
-
-      // Apply deletions
-      for (const d of uiState.pendingDeletions) {
-        await progressState.removeDistanceEntry(d.id);
-      }
-
-      // Apply additions
-      for (let idx = 0; idx < uiState.pendingEntries.length; idx++) {
-        const e = uiState.pendingEntries[idx];
-        const persisted = { ...e, id: `manual_${Date.now()}_${idx}` };
-        await progressState.addDistanceEntry(persisted);
-      }
-
-      // Update miles
-      if (pendingTotal > 0 || deletionTotal > 0) {
-        const newMiles = baseMiles + pendingTotal - deletionTotal;
-        progressState.setMiles(newMiles);
-        await progressState.persistMilesSnapshot();
-      }
-
-      if (progressState.testOverrideMiles !== null) {
-        progressState.clearTestOverride();
-      }
-    }
-
-    // Reset pending state
-    uiState.resetPendingMiles();
-
-    // Schedule callback and close modal
+  const handleDismiss = (afterCallback?: () => void) => {
     // Note: dismiss() sets callback ref, closeAllModals triggers exit animation
     // The callback will be called after exit animation completes
     dismiss(afterCallback);
@@ -176,7 +130,17 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
   };
 
   // Handle back navigation
+  const backLockRef = useRef(false);
+
+  // Two presses can land before the pop re-renders, which would skip a level.
+  useEffect(() => {
+    backLockRef.current = false;
+  }, [modalStack.length]);
+
   const handleBack = () => {
+    if (backLockRef.current) return;
+    backLockRef.current = true;
+
     // If going back from an info modal to another info modal, sync infoStore
     const stack = useUIStore.getState().modalStack;
     if (stack.length >= 2) {
@@ -196,8 +160,19 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
 
   // Handle home button press (settings modal)
   const handleHomePress = () => {
+    // Hide the map's path and welcome-hidden UI immediately, on press —
+    // not deferred. Settings is a fully opaque modal covering the whole
+    // screen at this exact moment, so anything changing underneath it
+    // right now is invisible to the user regardless of how it looks;
+    // the rAF-deferral tried previously was solving a DIFFERENT problem
+    // (UI-thread jank in Settings' own closing fade) but ended up
+    // deferring far longer than one frame in practice, which reintroduced
+    // the visible "pops away once Settings has mostly closed" bug this
+    // was meant to fix in the first place. Firing synchronously is both
+    // simpler and — since it happens fully hidden behind Settings —
+    // should have no visible cost at all.
+    setPhase('ready');
     handleDismiss(() => {
-      setPhase('ready');
       setShowWelcome(true);
     });
   };
@@ -253,6 +228,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
       return (
         <IconButton
           icon={<HomeIcon size={iconSizes.medium} />}
+          accessibilityLabel="Home"
           onPress={handleHomePress}
           variant="transparent"
           hitSlop={16}
@@ -264,6 +240,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
       return (
         <IconButton
           icon={<ChevronIcon direction="left" size={iconSizes.medium} />}
+          accessibilityLabel="Back"
           onPress={handleBack}
           variant="primary"
           hitSlop={8}
@@ -380,6 +357,7 @@ function SharedModalInner({ visible }: SharedModalInnerProps) {
                 onPress={() => handleDismiss()}
                 variant="transparent"
                 hitSlop={16}
+                accessibilityLabel="Close"
               />
             </View>
           </View>

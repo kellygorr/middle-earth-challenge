@@ -87,7 +87,13 @@ export async function checkAndFireMilestones(
   // commit lands.
   const highest = crossings[crossings.length - 1].index;
   if (highest > lastNotified) {
-    settings.setLastNotifiedCheckpointIndex(highest);
+    try {
+      await settings.updateSyncSettings({
+        lastNotifiedCheckpointIndex: highest,
+      });
+    } catch {
+      // Persistence is best-effort and must not derail the pedometer commit.
+    }
   }
 }
 

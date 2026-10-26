@@ -38,6 +38,8 @@ export function useAnimatedModal(
   const [internalVisible, setInternalVisible] = useState(false);
   // Ref to store pending callback to execute after exit animation completes
   const exitCallbackRef = useRef<(() => void) | null>(null);
+  const entranceFrameRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
 
   const backgroundOpacity = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
@@ -45,20 +47,29 @@ export function useAnimatedModal(
     hasTranslate ? translateDistance : 0,
   );
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (entranceFrameRef.current !== null) {
+        cancelAnimationFrame(entranceFrameRef.current);
+      }
+      cancelAnimation(backgroundOpacity);
+      cancelAnimation(contentOpacity);
+      cancelAnimation(contentTranslateY);
+    };
+  }, [backgroundOpacity, contentOpacity, contentTranslateY]);
+
   // Called from worklet after exit animation completes
   const handleExitComplete = useCallback(() => {
+    // The parent keys this component by orientation, so a rotation mid-exit
+    // unmounts us while the Reanimated completion is still pending.
+    if (!mountedRef.current) return;
     setInternalVisible(false);
     // Execute pending callback if any
     if (exitCallbackRef.current) {
       exitCallbackRef.current();
       exitCallbackRef.current = null;
-    }
-    // Also check for callback stored in uiStore (from closeAllModalsWithCallback)
-    // Import dynamically to avoid circular dependency
-    const { useUIStore } = require('../stores/uiStore');
-    const storedCallback = useUIStore.getState().consumeDismissCallback();
-    if (storedCallback) {
-      storedCallback();
     }
   }, []);
 
@@ -86,7 +97,8 @@ export function useAnimatedModal(
       setInternalVisible(true);
 
       // Entrance animations - use requestAnimationFrame to ensure values are reset first
-      requestAnimationFrame(() => {
+      entranceFrameRef.current = requestAnimationFrame(() => {
+        entranceFrameRef.current = null;
         backgroundOpacity.value = withTiming(1, {
           duration: entranceDuration,
         });
@@ -140,7 +152,6 @@ export function useAnimatedModal(
   const animatedBackgroundStyle = useAnimatedStyle(() => ({
     opacity: backgroundOpacity.value,
   }));
-
   const animatedContentStyle = useAnimatedStyle(() => {
     const base: any = { opacity: contentOpacity.value };
     if (hasTranslate) {

@@ -13,6 +13,7 @@ import {
   Pressable,
   Animated,
   TextStyle,
+  Platform,
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
@@ -32,35 +33,37 @@ import {
   formatDateLabel,
   formatTime,
   formatDistance,
+  getStartOfDay,
 } from '../../../utils/date';
 import EmptyState from '../EmptyState';
 import EditEntryModal from '../EditEntryModal';
+import AccessExpander from '../AccessExpander';
 import { TrackingOptions } from '../../TrackingOptions';
+import { StatusBadge } from '../../StatusBadge';
 import { useLivePedometerDelta } from '../../../hooks/useLivePedometerDelta';
+import { getDistanceSourceLabel } from '../../../constants/distanceSources';
 import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
+import { database } from '../../../services/database';
 
-// Number of days to load at a time
-const DAYS_PER_PAGE = 30;
+const ENTRIES_PER_PAGE = 200;
 
 // Sentinel id for the synthetic pedometer "live" row shown at the top of
 // today's group when the user is in pedometer mode and steps have
 // accumulated since the last commit. Rendered via `renderEntry`'s
-// in-progress branch so it shares layout with the health-sync
-// in-progress row.
-const LIVE_ENTRY_ID = '__live__';
+// in-progress branch so it shares the standard row layout.
+export const LIVE_ENTRY_ID = '__live__';
 
-// Yellow used for the flashing "In progress" pill on live/uneditable
-// rows (pedometer live delta + latest health-sync row of the day).
-// Not theme-mapped: reads acceptably on both light and dark themes and
-// is only used here.
-const LIVE_FLASH_COLOR = '#F5A623';
-
-// Helper to get start of day timestamp
-const getStartOfDay = (timestamp: number): number => {
-  const date = new Date(timestamp);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-};
+export function isCurrentPedometerEntry(
+  entry: DistanceEntry,
+  index: number,
+  entries: DistanceEntry[],
+): boolean {
+  return (
+    entry.source === 'pedometer' &&
+    entry.id === LIVE_ENTRY_ID &&
+    index === entries.length - 1
+  );
+}
 
 /**
  * Convert a stored miles value into the string shown in the edit input,
@@ -79,7 +82,14 @@ interface DayGroup {
 }
 
 // Separator between day groups
-const DaySeparator = () => <View style={styles.daySeparator} />;
+const DaySeparator = () => {
+  const theme = useTheme();
+  return (
+    <View
+      style={[styles.daySeparator, { backgroundColor: theme.colors.divider }]}
+    />
+  );
+};
 
 // Footer rendered at the *top* of the inverted list. Extracted from
 // DistanceContent's render body to satisfy `react/no-unstable-nested-components`
@@ -126,30 +136,34 @@ export default function DistanceContent() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
-  const flatListRef = useRef<FlatList<DayGroup>>(null);
 
-  // Store state
-  const distanceEntries = useProgressStore(state => state.distanceEntries);
+  const progressMiles = useProgressStore(state => state.miles);
+  const progressSteps = useProgressStore(state => state.steps);
+  const committedEntries = useProgressStore(state => state.distanceEntries);
+  const [distanceEntries, setDistanceEntries] = useState<DistanceEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<{
+    date: number;
+    id: string;
+  } | null>(null);
 
-  // Pending state from uiStore
-  const pendingEntries = useUIStore(state => state.pendingEntries);
-  const pendingDeletions = useUIStore(state => state.pendingDeletions);
-  const editingEntry = useUIStore(state => state.editingEntry);
   const setEditingEntry = useUIStore(state => state.setEditingEntry);
 
-  // Pagination state
-  const [visibleDaysCount, setVisibleDaysCount] = useState(DAYS_PER_PAGE);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // Combine and filter entries
-  const combinedEntries = useMemo(() => {
-    return [
-      ...(distanceEntries || []).filter(
-        d => !pendingDeletions.some(pd => pd.id === d.id),
-      ),
-      ...pendingEntries,
-    ];
-  }, [distanceEntries, pendingEntries, pendingDeletions]);
+  useEffect(() => {
+    let cancelled = false;
+    database
+      .getDistanceEntryPage(DEFAULT_SAVE_ID, null, ENTRIES_PER_PAGE)
+      .then(page => {
+        if (cancelled) return;
+        setDistanceEntries(page.entries);
+        setNextCursor(page.nextCursor);
+      })
+      .catch(error => console.error('Failed to load distance history:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [committedEntries, progressMiles, progressSteps]);
 
   // Group ALL entries by day (newest first) with total miles / steps
   const allDayGroups = useMemo(() => {
@@ -158,7 +172,7 @@ export default function DistanceContent() {
       { entries: DistanceEntry[]; totalMiles: number; totalSteps: number }
     >();
 
-    for (const entry of combinedEntries) {
+    for (const entry of distanceEntries || []) {
       const dayKey = getStartOfDay(entry.date as number);
       const group = groups.get(dayKey) || {
         entries: [],
@@ -196,14 +210,10 @@ export default function DistanceContent() {
           totalSteps: group.totalSteps,
         }),
       );
-  }, [combinedEntries]);
+  }, [distanceEntries]);
 
-  // Paginated day groups (only show visibleDaysCount)
-  const dayGroups = useMemo(() => {
-    return allDayGroups.slice(0, visibleDaysCount);
-  }, [allDayGroups, visibleDaysCount]);
-
-  const hasMoreDays = allDayGroups.length > visibleDaysCount;
+  const dayGroups = allDayGroups;
+  const hasMoreDays = nextCursor !== null;
 
   // Pedometer live delta — steps accumulated since the last commit but
   // not yet rolled up into a persisted range. Shown as a synthetic
@@ -213,7 +223,7 @@ export default function DistanceContent() {
   // render the row even when the delta is zero.
   const trackingMode = useSettingsStore(state => state.trackingMode);
   const liveSteps = useLivePedometerDelta();
-  const showLiveRow = trackingMode === 'pedometer';
+  const showLiveRow = trackingMode === 'pedometer' || trackingMode === 'dual';
   const liveMiles = showLiveRow ? stepsToMiles(liveSteps) : 0;
 
   const dayGroupsWithLive = useMemo(() => {
@@ -254,13 +264,11 @@ export default function DistanceContent() {
     return groups;
   }, [dayGroups, showLiveRow, liveSteps, liveMiles]);
 
-  // The health-sync ingest path can amend the most-recent row of a
-  // health source with fresh totals ([useSyncInterval.ts] ingestRecords).
-  // To prevent that from clobbering a user edit, we lock the latest
-  // today-row of each health source: no edit button, "In progress"
-  // label — same treatment as the pedometer live row. Older rows and
-  // yesterday's rows remain editable.
-  const inProgressHealthIds = useMemo(() => {
+  // The health-sync ingest path can amend the most-recent row of a health
+  // source with fresh totals. Keep those rows locked against edits, but do not
+  // label them "In progress": that status belongs only to the synthetic,
+  // uncommitted pedometer row.
+  const lockedHealthIds = useMemo(() => {
     const ids = new Set<string>();
     const todayKey = getStartOfDay(Date.now());
     const todayGroup = dayGroups.find(g => g.dayKey === todayKey);
@@ -287,39 +295,10 @@ export default function DistanceContent() {
     }
     return new Set();
   });
+  const mostRecentDayRef = useRef(dayGroupsWithLive[0]?.dayKey ?? null);
 
   // Animated rotation values for each day's chevron
   const rotationValues = useRef<Map<number, Animated.Value>>(new Map());
-
-  // Pulsing 0↔1 driver used by the "In progress" pill (pedometer live
-  // row + latest today-row of any health source). Loop runs only while
-  // at least one in-progress row is visible.
-  const liveFlash = useRef(new Animated.Value(0)).current;
-  const flashActive = showLiveRow || inProgressHealthIds.size > 0;
-  useEffect(() => {
-    if (!flashActive) {
-      liveFlash.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(liveFlash, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: false,
-        }),
-        Animated.timing(liveFlash, {
-          toValue: 0,
-          duration: 600,
-          useNativeDriver: false,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-    };
-  }, [flashActive, liveFlash]);
 
   // Get or create rotation value for a day
   const getRotationValue = useCallback(
@@ -336,21 +315,27 @@ export default function DistanceContent() {
     [],
   );
 
-  // Update expanded days when a new most recent day appears — either a
-  // freshly committed entry OR the synthetic today group that appears
-  // when pedometer live steps arrive before today's first commit.
+  // Writes rebuild the groups even when their day keys do not change.
+  // Auto-expand only when a genuinely newer day appears; otherwise keep
+  // the user's collapsed state.
   useEffect(() => {
-    if (dayGroupsWithLive.length > 0) {
-      const mostRecentDay = dayGroupsWithLive[0].dayKey;
-      setExpandedDays(prev => {
-        if (!prev.has(mostRecentDay)) {
-          const next = new Set(prev);
-          next.add(mostRecentDay);
-          return next;
-        }
-        return prev;
-      });
+    const mostRecentDay = dayGroupsWithLive[0]?.dayKey ?? null;
+    const previousMostRecentDay = mostRecentDayRef.current;
+    mostRecentDayRef.current = mostRecentDay;
+
+    if (
+      mostRecentDay === null ||
+      (previousMostRecentDay !== null && mostRecentDay <= previousMostRecentDay)
+    ) {
+      return;
     }
+
+    setExpandedDays(prev => {
+      if (prev.has(mostRecentDay)) return prev;
+      const next = new Set(prev);
+      next.add(mostRecentDay);
+      return next;
+    });
   }, [dayGroupsWithLive]);
 
   const toggleDay = (dayKey: number) => {
@@ -375,27 +360,26 @@ export default function DistanceContent() {
     });
   };
 
-  // Load more days when scrolling up
-  const loadMoreDays = useCallback(() => {
-    if (hasMoreDays && !isLoadingMore) {
-      setIsLoadingMore(true);
-      // Show loading indicator for at least 1 second
-      setTimeout(() => {
-        setVisibleDaysCount(prev => prev + DAYS_PER_PAGE);
-        setIsLoadingMore(false);
-      }, 1000);
+  const loadMoreDays = useCallback(async () => {
+    if (!nextCursor || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const page = await database.getDistanceEntryPage(
+        DEFAULT_SAVE_ID,
+        nextCursor,
+        ENTRIES_PER_PAGE,
+      );
+      setDistanceEntries(current => [...current, ...page.entries]);
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      console.error('Failed to load more distance history:', error);
+    } finally {
+      setIsLoadingMore(false);
     }
-  }, [hasMoreDays, isLoadingMore]);
+  }, [isLoadingMore, nextCursor]);
 
-  // Editing a row now delegates to `EditEntryModal`. Tapping the pencil
-  // simply flips the uiStore's `editingEntry` on; the modal watches
-  // that value and mounts itself. Tapping the pencil for an already-
-  // open entry closes the modal.
+  // Editing delegates to a separate overlay, leaving this list untouched.
   const startEditing = (item: DistanceEntry) => {
-    if (editingEntry?.id === item.id) {
-      setEditingEntry(null);
-      return;
-    }
     setEditingEntry(item, item.date as number);
   };
 
@@ -473,25 +457,28 @@ export default function DistanceContent() {
     );
   }
 
-  // Synthetic pedometer "live" row and the latest today-row of a
-  // health source are both rendered as "In progress" via `renderEntry`
-  // below — no edit button, source label caption, real miles/steps on
-  // the right. The only per-source difference is the caption text.
-  const renderEntry = (item: DistanceEntry) => {
-    const isLivePedometer = item.id === LIVE_ENTRY_ID;
-    const inProgress = isLivePedometer || inProgressHealthIds.has(item.id);
-    const sourceLabel =
-      item.source === 'health-connect'
-        ? 'Health Connect'
-        : item.source === 'apple-health'
-        ? 'Apple Health'
-        : item.source === 'pedometer'
-        ? 'Pedometer'
-        : 'Manual';
+  const renderEntry = (
+    item: DistanceEntry,
+    index: number,
+    entries: DistanceEntry[],
+  ) => {
+    const isLivePedometer = isCurrentPedometerEntry(item, index, entries);
+    const isLocked = isLivePedometer || lockedHealthIds.has(item.id);
+    const isHealthAdjustment = item.source === 'health-reconciliation';
+    const sourceLabel = getDistanceSourceLabel(item.source);
+    const adjustmentInfo =
+      Platform.OS === 'android'
+        ? [
+            'Health Connect reported more steps than this app captured. The difference was added at the end of the day.',
+            'Health Connect manages fitness data for Android. When multiple devices or apps are connected, it may not use the source with the highest step count.',
+          ]
+        : [
+            'Apple Health reported more steps than this app captured. The difference was added at the end of the day.',
+          ];
     return (
       <View key={item.id}>
         <View style={styles.listItem}>
-          {inProgress ? (
+          {isLocked ? (
             // Uneditable: sync may still amend this row today. Spacer
             // keeps columns aligned with edit-capable rows.
             <View style={styles.liveIconSpacer} />
@@ -510,32 +497,19 @@ export default function DistanceContent() {
                 />
               }
               onPress={() => startEditing(item)}
+              accessibilityLabel="Edit distance entry"
               variant="transparent"
               size="small"
               hitSlop={16}
             />
           )}
           <View style={styles.listItemLeft}>
-            {inProgress ? (
-              <Animated.Text
-                style={[
-                  typographyThemed(theme).bodyPrimary,
-                  styles.liveLabelText,
-                  styles.liveLabelInline,
-                  {
-                    color: liveFlash.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [theme.colors.textPrimary, LIVE_FLASH_COLOR],
-                    }),
-                    borderColor: liveFlash.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [theme.colors.textPrimary, LIVE_FLASH_COLOR],
-                    }),
-                  },
-                ]}
-              >
-                In progress
-              </Animated.Text>
+            {isLivePedometer ? (
+              <StatusBadge
+                label="In progress"
+                inProgress
+                style={styles.entryStatusBadge}
+              />
             ) : (
               <Text
                 style={[typographyThemed(theme).bodyPrimary, styles.entryTime]}
@@ -546,7 +520,7 @@ export default function DistanceContent() {
             <Text
               style={[
                 typographyThemed(theme).captionSecondary,
-                inProgress ? styles.liveCaption : styles.entryCaption,
+                isLivePedometer ? styles.liveCaption : styles.entryCaption,
               ]}
             >
               {sourceLabel}
@@ -560,7 +534,7 @@ export default function DistanceContent() {
                 // In-progress rows report feet/meters even at 0 and even
                 // after crossing a full unit, so a walker sees numbers
                 // move meaningfully instead of "0 mi" holding forever.
-                forceSmallUnit: inProgress,
+                forceSmallUnit: isLivePedometer,
               })}
             </Text>
             <Text
@@ -573,6 +547,15 @@ export default function DistanceContent() {
             </Text>
           </View>
         </View>
+        {isHealthAdjustment && (
+          <View style={styles.adjustmentInfo}>
+            <AccessExpander
+              label="Adjustment details"
+              items={adjustmentInfo}
+              flushTop
+            />
+          </View>
+        )}
       </View>
     );
   };
@@ -610,7 +593,10 @@ export default function DistanceContent() {
               {formatDateLabel(item.dayKey)}
             </Text>
             <Text style={typographyThemed(theme).bodyPrimary}>
-              {formatDistance(item.totalMiles, true)}
+              {formatDistance(item.totalMiles, {
+                includeUnits: true,
+                useMiles,
+              })}
               {' / '}
               {item.totalSteps.toLocaleString()} steps
             </Text>
@@ -620,8 +606,15 @@ export default function DistanceContent() {
           <View style={styles.entriesContainer}>
             {item.entries.map((entry, index) => (
               <View key={entry.id}>
-                {index > 0 && <View style={styles.separator} />}
-                {renderEntry(entry)}
+                {index > 0 && (
+                  <View
+                    style={[
+                      styles.separator,
+                      { backgroundColor: theme.colors.divider },
+                    ]}
+                  />
+                )}
+                {renderEntry(entry, index, item.entries)}
               </View>
             ))}
           </View>
@@ -642,9 +635,8 @@ export default function DistanceContent() {
   return (
     <>
       <FlatList
-        ref={flatListRef}
         data={dayGroupsWithLive}
-        extraData={`${editingEntry?.id ?? ''}|${liveSteps}`}
+        extraData={expandedDays}
         keyExtractor={item => item.dayKey.toString()}
         renderItem={renderDayGroup}
         ItemSeparatorComponent={DaySeparator}
@@ -658,6 +650,7 @@ export default function DistanceContent() {
         keyboardShouldPersistTaps="handled"
         removeClippedSubviews={false}
         inverted
+        maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
         onEndReached={loadMoreDays}
         onEndReachedThreshold={0.5}
         scrollEventThrottle={16}
@@ -694,21 +687,12 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     flex: 1,
   },
+  entryStatusBadge: {
+    alignSelf: 'flex-start',
+  },
   liveIconSpacer: {
     width: iconButtonSizes.small,
     height: iconButtonSizes.small,
-  },
-  liveLabelText: {
-    borderWidth: 1,
-    borderRadius: 4,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 1,
-    textAlign: 'center',
-  },
-  // Constrain the pill so it hugs its content instead of stretching
-  // to the full width of the listItemLeft column.
-  liveLabelInline: {
-    alignSelf: 'flex-start',
   },
   liveCaption: {
     marginTop: spacing.xs,
@@ -728,13 +712,14 @@ const styles = StyleSheet.create({
   entryStepsCaption: {
     lineHeight: 18,
   },
+  adjustmentInfo: {
+    paddingBottom: spacing.sm,
+  },
   separator: {
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.08)',
   },
   daySeparator: {
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.15)',
     marginVertical: spacing.xs,
   },
   listEndContainer: {

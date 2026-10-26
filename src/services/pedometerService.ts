@@ -1,4 +1,5 @@
 import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
+import type { PedometerCursor } from '../types';
 
 /**
  * Pedometer service — Android-only for now.
@@ -25,6 +26,12 @@ export interface PedometerEnvironment {
   hasSensor: boolean;
   /** Stock Android battery-optimization allowlist state. */
   ignoresBatteryOptimizations: boolean;
+  /** Whether the most recent due native sensor sample persisted successfully. */
+  samplePersistenceHealthy: boolean;
+  /** Latest native SQLite failure, cleared after a successful retry. */
+  samplePersistenceError: string | null;
+  /** Wall-clock time of the latest native SQLite failure, or 0 when healthy. */
+  samplePersistenceErrorAtMs: number;
   /** e.g. "samsung", "google", "xiaomi" (lowercase caller-normalized). */
   manufacturer: string;
   /** Build.VERSION.SDK_INT. */
@@ -35,6 +42,23 @@ export interface StepsWindow {
   steps: number;
   fromMs: number;
   toMs: number;
+  latestCursor?: PedometerCursor | null;
+}
+
+export interface CursorStepsWindow {
+  steps: number;
+  latestCursor: PedometerCursor | null;
+  wallClockMovedBackward: boolean;
+}
+
+export function reportPedometerBackgroundTaskResult(
+  requestId: string,
+  succeeded: boolean,
+): void {
+  NativeModules.PedometerModule.reportBackgroundTaskResult(
+    requestId,
+    succeeded,
+  );
 }
 
 export interface PedometerService {
@@ -58,6 +82,19 @@ export interface PedometerService {
    * Returns 0 for empty/inverted ranges or when nothing is recorded.
    */
   getStepsBetween(fromMs: number, toMs: number): Promise<StepsWindow>;
+  /** Finds the latest insertion at or before a legacy wall watermark. */
+  getSampleCursorAtOrBefore(
+    timestampMs: number,
+  ): Promise<PedometerCursor | null>;
+  /** Reads samples by insertion order, independent of wall-clock changes. */
+  getStepsSinceCursor(cursor: PedometerCursor): Promise<CursorStepsWindow>;
+  /**
+   * Deletes raw step samples older than `cutoffMs`, keeping each boot's
+   * anchor sample so later windows still compute correct deltas. Resolves the
+   * number of rows deleted. Callers must pass a cutoff safely behind the
+   * commit watermark.
+   */
+  pruneSamplesBefore(cutoffMs: number): Promise<number>;
   /** Snapshot of the device / permission state we care about. */
   getEnvironment(): Promise<PedometerEnvironment>;
   /**
@@ -114,6 +151,15 @@ const AndroidPedometer: PedometerService = {
   getStepsBetween: (fromMs, toMs) =>
     NativeModules.PedometerModule.getStepsBetween(fromMs, toMs),
 
+  getSampleCursorAtOrBefore: timestampMs =>
+    NativeModules.PedometerModule.getSampleCursorAtOrBefore(timestampMs),
+
+  getStepsSinceCursor: cursor =>
+    NativeModules.PedometerModule.getStepsSinceCursor(cursor),
+
+  pruneSamplesBefore: cutoffMs =>
+    NativeModules.PedometerModule.pruneSamplesBefore(cutoffMs),
+
   getEnvironment: () => NativeModules.PedometerModule.getEnvironment(),
 
   requestRuntimePermissions: async () => {
@@ -125,22 +171,30 @@ const AndroidPedometer: PedometerService = {
       postNotifications: boolean;
     } = { activityRecognition: true, postNotifications: true };
 
+    const permissions: Parameters<
+      typeof PermissionsAndroid.requestMultiple
+    >[0] = [];
     if (Number(Platform.Version) >= 29) {
-      const res = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
+      permissions.push(PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION);
+    }
+    if (Number(Platform.Version) >= 33) {
+      permissions.push(
+        'android.permission.POST_NOTIFICATIONS' as (typeof permissions)[number],
       );
-      results.activityRecognition = res === PermissionsAndroid.RESULTS.GRANTED;
     }
 
-    if (Number(Platform.Version) >= 33) {
-      const res = await PermissionsAndroid.request(
-        // Cast: POST_NOTIFICATIONS was added in RN 0.70+ but older type defs
-        // may not include it. Runtime value is 'android.permission.POST_NOTIFICATIONS'.
-        'android.permission.POST_NOTIFICATIONS' as Parameters<
-          typeof PermissionsAndroid.request
-        >[0],
-      );
-      results.postNotifications = res === PermissionsAndroid.RESULTS.GRANTED;
+    if (permissions.length > 0) {
+      const grants = await PermissionsAndroid.requestMultiple(permissions);
+      if (Number(Platform.Version) >= 29) {
+        results.activityRecognition =
+          grants[PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION] ===
+          PermissionsAndroid.RESULTS.GRANTED;
+      }
+      if (Number(Platform.Version) >= 33) {
+        results.postNotifications =
+          grants['android.permission.POST_NOTIFICATIONS'] ===
+          PermissionsAndroid.RESULTS.GRANTED;
+      }
     }
 
     return results;
@@ -177,12 +231,23 @@ const IosPedometer: PedometerService = {
   isServiceRunning: () => Promise.resolve(false),
   getStepsBetween: (fromMs, toMs) =>
     Promise.resolve({ steps: 0, fromMs, toMs }),
+  getSampleCursorAtOrBefore: () => Promise.resolve(null),
+  getStepsSinceCursor: () =>
+    Promise.resolve({
+      steps: 0,
+      latestCursor: null,
+      wallClockMovedBackward: false,
+    }),
+  pruneSamplesBefore: () => Promise.resolve(0),
   getEnvironment: () =>
     Promise.resolve({
       activityRecognition: false,
       postNotifications: false,
       hasSensor: false,
       ignoresBatteryOptimizations: false,
+      samplePersistenceHealthy: true,
+      samplePersistenceError: null,
+      samplePersistenceErrorAtMs: 0,
       manufacturer: 'apple',
       sdkInt: 0,
     }),

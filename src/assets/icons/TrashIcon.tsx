@@ -10,10 +10,7 @@ interface TrashIconProps {
  * Simple outlined trash / delete icon. Uses a stroke-only silhouette so
  * it reads cleanly against theme surfaces at small sizes.
  */
-export default function TrashIcon({
-  size = 24,
-  color = '#000',
-}: TrashIconProps) {
+export default function TrashIcon({ size = 24, color }: TrashIconProps) {
   const strokeWidth = Math.max(1.75, size / 14);
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

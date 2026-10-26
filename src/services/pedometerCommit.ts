@@ -7,13 +7,13 @@
  * sweep, mode-switch flush, Sync-Now button. See docs/pedometer-mode.md
  * § "Row model & commit strategy" for the model.
  *
- * This helper does NOT manage the watermark or sync status — that's the
- * caller's job. It only:
+ * This helper owns the watermark but not sync status. It:
  *
  *   1. reads `getStepsBetween(fromMs, toMs)` from the native service,
  *   2. converts steps → miles,
- *   3. writes one `DistanceEntry` (source: `'pedometer'`) if steps > 0,
- *   4. recomputes `progressStore.miles` and persists the snapshot.
+ *   3. atomically writes any `DistanceEntry` rows, refreshes the snapshot,
+ *      and advances `lastSyncTimestamp`,
+ *   4. publishes progress and watermark state only after commit.
  *
  * Isolating it from the hook so it can also be called from the
  * headless JS task WorkManager fires — where React hooks don't exist.
@@ -25,6 +25,8 @@ import type { DistanceEntry } from '../types';
 import { stepsToMiles } from '../utils/stride';
 import { checkAndFireMilestones } from './milestoneNotifier';
 import { DEFAULT_SAVE_ID } from '../constants/gameConstants';
+import { PEDOMETER_SAMPLE_RETENTION_MS } from '../constants/sync';
+import { useSettingsStore } from '../stores/settingsStore';
 
 export interface PedometerCommitResult {
   /** Steps read from the native service in [fromMs, toMs). */
@@ -35,57 +37,120 @@ export interface PedometerCommitResult {
   entryWritten: boolean;
 }
 
+let commitQueue: Promise<void> = Promise.resolve();
+
 /**
  * Materialize a single pedometer `DistanceEntry` for [fromMs, toMs).
  *
- * Returns `{ steps: 0, miles: 0, entryWritten: false }` if the native
- * read fails or returns zero — the caller decides whether to surface an
- * error or advance the watermark anyway.
+ * Returns `{ steps: 0, miles: 0, entryWritten: false }` if the native read
+ * returns zero. Read or persistence failures reject without advancing the
+ * watermark.
  */
-export async function commitPedometerRange(
+export function commitPedometerRange(
   fromMs: number,
   toMs: number,
 ): Promise<PedometerCommitResult> {
+  const commit = commitQueue.then(() =>
+    commitPedometerRangeSerialized(fromMs, toMs),
+  );
+  commitQueue = commit.then(
+    () => undefined,
+    () => undefined,
+  );
+  return commit;
+}
+
+async function commitPedometerRangeSerialized(
+  requestedFromMs: number,
+  toMs: number,
+): Promise<PedometerCommitResult> {
+  const currentWatermark = useSettingsStore.getState().lastSyncTimestamp;
+  let fromMs = requestedFromMs;
+  if (currentWatermark !== null && currentWatermark !== requestedFromMs) {
+    if (toMs <= currentWatermark) {
+      return { steps: 0, miles: 0, entryWritten: false };
+    }
+    fromMs = currentWatermark;
+  }
+
   // Guard against inverted / degenerate windows — a mode-switch or
   // AppState double-fire can produce toMs === fromMs, and older callers
   // could plausibly pass toMs < fromMs. Treat both as no-ops so we
   // don't feed nonsense timestamps into the native module.
-  if (toMs <= fromMs) {
+  const expectedCursor = useSettingsStore.getState().pedometerCursor;
+  let readCursor = expectedCursor;
+  if (toMs === fromMs && !readCursor) {
     return { steps: 0, miles: 0, entryWritten: false };
   }
 
+  if (toMs < fromMs && !readCursor) {
+    readCursor = await pedometerService.getSampleCursorAtOrBefore(fromMs);
+    if (!readCursor) {
+      return { steps: 0, miles: 0, entryWritten: false };
+    }
+  }
+
+  const entries: DistanceEntry[] = [];
   let steps = 0;
-  try {
-    const window = await pedometerService.getStepsBetween(fromMs, toMs);
+  let latestCursor = readCursor;
+
+  if (readCursor && toMs < fromMs) {
+    const window = await pedometerService.getStepsSinceCursor(readCursor);
     steps = Math.max(0, Math.floor(window.steps));
-  } catch (error) {
-    console.warn('[pedometer] commit read failed', { fromMs, toMs, error });
-    // Re-throw so the caller can surface a sync error if it wants to.
-    throw error;
+    latestCursor = window.latestCursor ?? readCursor;
+    if (steps > 0) {
+      entries.push({
+        id: `pedo_cursor_${readCursor.sampleId}_${latestCursor.sampleId}`,
+        saveId: DEFAULT_SAVE_ID,
+        date: latestCursor.timestampMs,
+        miles: stepsToMiles(steps),
+        steps,
+        source: 'pedometer',
+      });
+    }
+  } else {
+    const segments: Array<{ fromMs: number; toMs: number }> = [];
+    let segmentStart = fromMs;
+    while (segmentStart < toMs) {
+      const nextMidnight = new Date(segmentStart);
+      nextMidnight.setHours(24, 0, 0, 0);
+      const segmentEnd = Math.min(toMs, nextMidnight.getTime());
+      segments.push({ fromMs: segmentStart, toMs: segmentEnd });
+      segmentStart = segmentEnd;
+    }
+
+    for (const segment of segments) {
+      try {
+        const window = await pedometerService.getStepsBetween(
+          segment.fromMs,
+          segment.toMs,
+        );
+        const segmentSteps = Math.max(0, Math.floor(window.steps));
+        latestCursor = window.latestCursor ?? latestCursor;
+        steps += segmentSteps;
+        if (segmentSteps > 0) {
+          entries.push({
+            id: `pedo_${segment.fromMs}`,
+            saveId: DEFAULT_SAVE_ID,
+            date:
+              segment.fromMs + Math.floor((segment.toMs - segment.fromMs) / 2),
+            miles: stepsToMiles(segmentSteps),
+            steps: segmentSteps,
+            source: 'pedometer',
+          });
+        }
+      } catch (error) {
+        console.warn('[pedometer] commit read failed', {
+          fromMs: segment.fromMs,
+          toMs: segment.toMs,
+          error,
+        });
+        throw error;
+      }
+    }
   }
 
   const miles = stepsToMiles(steps);
-
-  // Empty window — skip the row entirely. Idle overnight periods
-  // shouldn't clutter the Distance list with zero-mile entries. Caller
-  // still advances the watermark.
-  if (steps <= 0) {
-    return { steps: 0, miles: 0, entryWritten: false };
-  }
-
-  // Row id is `pedo_${fromMs}` so it's stable and re-runs are safe: if
-  // a commit was in flight when the app was killed, the next run starts
-  // from the *advanced* watermark, so no duplicate id can be generated.
-  // `date` is the window midpoint so multi-hour BG rows sort into their
-  // correct day rather than the day at which walking started.
-  const entry: DistanceEntry = {
-    id: `pedo_${fromMs}`,
-    saveId: DEFAULT_SAVE_ID,
-    date: fromMs + Math.floor((toMs - fromMs) / 2),
-    miles,
-    steps,
-    source: 'pedometer',
-  };
 
   const progress = useProgressStore.getState();
   // Snapshot before-total so we can compare with the after-total below
@@ -93,16 +158,30 @@ export async function commitPedometerRange(
   // in this window. Must be read before `addDistanceEntries` mutates
   // the store.
   const milesBefore = progress.miles ?? 0;
-  await progress.addDistanceEntries([entry]);
+  const applied = latestCursor
+    ? await progress.applyPedometerSyncChunk(
+        entries,
+        toMs,
+        expectedCursor,
+        latestCursor,
+      )
+    : await progress.applyPedometerSyncChunk(entries, toMs);
+  if (!applied) {
+    return { steps: 0, miles: 0, entryWritten: false };
+  }
+  useSettingsStore.setState({
+    lastSyncTimestamp: toMs,
+    pedometerCursor: latestCursor,
+  });
 
-  // Recompute total from the store — cheaper and less race-prone than
-  // tracking a running total across ticks.
-  const store = useProgressStore.getState();
-  const totalMiles = store.getTotalMiles();
-  const totalSteps = store.getTotalSteps();
-  progress.setMiles(totalMiles);
-  progress.setSteps(totalSteps);
-  await progress.persistMilesSnapshot();
+  // Only safe once the watermark has advanced past this window.
+  await pruneCommittedSamples(toMs);
+
+  if (entries.length === 0) {
+    return { steps: 0, miles: 0, entryWritten: false };
+  }
+
+  const totalMiles = useProgressStore.getState().miles;
 
   // Milestone notifications (Phase 3c). Best-effort; never rejects.
   // Only fires on pedometer commits — health-app sync users don't get
@@ -114,4 +193,19 @@ export async function commitPedometerRange(
   }
 
   return { steps, miles, entryWritten: true };
+}
+
+/**
+ * Drop raw samples the committed watermark has made unnecessary. Best-effort:
+ * a failure here must not fail an otherwise successful commit, since the only
+ * consequence is that the table stays large.
+ */
+async function pruneCommittedSamples(watermarkMs: number): Promise<void> {
+  const cutoff = watermarkMs - PEDOMETER_SAMPLE_RETENTION_MS;
+  if (cutoff <= 0) return;
+  try {
+    await pedometerService.pruneSamplesBefore(cutoff);
+  } catch (error) {
+    console.warn('[pedometer] sample prune failed', { cutoff, error });
+  }
 }

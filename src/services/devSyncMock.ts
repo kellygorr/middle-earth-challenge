@@ -30,6 +30,123 @@ import { useProgressStore } from '../stores/progressStore';
 // were left `true` a release build cannot swap in the mock.
 export const DEV_MOCK_LONG_SYNC = false;
 
+/**
+ * Dev-only: force the splash screen to show "Upgrading" (instead of its
+ * real `database.init()` result) so the upgrade-in-progress copy can be
+ * visually reviewed without needing a real legacy database seeded on the
+ * device first. See App.tsx's `isUpgrading` state, which checks this flag
+ * (via `shouldForceUpgradeSplashForDev()` below) alongside the real
+ * detection from `database.init()`'s return value.
+ *
+ * Flip to `true`, cold-restart the app (Fast Refresh is not enough since
+ * this only takes effect during the bootstrap effect), observe the splash
+ * screen, then set back to `false` and cold-restart again. Has no effect
+ * outside `__DEV__` — a release build always uses the real detection.
+ */
+export const DEV_FORCE_UPGRADE_SPLASH = false;
+
+export function shouldForceUpgradeSplashForDev(): boolean {
+  return __DEV__ && DEV_FORCE_UPGRADE_SPLASH;
+}
+
+/**
+ * Dev-only: force database.init() to throw during createTables(), as if a
+ * real protected-upgrade migration failed partway through, so the
+ * bootstrap error screen's upgrade-specific copy ("Upgrade could not
+ * finish...") can be visually reviewed without needing to actually break
+ * a real migration. See database.ts's createTables(), which checks this
+ * flag (via shouldForceUpgradeMigrationFailureForDev() below) right after
+ * setting `wasProtectedUpgrade` — matching the real code path where a
+ * genuine migration failure is detected (isProtectedUpgrade was already
+ * true before the failure), so App.tsx's
+ * `database.wasProtectedUpgradeAttempt()` check also reports true here.
+ *
+ * Flip to `true`, cold-restart the app (Fast Refresh is not enough since
+ * this only takes effect during the bootstrap effect), observe the
+ * bootstrap error screen, then set back to `false` and cold-restart
+ * again. Has no effect outside `__DEV__` — a release build never throws
+ * this synthetic error.
+ */
+export const DEV_FORCE_UPGRADE_MIGRATION_FAILURE = false;
+
+export function shouldForceUpgradeMigrationFailureForDev(): boolean {
+  return __DEV__ && DEV_FORCE_UPGRADE_MIGRATION_FAILURE;
+}
+
+/**
+ * Dev-only: inject a synthetic sync-error troubleshooting issue on launch
+ * so the welcome screen's "Upgrade complete" card (see initializationStore's
+ * `wasJustUpgraded`) can be visually reviewed alongside a REAL
+ * troubleshooting issue card at the same time, without needing to wait for
+ * or reproduce an actual sync failure. Does not touch the real sync
+ * pipeline or persist anything beyond the normal troubleshooting-issue
+ * flow (addTroubleshootingIssue is the same call a real sync failure would
+ * make) — this is purely a test trigger, not a mock of sync itself.
+ *
+ * Flip to `true` alongside DEV_FORCE_UPGRADE_SPLASH, cold-restart the app,
+ * observe the welcome screen, then set back to `false` and cold-restart
+ * again. Has no effect outside `__DEV__`.
+ */
+export const DEV_FORCE_TEST_SYNC_ERROR = false;
+
+export function shouldForceTestSyncErrorForDev(): boolean {
+  return __DEV__ && DEV_FORCE_TEST_SYNC_ERROR;
+}
+
+/**
+ * Dev-only: seed one synthetic troubleshooting issue per slot (see
+ * constants/troubleshootingIssues.ts's doc comment — only one issue per
+ * slot can be true at once, since within a subsystem later faults
+ * supersede earlier ones) so Troubleshooting history and the home-screen
+ * banner show the full range of card copy/colors/badges at once, without
+ * needing to reproduce five different real failures. Picks one
+ * representative `kind` per slot:
+ *   - 'cross'      -> permission (source: 'both')
+ *   - 'health-app'  -> timeout
+ *   - 'pedometer'   -> pedometerServiceStopped
+ *   - 'notice'      -> sourceFallback
+ *   - 'app'         -> unknown
+ * Does not touch the real sync pipeline or persist anything beyond the
+ * normal troubleshooting-issue flow (addTroubleshootingIssue is the same
+ * call a real sync failure would make) — this is purely a test trigger.
+ */
+export function addTestSyncErrorForDev(): void {
+  const store = useProgressStore.getState();
+  const now = Date.now();
+
+  store.addTroubleshootingIssue({
+    kind: 'permission',
+    source: 'both',
+    message: 'Both Health Connect and pedometer permissions were revoked.',
+  });
+  store.addTroubleshootingIssue({
+    kind: 'timeout',
+    chunkStart: now - 86400000,
+    chunkEnd: now,
+    chunksDone: 1,
+    chunksTotal: 3,
+  });
+  store.addTroubleshootingIssue({
+    kind: 'pedometerServiceStopped',
+    lastCommitAt: now - 3 * 60 * 60 * 1000,
+    staleForMs: 3 * 60 * 60 * 1000,
+    manufacturer: 'Samsung',
+  });
+  store.addTroubleshootingIssue({
+    kind: 'pedometerStorage',
+    message: 'Failed to write pedometer data to local storage.',
+  });
+  store.addTroubleshootingIssue({
+    kind: 'sourceFallback',
+    unavailableSource: 'pedometer',
+    activeSource: 'health-app',
+  });
+  store.addTroubleshootingIssue({
+    kind: 'unknown',
+    message: 'An unrecognized sync error occurred.',
+  });
+}
+
 const DAYS = 10;
 const MILES_PER_DAY = 2.5;
 const CHUNK_DELAY_MS = 600;
@@ -39,16 +156,11 @@ const CHUNK_DELAY_MS = 600;
 // init effect resolves) hits the mock instead of real Health Connect.
 // Without this we race and the real provider throws a permission error,
 // which trips the "disconnected" UX and disables sync.
-console.log('[devSyncMock] module evaluated', {
-  __DEV__,
-  DEV_MOCK_LONG_SYNC,
-});
 if (__DEV__ && DEV_MOCK_LONG_SYNC) {
   setMockFitnessService(true);
   mockFitnessService.seedHistory(DAYS, MILES_PER_DAY);
   mockFitnessService.setArtificialDelay(CHUNK_DELAY_MS);
   mockFitnessService.setSimulateTimeout(false);
-  console.log('[devSyncMock] mock installed at import time');
 }
 
 export async function setupDevMockLongSyncIfEnabled(): Promise<void> {
@@ -58,14 +170,17 @@ export async function setupDevMockLongSyncIfEnabled(): Promise<void> {
   await useProgressStore.getState().resetProgress();
 
   const settings = useSettingsStore.getState();
-  settings.setLastSyncTimestamp(null);
-  settings.setSyncStartDate(Date.now() - DAYS * 24 * 60 * 60 * 1000);
-  if (settings.syncProvider === 'none') {
-    settings.setSyncProvider(
-      Platform.OS === 'ios' ? 'apple-health' : 'health-connect',
-    );
-  }
-  if (!settings.syncEnabled) settings.setSyncEnabled(true);
+  await settings.updateSyncSettings({
+    lastSyncTimestamp: null,
+    syncStartDate: Date.now() - DAYS * 24 * 60 * 60 * 1000,
+    ...(settings.syncProvider === 'none'
+      ? {
+          syncProvider:
+            Platform.OS === 'ios' ? 'apple-health' : 'health-connect',
+        }
+      : {}),
+    ...(!settings.syncEnabled ? { syncEnabled: true } : {}),
+  });
 
   // Install mock data source. Android-shaped (many small samples per day).
   setMockFitnessService(true);

@@ -1,11 +1,5 @@
 import { create } from 'zustand';
-import {
-  UserSettings,
-  LabelSize,
-  TextSize,
-  SyncProvider,
-  TrackingMode,
-} from '../types';
+import { UserSettings, LabelSize, TextSize } from '../types';
 import { ThemeName, themes } from '../styles/themes';
 import { database } from '../services/database';
 import { useProgressStore } from './progressStore';
@@ -25,15 +19,55 @@ interface SettingsStore extends UserSettings {
   setDevMode: (enabled: boolean) => void;
   setUseMiles: (useMiles: boolean) => void;
   // Sync actions
-  setSyncEnabled: (enabled: boolean) => void;
-  setSyncProvider: (provider: SyncProvider) => void;
-  setSyncStartDate: (date: number | null) => void;
-  setLastSyncTimestamp: (timestamp: number | null) => void;
+  updateSyncBookmarks: (
+    updates: Partial<
+      Pick<
+        UserSettings,
+        | 'syncStartDate'
+        | 'lastSyncTimestamp'
+        | 'pedometerCursor'
+        | 'lastHealthReconciledThrough'
+      >
+    >,
+  ) => Promise<void>;
+  updateSyncSettings: (
+    updates: Partial<
+      Pick<
+        UserSettings,
+        | 'syncEnabled'
+        | 'syncProvider'
+        | 'syncStartDate'
+        | 'lastSyncTimestamp'
+        | 'pedometerCursor'
+        | 'healthSyncFormatVersion'
+        | 'healthLookbackStartTimestamp'
+        | 'lastHealthReconciledThrough'
+        | 'liveSyncEnabled'
+        | 'trackingMode'
+        | 'hasSeenOemBatteryPrompt'
+        | 'hcRevokePendingRestart'
+        | 'pedometerCleanupPending'
+        | 'lastNotifiedCheckpointIndex'
+      >
+    >,
+  ) => Promise<void>;
   setLiveSyncEnabled: (enabled: boolean) => void;
-  setTrackingMode: (mode: TrackingMode) => void;
-  setHasSeenOemBatteryPrompt: (seen: boolean) => void;
-  setHcRevokePendingRestart: (pending: boolean) => void;
-  setLastNotifiedCheckpointIndex: (index: number) => void;
+  updateSharingSettings: (
+    updates: Partial<
+      Pick<
+        UserSettings,
+        | 'sharingEnabled'
+        | 'sharingDisplayName'
+        | 'sharingAffinity'
+        | 'sharingProvisioningPending'
+        | 'sharingDeletionPending'
+        | 'sharingMigrationSourceUserId'
+        | 'lastPublishedMiles'
+        | 'lastSharedProgressSyncAt'
+      >
+    >,
+  ) => Promise<void>;
+  setLastJourneyBackupFileName: (fileName: string | null) => Promise<void>;
   loadSettings: () => Promise<void>;
 }
 
@@ -55,11 +89,25 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   syncProvider: 'none',
   syncStartDate: null,
   lastSyncTimestamp: null,
+  pedometerCursor: null,
+  healthSyncFormatVersion: 0,
+  healthLookbackStartTimestamp: null,
+  lastHealthReconciledThrough: null,
   liveSyncEnabled: false,
   trackingMode: 'health-app',
   hasSeenOemBatteryPrompt: false,
   hcRevokePendingRestart: false,
+  pedometerCleanupPending: false,
   lastNotifiedCheckpointIndex: -1,
+  sharingEnabled: false,
+  sharingDisplayName: null,
+  sharingAffinity: null,
+  sharingProvisioningPending: false,
+  sharingDeletionPending: false,
+  sharingMigrationSourceUserId: null,
+  lastPublishedMiles: null,
+  lastSharedProgressSyncAt: null,
+  lastJourneyBackupFileName: null,
 
   // Actions - each setter also persists to database
   setLabelSize: size => {
@@ -111,24 +159,14 @@ export const useSettingsStore = create<SettingsStore>(set => ({
   },
 
   // Sync actions
-  setSyncEnabled: enabled => {
-    set({ syncEnabled: enabled });
-    database.updateUserSettings({ syncEnabled: enabled });
+  updateSyncBookmarks: async updates => {
+    await database.updateUserSettings(updates);
+    set(updates);
   },
 
-  setSyncProvider: provider => {
-    set({ syncProvider: provider });
-    database.updateUserSettings({ syncProvider: provider });
-  },
-
-  setSyncStartDate: date => {
-    set({ syncStartDate: date });
-    database.updateUserSettings({ syncStartDate: date });
-  },
-
-  setLastSyncTimestamp: timestamp => {
-    set({ lastSyncTimestamp: timestamp });
-    database.updateUserSettings({ lastSyncTimestamp: timestamp });
+  updateSyncSettings: async updates => {
+    await database.updateUserSettings(updates);
+    set(updates);
   },
 
   setLiveSyncEnabled: enabled => {
@@ -136,57 +174,58 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     database.updateUserSettings({ liveSyncEnabled: enabled });
   },
 
-  setTrackingMode: mode => {
-    set({ trackingMode: mode });
-    database.updateUserSettings({ trackingMode: mode });
+  updateSharingSettings: async updates => {
+    await database.updateUserSettings(updates);
+    set(updates);
   },
 
-  setHasSeenOemBatteryPrompt: seen => {
-    set({ hasSeenOemBatteryPrompt: seen });
-    database.updateUserSettings({ hasSeenOemBatteryPrompt: seen });
-  },
-
-  setHcRevokePendingRestart: pending => {
-    set({ hcRevokePendingRestart: pending });
-    database.updateUserSettings({ hcRevokePendingRestart: pending });
-  },
-
-  setLastNotifiedCheckpointIndex: index => {
-    set({ lastNotifiedCheckpointIndex: index });
-    database.updateUserSettings({ lastNotifiedCheckpointIndex: index });
+  setLastJourneyBackupFileName: async fileName => {
+    await database.updateUserSettings({ lastJourneyBackupFileName: fileName });
+    set({ lastJourneyBackupFileName: fileName });
   },
 
   loadSettings: async () => {
-    try {
-      const settings = await database.getUserSettings();
-      set({
-        id: settings.id,
-        labelSize: settings.labelSize,
-        textSize: settings.textSize,
-        currentTheme: settings.currentTheme,
-        showPointLabels: settings.showPointLabels,
-        colorizeMap: settings.colorizeMap,
-        reducedMapTitles: settings.reducedMapTitles,
-        devMode:
-          settings.devMode === undefined || settings.devMode === null
-            ? true
-            : settings.devMode,
-        useMiles: settings.useMiles ?? true,
-        syncEnabled: settings.syncEnabled ?? false,
-        syncProvider: settings.syncProvider ?? 'none',
-        syncStartDate: settings.syncStartDate ?? null,
-        lastSyncTimestamp: settings.lastSyncTimestamp ?? null,
-        liveSyncEnabled: settings.liveSyncEnabled ?? false,
-        trackingMode: settings.trackingMode ?? 'health-app',
-        hasSeenOemBatteryPrompt: settings.hasSeenOemBatteryPrompt ?? false,
-        hcRevokePendingRestart: settings.hcRevokePendingRestart ?? false,
-        lastNotifiedCheckpointIndex: settings.lastNotifiedCheckpointIndex ?? -1,
-        isLoaded: true,
-      });
-    } catch (error) {
-      console.error('Failed to load settings:', error);
-      set({ isLoaded: true }); // Still mark as loaded to unblock app
-    }
+    const settings = await database.getUserSettings();
+    set({
+      id: settings.id,
+      labelSize: settings.labelSize,
+      textSize: settings.textSize,
+      currentTheme: settings.currentTheme,
+      showPointLabels: settings.showPointLabels,
+      colorizeMap: settings.colorizeMap,
+      reducedMapTitles: settings.reducedMapTitles,
+      devMode:
+        settings.devMode === undefined || settings.devMode === null
+          ? true
+          : settings.devMode,
+      useMiles: settings.useMiles ?? true,
+      syncEnabled: settings.syncEnabled ?? false,
+      syncProvider: settings.syncProvider ?? 'none',
+      syncStartDate: settings.syncStartDate ?? null,
+      lastSyncTimestamp: settings.lastSyncTimestamp ?? null,
+      pedometerCursor: settings.pedometerCursor ?? null,
+      healthSyncFormatVersion: settings.healthSyncFormatVersion ?? 0,
+      healthLookbackStartTimestamp:
+        settings.healthLookbackStartTimestamp ?? null,
+      lastHealthReconciledThrough: settings.lastHealthReconciledThrough ?? null,
+      liveSyncEnabled: settings.liveSyncEnabled ?? false,
+      trackingMode: settings.trackingMode ?? 'health-app',
+      hasSeenOemBatteryPrompt: settings.hasSeenOemBatteryPrompt ?? false,
+      hcRevokePendingRestart: settings.hcRevokePendingRestart ?? false,
+      pedometerCleanupPending: settings.pedometerCleanupPending ?? false,
+      lastNotifiedCheckpointIndex: settings.lastNotifiedCheckpointIndex ?? -1,
+      sharingEnabled: settings.sharingEnabled ?? false,
+      sharingDisplayName: settings.sharingDisplayName ?? null,
+      sharingAffinity: settings.sharingAffinity ?? null,
+      sharingProvisioningPending: settings.sharingProvisioningPending ?? false,
+      sharingDeletionPending: settings.sharingDeletionPending ?? false,
+      sharingMigrationSourceUserId:
+        settings.sharingMigrationSourceUserId ?? null,
+      lastPublishedMiles: settings.lastPublishedMiles ?? null,
+      lastSharedProgressSyncAt: settings.lastSharedProgressSyncAt ?? null,
+      lastJourneyBackupFileName: settings.lastJourneyBackupFileName ?? null,
+      isLoaded: true,
+    });
   },
 }));
 

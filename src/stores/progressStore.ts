@@ -11,11 +11,20 @@ import {
 } from '../constants/gameConstants';
 import checkpointsRaw from '../constants/checkpoints.json';
 import triviaRaw from '../constants/trivia.json';
-import { database } from '../services/database';
+import {
+  database,
+  type DistanceEntryChanges,
+  type ProgressMutation,
+} from '../services/database';
 import {
   LONG_SYNC_CHUNK_THRESHOLD,
   LONG_SYNC_TIME_THRESHOLD_MS,
 } from '../constants/sync';
+import {
+  supersededTroubleshootingIssueSlots,
+  troubleshootingIssueSlot,
+  type TroubleshootingIssueSlot,
+} from '../constants/troubleshootingIssues';
 
 // The JSON files are hand-authored PointType-shaped rows. Cast once at
 // import time so the rest of this module can drop the per-call
@@ -24,6 +33,37 @@ const checkpoints = checkpointsRaw as PointType[];
 const trivia = triviaRaw as PointType[];
 
 const SAVE_ID = DEFAULT_SAVE_ID;
+
+export function applyCommittedEntryChanges(
+  entries: DistanceEntry[],
+  changes: DistanceEntryChanges,
+): DistanceEntry[] {
+  const removeIds = new Set(changes.removeIds ?? []);
+  const removeSources = new Set(changes.removeSources ?? []);
+  const byId = new Map(
+    (changes.clearAll ? [] : entries)
+      .filter(
+        entry => !removeIds.has(entry.id) && !removeSources.has(entry.source),
+      )
+      .map(entry => [entry.id, entry]),
+  );
+  for (const entry of changes.upsert ?? []) byId.set(entry.id, entry);
+  return [...byId.values()].sort((left, right) => left.date - right.date);
+}
+
+const publishProgressMutation = (
+  set: (updater: (state: ProgressStore) => Partial<ProgressStore>) => void,
+  progress: ProgressMutation,
+) => {
+  set(state => ({
+    distanceEntries: applyCommittedEntryChanges(
+      state.distanceEntries,
+      progress.changes,
+    ),
+    miles: progress.miles,
+    steps: progress.steps,
+  }));
+};
 
 /**
  * Discriminated error kinds surfaced by the sync pipeline.
@@ -45,8 +85,13 @@ export type SyncError =
        * set for the currently-selected source, so we never nag users
        * about permissions on a source they aren't using.
        */
-      source: 'health-app' | 'pedometer';
+      source: 'health-app' | 'pedometer' | 'both';
       message: string;
+    }
+  | {
+      kind: 'sourceFallback';
+      unavailableSource: 'health-app' | 'pedometer';
+      activeSource: 'health-app' | 'pedometer';
     }
   | {
       kind: 'timeout';
@@ -56,12 +101,38 @@ export type SyncError =
       chunksTotal: number;
     }
   | { kind: 'unavailable'; message: string }
-  // iOS-only: HealthKit permission is granted but the OS won't let us
-  // refresh in the background (Settings → General → Background App Refresh
-  // is off, either globally or for this app). Detection requires a native
-  // bridge to UIApplication.backgroundRefreshStatus — not wired yet, but
-  // the type + banner + dev toggle are in place so the UX is ready.
-  | { kind: 'backgroundDisabled' }
+  | {
+      kind: 'provider';
+      provider: 'health-connect' | 'apple-health';
+      message: string;
+    }
+  | { kind: 'pedometerStorage'; message: string }
+  /**
+   * The step service was down long enough to have cost steps. Nothing was
+   * written natively for that window, so those steps are unrecoverable and the
+   * card offers manual entry.
+   */
+  | {
+      kind: 'pedometerServiceStopped';
+      lastCommitAt: number;
+      staleForMs: number;
+      manufacturer: string;
+    }
+  /**
+   * Not a fault — an informational, one-time confirmation that this
+   * launch successfully ran a protected legacy-schema upgrade (see
+   * database.ts's wasProtectedUpgrade/isLegacyUpgradeMissingSchemaMeta
+   * and initializationStore's wasJustUpgraded). SyncErrorBanner
+   * synthesizes this card locally from initializationStore's
+   * `wasJustUpgraded` flag rather than it ever being added via
+   * `addTroubleshootingIssue`/stored in `troubleshootingIssues` — it is
+   * deliberately NOT persisted to the database, NOT written to
+   * troubleshooting issue history, and cannot be found in Settings'
+   * troubleshooting history screen. It shares the exact same card
+   * component/carousel as real sync errors purely for consistent
+   * shape/behavior (scrolling, dismiss, peek), not because it is one.
+   */
+  | { kind: 'newUpgrade' }
   | { kind: 'unknown'; message: string };
 
 export interface SyncStatus {
@@ -84,6 +155,75 @@ export const initialSyncStatus: SyncStatus = {
   error: null,
 };
 
+export interface TroubleshootingIssue {
+  error: SyncError;
+  /** Wall-clock time the issue was last observed. */
+  at: number;
+  /**
+   * Set when the user swipes the card away. The issue is kept rather than
+   * deleted so an accidental dismissal is recoverable, and so history can
+   * show what the user did about it.
+   */
+  dismissedAt: number | null;
+  /**
+   * Set when something re-checked the condition and found it gone. Only ever
+   * written by a real re-check, never on a timer or at app start, so the app
+   * cannot claim health it has not verified.
+   */
+  resolvedAt: number | null;
+}
+
+/**
+ * Advisory data, so this is deliberately fire-and-forget with centralized
+ * logging rather than an awaited transactional command: a failed write must
+ * not break a sync or block the UI, and the worst case is a lost history row.
+ */
+const persistTroubleshootingIssues = (issues: TroubleshootingIssue[]): void => {
+  database
+    .saveTroubleshootingIssues(
+      issues.map(issue => ({
+        slot: troubleshootingIssueSlot(issue.error),
+        error: issue.error,
+        at: issue.at,
+        dismissedAt: issue.dismissedAt,
+        resolvedAt: issue.resolvedAt,
+      })),
+    )
+    .catch(error => {
+      console.warn('[progress] could not save tracking issue history', error);
+    });
+};
+
+const mergeTroubleshootingIssue = (
+  issues: TroubleshootingIssue[],
+  error: SyncError,
+): TroubleshootingIssue[] => {
+  const replaced = supersededTroubleshootingIssueSlots(error);
+  const slot = troubleshootingIssueSlot(error);
+  const previous = issues.find(
+    issue => troubleshootingIssueSlot(issue.error) === slot,
+  );
+  return [
+    ...issues.filter(
+      issue => !replaced.includes(troubleshootingIssueSlot(issue.error)),
+    ),
+    {
+      error,
+      at: Date.now(),
+      // Dismissal is sticky across re-detections of the SAME fault. Several of
+      // these are the result of a deliberate choice made outside the app --
+      // revoking Health Connect access, for instance -- so re-raising the card
+      // every time we notice again would be nagging the user about a decision
+      // they already made. Keyed on kind rather than slot so a different fault
+      // in the same subsystem is still shown.
+      dismissedAt:
+        previous?.error.kind === error.kind ? previous.dismissedAt : null,
+      // A recurrence proves it is not fixed after all.
+      resolvedAt: null,
+    },
+  ];
+};
+
 interface ProgressStore {
   // State
   miles: number;
@@ -102,11 +242,13 @@ interface ProgressStore {
   distanceEntries: DistanceEntry[];
   lastSyncDate: string | null;
   syncStatus: SyncStatus;
-  // Persists the most recent sync error (until the user dismisses it) so
-  // we can surface it in the Settings → Sync panel after the transient
-  // pill has faded.
-  lastSyncError: SyncError | null;
-  lastSyncErrorAt: number | null;
+  /**
+   * Persisted troubleshooting issues (until dismissed) so they remain discoverable
+   * after the transient pill fades. At most one entry per slot, because
+   * failures cascade within a subsystem but are independent across them --
+   * see `src/constants/troubleshootingIssues.ts`.
+   */
+  troubleshootingIssues: TroubleshootingIssue[];
   // Dev/test override state
   testOverrideMiles: number | null;
 
@@ -114,24 +256,54 @@ interface ProgressStore {
   initFromDatabase: () => Promise<void>;
 
   // Actions (persist to database automatically)
-  setMiles: (miles: number) => void;
-  setSteps: (steps: number) => void;
   setTestMiles: (miles: number) => void;
   clearTestOverride: () => void;
   setTriviaUnlocks: (unlocks: TriviaUnlock[]) => void;
   addTriviaUnlock: (unlock: TriviaUnlock) => void;
   addDistanceEntry: (entry: DistanceEntry) => Promise<void>;
   addDistanceEntries: (entries: DistanceEntry[]) => Promise<void>;
+  applyDistanceEntryChanges: (changes: {
+    upsert?: DistanceEntry[];
+    removeIds?: string[];
+  }) => Promise<void>;
+  applyHealthSyncChunk: (
+    entries: DistanceEntry[],
+    cursor: number,
+    healthSyncFormatVersion: number,
+    healthLookbackStartTimestamp: number | null,
+  ) => Promise<boolean>;
+  applyPedometerSyncChunk: (
+    entries: DistanceEntry[],
+    cursor: number,
+    expectedPedometerCursor?: import('../types').PedometerCursor | null,
+    nextPedometerCursor?: import('../types').PedometerCursor | null,
+  ) => Promise<boolean>;
+  applyHealthReconciliationDay: (
+    changes: { upsert?: DistanceEntry[]; removeIds?: string[] },
+    cursor: number,
+  ) => Promise<boolean>;
   updateDistanceEntry: (entry: DistanceEntry) => Promise<void>;
   removeDistanceEntry: (id: string) => Promise<void>;
   removeDistanceEntriesBySource: (sources: DistanceSource[]) => Promise<void>;
-  setDistanceEntries: (entries: DistanceEntry[]) => void;
   setLastSyncDate: (date: string) => void;
   setSyncStatus: (
     status: SyncStatus | ((prev: SyncStatus) => SyncStatus),
   ) => void;
   resetSyncStatus: () => void;
-  clearLastSyncError: () => void;
+  /** Record an issue, replacing any it supersedes. */
+  addTroubleshootingIssue: (error: SyncError) => void;
+  /** User swiped the card away; kept in history so it can be re-raised. */
+  dismissTroubleshootingIssue: (slot: TroubleshootingIssueSlot) => void;
+  /** Bring a dismissed issue back to the banner, from history. */
+  restoreTroubleshootingIssue: (slot: TroubleshootingIssueSlot) => void;
+  /**
+   * The underlying condition was re-checked and found gone. Only applies to
+   * active issues: a closed one represents a decision the user made, so
+   * relabelling it behind their back would both rewrite that record and take
+   * away its Reopen action. Reopening re-checks explicitly.
+   */
+  resolveTroubleshootingIssue: (slot: TroubleshootingIssueSlot) => void;
+  clearAllTroubleshootingIssues: () => void;
   resetProgress: () => Promise<void>;
   persistMilesSnapshot: () => Promise<void>;
 
@@ -147,6 +319,7 @@ interface ProgressStore {
   isExactlyOnCheckpoint: () => number; // returns exact index or -1
   isLatestCheckpoint: (checkpointIndex: number) => boolean;
   isLockedCheckpoint: (targetMiles: number) => boolean;
+  isNextLockedCheckpoint: (targetMiles: number) => boolean;
   shouldShowCheckpointCelebration: (checkpointIndex: number) => boolean;
   // New selectors
   getCurrentCheckpoint: () => PointType | null;
@@ -173,47 +346,29 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   distanceEntries: [],
   lastSyncDate: null,
   syncStatus: initialSyncStatus,
-  lastSyncError: null,
-  lastSyncErrorAt: null,
+  troubleshootingIssues: [],
   testOverrideMiles: null,
 
   // Initialize from database on app start
   initFromDatabase: async () => {
-    try {
-      const snapshot = await database.getProgressSnapshot(SAVE_ID);
-      const entries = await database.getDistanceEntries(SAVE_ID);
+    const progress = await database.hydrateProgress(SAVE_ID);
+    set({
+      miles: progress.miles,
+      steps: progress.steps,
+      distanceEntries: progress.entries,
+    });
 
-      if (snapshot !== null) {
-        set({
-          miles: snapshot.miles,
-          steps: snapshot.steps,
-          distanceEntries: entries,
-        });
-      } else {
-        // No snapshot, calculate from entries
-        const totalMiles = (entries || []).reduce(
-          (sum, e) => sum + (e?.miles ?? 0),
-          0,
-        );
-        const totalSteps = (entries || []).reduce(
-          (sum, e) => sum + (e?.steps ?? 0),
-          0,
-        );
-        set({
-          miles: totalMiles,
-          steps: totalSteps,
-          distanceEntries: entries,
-        });
-        await database.setProgressSnapshot(SAVE_ID, totalMiles, totalSteps);
-      }
+    // Advisory data, so a failure here must not block hydration of the
+    // journey itself.
+    try {
+      const stored = await database.loadTroubleshootingIssues();
+      set({ troubleshootingIssues: stored as TroubleshootingIssue[] });
     } catch (error) {
-      console.error('Failed to init progress from database:', error);
+      console.warn('[progress] could not load tracking issue history', error);
     }
   },
 
   // Actions
-  setMiles: miles => set({ miles }),
-  setSteps: steps => set({ steps: Math.max(0, Math.round(steps)) }),
   setTestMiles: miles => set({ testOverrideMiles: miles }),
   clearTestOverride: () => set({ testOverrideMiles: null }),
 
@@ -225,32 +380,10 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     })),
 
   addDistanceEntry: async entry => {
-    const state = get();
-    // Check for duplicate
-    if (state.distanceEntries.some(e => e.id === entry.id)) {
-      return; // Already exists
-    }
-
-    // Update store with new entry AND increment miles/steps snapshot
-    set({
-      distanceEntries: [entry, ...state.distanceEntries],
-      miles: state.miles + entry.miles,
-      steps: state.steps + (entry.steps ?? 0),
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      upsert: [entry],
     });
-
-    // Persist to database
-    try {
-      await database.addDistanceEntry({
-        id: entry.id,
-        saveId: entry.saveId || SAVE_ID,
-        date: entry.date as number,
-        miles: entry.miles,
-        steps: entry.steps,
-        source: entry.source,
-      });
-    } catch (error) {
-      console.error('Failed to persist distance entry:', error);
-    }
+    publishProgressMutation(set, progress);
   },
 
   /**
@@ -260,86 +393,73 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
    */
   addDistanceEntries: async entries => {
     if (entries.length === 0) return;
-    const state = get();
-    const existingIds = new Set(state.distanceEntries.map(e => e.id));
-    const fresh = entries.filter(e => !existingIds.has(e.id));
-    if (fresh.length === 0) return;
-
-    const addedMiles = fresh.reduce((sum, e) => sum + e.miles, 0);
-    const addedSteps = fresh.reduce((sum, e) => sum + (e.steps ?? 0), 0);
-    set({
-      distanceEntries: [...fresh, ...state.distanceEntries],
-      miles: state.miles + addedMiles,
-      steps: state.steps + addedSteps,
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      upsert: entries,
     });
+    publishProgressMutation(set, progress);
+  },
 
-    try {
-      await database.addDistanceEntriesBulk(
-        fresh.map(e => ({
-          id: e.id,
-          saveId: e.saveId || SAVE_ID,
-          date: e.date as number,
-          miles: e.miles,
-          steps: e.steps,
-          source: e.source,
-        })),
-      );
-    } catch (error) {
-      console.error('Failed to persist distance entries (bulk):', error);
-    }
+  applyDistanceEntryChanges: async changes => {
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, changes);
+    publishProgressMutation(set, progress);
+  },
+
+  applyHealthSyncChunk: async (
+    entries,
+    cursor,
+    healthSyncFormatVersion,
+    healthLookbackStartTimestamp,
+  ) => {
+    const progress = await database.applyHealthSyncChunk(
+      SAVE_ID,
+      entries,
+      cursor,
+      healthSyncFormatVersion,
+      healthLookbackStartTimestamp,
+    );
+    if (progress.applied) publishProgressMutation(set, progress);
+    return progress.applied;
+  },
+
+  applyPedometerSyncChunk: async (
+    entries,
+    cursor,
+    expectedPedometerCursor,
+    nextPedometerCursor,
+  ) => {
+    const progress = await database.applyPedometerSyncChunk(
+      SAVE_ID,
+      entries,
+      cursor,
+      expectedPedometerCursor,
+      nextPedometerCursor,
+    );
+    if (progress.applied) publishProgressMutation(set, progress);
+    return progress.applied;
+  },
+
+  applyHealthReconciliationDay: async (changes, cursor) => {
+    const progress = await database.applyHealthReconciliationDay(
+      SAVE_ID,
+      changes,
+      cursor,
+    );
+    if (progress.applied) publishProgressMutation(set, progress);
+    return progress.applied;
   },
 
   updateDistanceEntry: async entry => {
-    const state = get();
-    const oldEntry = state.distanceEntries.find(e => e.id === entry.id);
-    const milesDelta = oldEntry ? entry.miles - oldEntry.miles : 0;
-    const stepsDelta = oldEntry
-      ? (entry.steps ?? 0) - (oldEntry.steps ?? 0)
-      : 0;
-
-    // Update store with entry change AND adjust miles/steps snapshot
-    set({
-      distanceEntries: state.distanceEntries.map(e =>
-        e.id === entry.id ? entry : e,
-      ),
-      miles: state.miles + milesDelta,
-      steps: Math.max(0, state.steps + stepsDelta),
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      upsert: [entry],
     });
-
-    // Persist to database
-    try {
-      await database.addDistanceEntry({
-        id: entry.id,
-        saveId: entry.saveId || SAVE_ID,
-        date: entry.date as number,
-        miles: entry.miles,
-        steps: entry.steps,
-        source: entry.source,
-      });
-    } catch (error) {
-      console.error('Failed to update distance entry:', error);
-    }
+    publishProgressMutation(set, progress);
   },
 
   removeDistanceEntry: async id => {
-    const state = get();
-    const entryToRemove = state.distanceEntries.find(e => e.id === id);
-    const milesToRemove = entryToRemove?.miles ?? 0;
-    const stepsToRemove = entryToRemove?.steps ?? 0;
-
-    // Update store with entry removed AND decrement miles/steps snapshot
-    set({
-      distanceEntries: state.distanceEntries.filter(d => d.id !== id),
-      miles: Math.max(0, state.miles - milesToRemove),
-      steps: Math.max(0, state.steps - stepsToRemove),
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      removeIds: [id],
     });
-
-    // Persist to database
-    try {
-      await database.removeDistanceEntry(id);
-    } catch (error) {
-      console.error('Failed to remove distance entry:', error);
-    }
+    publishProgressMutation(set, progress);
   },
 
   /**
@@ -350,30 +470,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
    */
   removeDistanceEntriesBySource: async sources => {
     if (sources.length === 0) return;
-    const sourceSet = new Set<DistanceSource>(sources);
-    const state = get();
-    const toRemove = state.distanceEntries.filter(e => sourceSet.has(e.source));
-    if (toRemove.length === 0) return;
-
-    const remaining = state.distanceEntries.filter(
-      e => !sourceSet.has(e.source),
-    );
-    const milesToRemove = toRemove.reduce((sum, e) => sum + (e?.miles ?? 0), 0);
-    const stepsToRemove = toRemove.reduce((sum, e) => sum + (e?.steps ?? 0), 0);
-    const newMiles = Math.max(0, state.miles - milesToRemove);
-    const newSteps = Math.max(0, state.steps - stepsToRemove);
-
-    set({ distanceEntries: remaining, miles: newMiles, steps: newSteps });
-
-    try {
-      await database.clearDistanceEntriesBySource(SAVE_ID, sources);
-      await database.setProgressSnapshot(SAVE_ID, newMiles, newSteps);
-    } catch (error) {
-      console.error('Failed to bulk-remove distance entries:', error);
-    }
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      removeSources: sources,
+    });
+    publishProgressMutation(set, progress);
   },
-
-  setDistanceEntries: entries => set({ distanceEntries: entries }),
 
   setLastSyncDate: date => set({ lastSyncDate: date }),
 
@@ -390,70 +491,121 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
         next.error &&
         next.error.kind !== 'unknown'
       ) {
-        return {
-          syncStatus: next,
-          lastSyncError: next.error,
-          lastSyncErrorAt: Date.now(),
-        };
+        const troubleshootingIssues = mergeTroubleshootingIssue(
+          state.troubleshootingIssues,
+          next.error,
+        );
+        persistTroubleshootingIssues(troubleshootingIssues);
+        return { syncStatus: next, troubleshootingIssues };
       }
       // Clear on success: phase=='idle' is only set by the success branch
       // in useSyncInterval (initial state and resetSyncStatus take other
       // code paths). Clearing here avoids the badge flicker that would
       // happen if we cleared on 'syncing' and the retry itself failed.
-      if (next.phase === 'idle' && state.lastSyncError !== null) {
-        return {
-          syncStatus: next,
-          lastSyncError: null,
-          lastSyncErrorAt: null,
-        };
+      // Scoped to health-app: a successful health sync says nothing about
+      // whether the pedometer is still broken.
+      if (next.phase === 'idle' && state.troubleshootingIssues.length > 0) {
+        const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
+          troubleshootingIssueSlot(issue.error) === 'health-app' &&
+          issue.resolvedAt === null &&
+          issue.dismissedAt === null
+            ? { ...issue, resolvedAt: Date.now() }
+            : issue,
+        );
+        persistTroubleshootingIssues(troubleshootingIssues);
+        return { syncStatus: next, troubleshootingIssues };
       }
       return { syncStatus: next };
     }),
 
   resetSyncStatus: () => set({ syncStatus: initialSyncStatus }),
 
-  clearLastSyncError: () =>
-    set(state => ({
-      lastSyncError: null,
-      lastSyncErrorAt: null,
-      // Also reset syncStatus if it's still stuck in the error phase, so
-      // anything reading syncStatus.phase (e.g. dev tools, indicators)
-      // doesn't show the error as still active after the user dismissed it.
-      syncStatus:
-        state.syncStatus.phase === 'error'
-          ? initialSyncStatus
-          : state.syncStatus,
-    })),
+  addTroubleshootingIssue: error =>
+    set(state => {
+      const troubleshootingIssues = mergeTroubleshootingIssue(
+        state.troubleshootingIssues,
+        error,
+      );
+      persistTroubleshootingIssues(troubleshootingIssues);
+      return { troubleshootingIssues };
+    }),
+
+  dismissTroubleshootingIssue: slot =>
+    set(state => {
+      const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
+        troubleshootingIssueSlot(issue.error) === slot &&
+        issue.dismissedAt === null
+          ? { ...issue, dismissedAt: Date.now() }
+          : issue,
+      );
+      persistTroubleshootingIssues(troubleshootingIssues);
+      return { troubleshootingIssues };
+    }),
+
+  restoreTroubleshootingIssue: slot =>
+    set(state => {
+      const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
+        troubleshootingIssueSlot(issue.error) === slot
+          ? { ...issue, dismissedAt: null }
+          : issue,
+      );
+      persistTroubleshootingIssues(troubleshootingIssues);
+      return { troubleshootingIssues };
+    }),
+
+  resolveTroubleshootingIssue: slot =>
+    set(state => {
+      const troubleshootingIssues = state.troubleshootingIssues.map(issue =>
+        troubleshootingIssueSlot(issue.error) === slot &&
+        issue.resolvedAt === null &&
+        issue.dismissedAt === null
+          ? { ...issue, resolvedAt: Date.now() }
+          : issue,
+      );
+      persistTroubleshootingIssues(troubleshootingIssues);
+      return { troubleshootingIssues };
+    }),
+
+  clearAllTroubleshootingIssues: () =>
+    set(state => {
+      persistTroubleshootingIssues([]);
+      return {
+        troubleshootingIssues: [],
+        // Also reset syncStatus if it's still stuck in the error phase, so
+        // anything reading syncStatus.phase (e.g. dev tools, indicators)
+        // doesn't show the error as still active after the user dismissed it.
+        syncStatus:
+          state.syncStatus.phase === 'error'
+            ? initialSyncStatus
+            : state.syncStatus,
+      };
+    }),
 
   persistMilesSnapshot: async () => {
-    const { miles, steps } = get();
-    try {
-      await database.setProgressSnapshot(SAVE_ID, miles, steps);
-    } catch (error) {
-      console.error('Failed to persist progress snapshot:', error);
-    }
+    const progress = await database.reconcileProgress(SAVE_ID);
+    set({
+      miles: progress.miles,
+      steps: progress.steps,
+    });
   },
 
   resetProgress: async () => {
-    set({
-      miles: 0,
-      steps: 0,
+    const progress = await database.applyDistanceEntryChanges(SAVE_ID, {
+      clearAll: true,
+    });
+    set(state => ({
+      miles: progress.miles,
+      steps: progress.steps,
       triviaUnlocks: [],
-      distanceEntries: [],
+      distanceEntries: applyCommittedEntryChanges(
+        state.distanceEntries,
+        progress.changes,
+      ),
       lastSyncDate: null,
       syncStatus: initialSyncStatus,
-      lastSyncError: null,
-      lastSyncErrorAt: null,
+      troubleshootingIssues: [],
       testOverrideMiles: null,
-    });
-
-    // Clear database
-    try {
-      await database.clearDistanceEntries(SAVE_ID);
-      await database.setProgressSnapshot(SAVE_ID, 0, 0);
-    } catch (error) {
-      console.error('Failed to reset database:', error);
-    }
+    }));
   },
 
   // Selectors / derived values
@@ -467,21 +619,11 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
     return Math.round((progressMiles / TOTAL_JOURNEY_MILES) * 100);
   },
 
-  // Sum helpers. Callers used to reduce `distanceEntries` inline in two
-  // hot paths (health-app chunk commit, pedometer commit) — centralised
-  // here so the summation formula only lives in one place.
-  getTotalMiles: () => {
-    const entries = get().distanceEntries;
-    let sum = 0;
-    for (const e of entries) sum += e?.miles ?? 0;
-    return sum;
-  },
-  getTotalSteps: () => {
-    const entries = get().distanceEntries;
-    let sum = 0;
-    for (const e of entries) sum += e?.steps ?? 0;
-    return sum;
-  },
+  // These return the committed snapshot totals. The snapshot is a cache of
+  // the authoritative distance-entry sums and is updated in the same
+  // transaction as every entry mutation.
+  getTotalMiles: () => get().miles,
+  getTotalSteps: () => get().steps,
 
   // Removed unused selectors: getCheckpointIndexForCumulativeMiles, getIndexForPoint
 
@@ -531,6 +673,23 @@ export const useProgressStore = create<ProgressStore>((set, get) => ({
   isLockedCheckpoint: targetMiles => {
     const miles = get().getDisplayMiles();
     return miles < (targetMiles ?? 0);
+  },
+
+  // Whether this is the single *immediate* next locked checkpoint — the
+  // closest one still ahead — as opposed to any other locked checkpoint
+  // further down the road. Used to give just that one checkpoint a distinct
+  // highlight (map dot color, info-modal accent) instead of the generic
+  // locked treatment every other future checkpoint gets. `checkpoints` is
+  // ascending by CUMULATIVE_MILES, so the first one still ahead of the
+  // traveler is unambiguous.
+  isNextLockedCheckpoint: targetMiles => {
+    const miles = get().getDisplayMiles();
+    const nextIdx = checkpoints.findIndex(
+      cp => (cp?.CUMULATIVE_MILES ?? 0) > miles,
+    );
+    return (
+      nextIdx >= 0 && checkpoints[nextIdx]?.CUMULATIVE_MILES === targetMiles
+    );
   },
 
   // New selectors

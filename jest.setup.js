@@ -26,7 +26,10 @@ jest.mock('react-native-reanimated', () => ({
   __esModule: true,
   default: mockReanimated,
   ...mockReanimated,
-  useSharedValue: jest.fn(() => ({ value: 0 })),
+  useSharedValue: jest.fn(initialValue => {
+    const ReactModule = require('react');
+    return ReactModule.useRef({ value: initialValue }).current;
+  }),
   useAnimatedStyle: jest.fn(() => ({})),
   useDerivedValue: jest.fn(() => ({ value: 0 })),
   useAnimatedProps: jest.fn(() => ({})),
@@ -49,6 +52,12 @@ jest.mock('react-native-reanimated', () => ({
     CLAMP: 'clamp',
   },
   interpolate: jest.fn(),
+  interpolateColor: jest.fn(() => 'rgba(255,255,255,1)'),
+  useAnimatedReaction: jest.fn(),
+  useAnimatedScrollHandler: jest.fn(() => ({})),
+  // Required by react-native-gesture-handler's reanimated wrapper.
+  useEvent: jest.fn(() => ({})),
+  useHandler: jest.fn(() => ({ context: {}, doDependenciesDiffer: false })),
   runOnJS: jest.fn(fn => fn),
   runOnUI: jest.fn(fn => fn),
 }));
@@ -56,21 +65,85 @@ jest.mock('react-native-reanimated', () => ({
 // Mock op-sqlite
 jest.mock('@op-engineering/op-sqlite', () => ({
   open: jest.fn(() => ({
+    executeSync: jest.fn(() => ({ rows: [] })),
     executeAsync: jest.fn(() => Promise.resolve({ rows: [] })),
     close: jest.fn(),
   })),
 }));
+
+jest.mock('@react-native-firebase/auth', () => ({
+  getAuth: jest.fn(() => ({ currentUser: null })),
+  signInAnonymously: jest.fn(),
+  signOut: jest.fn(),
+}));
+
+jest.mock('@react-native-firebase/app', () => ({
+  getApp: jest.fn(() => ({})),
+}));
+
+jest.mock('@react-native-firebase/app-check', () => ({
+  initializeAppCheck: jest.fn(),
+  ReactNativeFirebaseAppCheckProvider: jest.fn(() => ({
+    configure: jest.fn(),
+  })),
+}));
+
+jest.mock('@react-native-firebase/firestore', () => ({
+  collection: jest.fn(),
+  deleteDoc: jest.fn(),
+  doc: jest.fn(),
+  documentId: jest.fn(),
+  getDocs: jest.fn(),
+  getFirestore: jest.fn(),
+  limit: jest.fn(),
+  orderBy: jest.fn(),
+  query: jest.fn(),
+  serverTimestamp: jest.fn(),
+  setDoc: jest.fn(),
+  startAfter: jest.fn(),
+  updateDoc: jest.fn(),
+  where: jest.fn(),
+}));
+
+jest.mock('react-native-safe-area-context', () => {
+  const ReactModule = require('react');
+  const { View } = require('react-native');
+  const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  const frame = { x: 0, y: 0, width: 390, height: 844 };
+
+  return {
+    SafeAreaProvider: ({ children }) =>
+      ReactModule.createElement(View, null, children),
+    SafeAreaView: ({ children, ...props }) =>
+      ReactModule.createElement(View, props, children),
+    SafeAreaInsetsContext: ReactModule.createContext(insets),
+    useSafeAreaInsets: () => insets,
+    useSafeAreaFrame: () => frame,
+    initialWindowMetrics: { insets, frame },
+  };
+});
 
 // Mock Skia
 jest.mock('@shopify/react-native-skia', () => ({
   Canvas: 'Canvas',
   Path: 'Path',
   Group: 'Group',
+  LinearGradient: 'LinearGradient',
+  Fill: 'Fill',
+  vec: jest.fn((x, y) => ({ x, y })),
   Skia: {
     Path: {
       MakeFromSVGString: jest.fn(() => ({})),
     },
+    ContourMeasureIter: jest.fn(() => ({
+      next: jest.fn(() => null),
+    })),
   },
   useFont: jest.fn(),
   useDerivedValue: jest.fn(() => ({ value: 0 })),
+  useCanvasRef: jest.fn(() => ({
+    current: {
+      makeImageSnapshotAsync: jest.fn(() => Promise.resolve({})),
+    },
+  })),
 }));

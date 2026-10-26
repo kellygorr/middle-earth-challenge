@@ -25,10 +25,42 @@ export interface Theme {
     // UI colors
     background: string;
     surface: string;
+    // Always white, regardless of theme — some cards (e.g. the sync-error
+    // banner) need a fixed white background rather than each theme's
+    // tinted `surface` (classic's parchment tan, etc.), since their
+    // content/color coding (warning accents, button colors) is designed
+    // against white specifically.
+    errorCardBackground: string;
+    // Left-border accent color for the sync-error card. Modern/minimalist
+    // themes use the same vibrant yellow as uiWarning; classic uses the
+    // same muted tan tone as its "No active issues" neutral badge's text
+    // color, to stay in its parchment palette rather than clash with a
+    // bright yellow accent against the warm background.
+    errorCardAccent: string;
     primary: string;
     secondary: string;
     accent: string;
+    uiStepIncrease: string;
+    uiWarning: string;
+    uiBadgeInProgress: string;
+    uiBadgeSuccessBackground: string;
+    uiBadgeSuccessBorder: string;
+    uiBadgeSuccessText: string;
+    uiBadgeNeutralBackground: string;
+    uiBadgeNeutralText: string;
+    progressBarActive: string;
     divider: string;
+
+    // Icon colors
+    iconPrimary: string;
+    iconInverted: string;
+
+    // Splash colors
+    splashBackground: string;
+    splashErrorBackground: string;
+    splashText: string;
+    splashTextSecondary: string;
+    splashBorder: string;
 
     // Text colors
     textPrimary: string;
@@ -64,7 +96,11 @@ export interface Theme {
     buttonPressedInverted: string;
     // Success state
     successBg: string;
+    successBorder: string;
     successText: string;
+    // Empty state
+    emptyStateBg: string;
+    emptyStateText: string;
 
     // SVG layer colors (for colorized map mode)
     svgLegend: string;
@@ -124,10 +160,32 @@ export const classicTheme: Theme = {
     // UI colors
     background: '#F5EFE0',
     surface: '#EDE4D3',
+    errorCardBackground: '#FFFFFF',
+    errorCardAccent: '#A0826D',
     primary: '#6a4c34ff',
     secondary: '#A0826D',
     accent: '#6a4c34ff',
+    uiStepIncrease: '#e9df7f',
+    uiWarning: '#F4B400',
+    uiBadgeInProgress: '#F5A623',
+    uiBadgeSuccessBackground: '#E8EEE9',
+    uiBadgeSuccessBorder: '#9FADA3',
+    uiBadgeSuccessText: '#3F5947',
+    uiBadgeNeutralBackground: '#F5EFE0',
+    uiBadgeNeutralText: '#A0826D',
+    progressBarActive: '#3f321fff',
     divider: 'rgba(0, 0, 0, 0.12)',
+
+    // Icon colors
+    iconPrimary: '#3f321fff',
+    iconInverted: '#FFFFFF',
+
+    // Splash colors
+    splashBackground: '#000000',
+    splashErrorBackground: '#101010',
+    splashText: '#FFFFFF',
+    splashTextSecondary: '#D0D0D0',
+    splashBorder: '#FFFFFF',
 
     // Text colors
     textPrimary: '#3f321fff',
@@ -162,8 +220,12 @@ export const classicTheme: Theme = {
     buttonPressed: 'rgba(107, 89, 67, 1)',
     buttonPressedInverted: '#EBE3D2',
     // Success state
-    successBg: '#F5EFE0',
-    successText: '#A0826D',
+    successBg: '#E8EEE9',
+    successBorder: '#9FADA3',
+    successText: '#3F5947',
+    // Empty state
+    emptyStateBg: '#F5EFE0',
+    emptyStateText: '#A0826D',
 
     // SVG layer colors
     ...svgLayerColors,
@@ -203,10 +265,32 @@ export const minimalistTheme: Theme = {
     // UI colors
     background: '#FAFAFA',
     surface: '#FFFFFF',
+    errorCardBackground: '#FFFFFF',
+    errorCardAccent: '#F4B400',
     primary: '#D4AF37',
     secondary: '#546E7A',
     accent: '#2C3E50',
+    uiStepIncrease: '#e9df7f',
+    uiWarning: '#F4B400',
+    uiBadgeInProgress: '#F5A623',
+    uiBadgeSuccessBackground: '#E8EEE9',
+    uiBadgeSuccessBorder: '#9FADA3',
+    uiBadgeSuccessText: '#3F5947',
+    uiBadgeNeutralBackground: '#E0E0E0',
+    uiBadgeNeutralText: '#757575',
+    progressBarActive: '#D4AF37',
     divider: 'rgba(0, 0, 0, 0.12)',
+
+    // Icon colors
+    iconPrimary: '#212121',
+    iconInverted: '#FFFFFF',
+
+    // Splash colors
+    splashBackground: '#000000',
+    splashErrorBackground: '#101010',
+    splashText: '#FFFFFF',
+    splashTextSecondary: '#D0D0D0',
+    splashBorder: '#FFFFFF',
 
     // Text colors
     textPrimary: '#212121',
@@ -241,8 +325,12 @@ export const minimalistTheme: Theme = {
     buttonPressed: '#757575',
     buttonPressedInverted: '#EDEDED',
     // Success state
-    successBg: '#E0E0E0',
-    successText: '#757575',
+    successBg: '#E8EEE9',
+    successBorder: '#9FADA3',
+    successText: '#3F5947',
+    // Empty state
+    emptyStateBg: '#E0E0E0',
+    emptyStateText: '#757575',
 
     // SVG layer colors
     ...svgLayerColors,

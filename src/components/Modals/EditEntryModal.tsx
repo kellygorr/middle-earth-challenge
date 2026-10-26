@@ -12,8 +12,8 @@
  *   [🗑]                                 [ Save ]
  *
  * All edit state (input text, chosen date, source entry) lives in
- * `useUIStore` so both this modal and the list stay in sync. The mode
- * toggle (miles/km vs steps) is local — nothing commits until Save.
+ * `useUIStore` so both this modal and the list stay in sync. Saving or
+ * deleting writes straight to the database.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -31,17 +31,26 @@ import {
 } from 'react-native';
 import { useTheme, useSettingsStore } from '../../stores/settingsStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useProgressStore } from '../../stores/progressStore';
 import { typographyThemed } from '../../styles/typography';
 import { spacing, borderRadius, shadows } from '../../styles/global';
 import Button, { IconButton } from '../Buttons';
 import DateStepper from './DateStepper';
-import TimeInput from './TimeInput';
+import TimeInput, { type TimeInputHandle } from './TimeInput';
 import { CloseIcon, ResetIcon, TrashIcon } from '../../assets/icons';
 import { DistanceEntry } from '../../types';
 import { milesToSteps, stepsToMiles } from '../../utils/stride';
 import { kmToMiles, milesToKm } from '../../utils/date';
+import {
+  MANUAL_ENTRY_DELETE_ERROR,
+  MANUAL_ENTRY_SAVE_ERROR,
+  validateManualEntryInput,
+} from '../../utils/manualEntryValidation';
+import ManualEntryModeSelector, {
+  type ManualEntryMode,
+} from './ManualEntryModeSelector';
 
-type EditMode = 'distance' | 'steps';
+type EditMode = ManualEntryMode;
 
 /**
  * Convert a stored miles value into the string shown in the edit input,
@@ -62,18 +71,25 @@ export default function EditEntryModal() {
   const editingEntry = useUIStore(state => state.editingEntry);
   const editDate = useUIStore(state => state.editDate);
   const setEditingEntry = useUIStore(state => state.setEditingEntry);
-  const updatePendingEntry = useUIStore(state => state.updatePendingEntry);
-  const removePendingEntry = useUIStore(state => state.removePendingEntry);
-  const markForDeletion = useUIStore(state => state.markForDeletion);
-  const addPendingEntry = useUIStore(state => state.addPendingEntry);
+  const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
+  const removeDistanceEntry = useProgressStore(
+    state => state.removeDistanceEntry,
+  );
+  const clearTestOverride = useProgressStore(state => state.clearTestOverride);
 
   const [editMode, setEditMode] = useState<EditMode>('distance');
   const [editInput, setEditInput] = useState('');
+  const [inputError, setInputError] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
+  const timeInputRef = useRef<TimeInputHandle>(null);
+  const selectionFrameRef = useRef<number | null>(null);
+  // Save and delete stay tappable until the store-driven close renders.
+  const actionLockRef = useRef(false);
 
   // Reset local state whenever a new entry is opened for edit.
   useEffect(() => {
     if (editingEntry) {
+      actionLockRef.current = false;
       // Step-based sources open in steps mode so small increments like
       // 15 ft aren't rounded to 0 in the distance field. This covers
       // native pedometer / platform health data plus manual entries the
@@ -90,15 +106,27 @@ export default function EditEntryModal() {
         setEditMode('distance');
         setEditInput(formatDistanceInput(editingEntry.miles, useMiles));
       }
+      setInputError(null);
     } else {
       setEditInput('');
+      setInputError(null);
     }
   }, [editingEntry, useMiles]);
+
+  useEffect(
+    () => () => {
+      if (selectionFrameRef.current !== null) {
+        cancelAnimationFrame(selectionFrameRef.current);
+      }
+    },
+    [],
+  );
 
   const closeModal = () => {
     Keyboard.dismiss();
     setEditingEntry(null);
     setEditInput('');
+    setInputError(null);
   };
 
   const handleDateChange = (newDate: number) => {
@@ -116,6 +144,7 @@ export default function EditEntryModal() {
     } else {
       setEditInput(formatDistanceInput(editingEntry.miles, useMiles));
     }
+    setInputError(null);
     setEditMode(mode);
   };
 
@@ -128,19 +157,52 @@ export default function EditEntryModal() {
     } else {
       setEditInput(formatDistanceInput(editingEntry.miles, useMiles));
     }
+    setInputError(null);
     setEditingEntry(editingEntry, editingEntry.date as number);
   };
 
-  const handleSave = () => {
+  const selectEditInput = () => {
+    if (selectionFrameRef.current !== null) {
+      cancelAnimationFrame(selectionFrameRef.current);
+    }
+    selectionFrameRef.current = requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (typeof input?.setSelection === 'function') {
+        input.setSelection(0, editInput.length);
+      } else {
+        input?.setNativeProps({
+          selection: { start: 0, end: editInput.length },
+        });
+      }
+      selectionFrameRef.current = null;
+    });
+  };
+
+  const cancelPendingSelection = () => {
+    if (selectionFrameRef.current !== null) {
+      cancelAnimationFrame(selectionFrameRef.current);
+      selectionFrameRef.current = null;
+    }
+  };
+
+  const handleSave = async () => {
     if (!editingEntry || editDate === null) return;
-    const inputValue = parseFloat(editInput);
-    if (isNaN(inputValue) || inputValue <= 0) return;
+    const committedDate = timeInputRef.current?.commit() ?? editDate;
+    const validation = validateManualEntryInput(
+      editInput,
+      editMode === 'steps',
+    );
+    if (validation.value === null) {
+      setInputError(validation.error);
+      return;
+    }
+    const inputValue = validation.value;
+    setInputError(null);
 
     let newMiles: number;
     let newSteps: number;
     if (editMode === 'steps') {
-      newSteps = Math.floor(inputValue);
-      if (newSteps <= 0) return;
+      newSteps = inputValue;
       newMiles = stepsToMiles(newSteps);
     } else {
       // Input is in the user's preferred unit; internal model is miles.
@@ -148,40 +210,44 @@ export default function EditEntryModal() {
       newSteps = milesToSteps(newMiles);
     }
 
-    if (String(editingEntry.id).startsWith('pending_')) {
-      updatePendingEntry(editingEntry.id, {
-        miles: newMiles,
-        steps: newSteps,
-        date: editDate,
-      });
-    } else {
-      // Existing entries can't be mutated in place — mark the original
-      // for deletion and add a pending replacement carrying the same
-      // id (and original source) so downstream consumers see it as an
-      // update.
-      markForDeletion(editingEntry);
-      const updatedEntry: DistanceEntry = {
-        id: editingEntry.id,
-        saveId: editingEntry.saveId,
-        date: editDate,
-        miles: newMiles,
-        steps: newSteps,
-        source: editingEntry.source || 'manual',
-      };
-      addPendingEntry(updatedEntry);
-    }
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
 
-    closeModal();
+    // Same id, so the write is an upsert that replaces the row in place.
+    const updatedEntry: DistanceEntry = {
+      id: editingEntry.id,
+      saveId: editingEntry.saveId,
+      date: committedDate,
+      miles: newMiles,
+      steps: newSteps,
+      source: editingEntry.source || 'manual',
+    };
+
+    try {
+      await addDistanceEntry(updatedEntry);
+      clearTestOverride();
+      closeModal();
+    } catch {
+      setInputError(MANUAL_ENTRY_SAVE_ERROR);
+    } finally {
+      actionLockRef.current = false;
+    }
   };
 
-  const performDelete = () => {
+  const performDelete = async () => {
     if (!editingEntry) return;
-    if (String(editingEntry.id).startsWith('pending_')) {
-      removePendingEntry(editingEntry.id);
-    } else {
-      markForDeletion(editingEntry);
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
+
+    try {
+      await removeDistanceEntry(editingEntry.id);
+      clearTestOverride();
+      closeModal();
+    } catch {
+      setInputError(MANUAL_ENTRY_DELETE_ERROR);
+    } finally {
+      actionLockRef.current = false;
     }
-    closeModal();
   };
 
   const confirmDelete = () => {
@@ -199,37 +265,6 @@ export default function EditEntryModal() {
   const visible = editingEntry !== null;
   const unitLabel = editMode === 'steps' ? 'steps' : useMiles ? 'miles' : 'km';
   const distanceLabel = useMiles ? 'Miles' : 'Km';
-
-  const renderSegment = (label: string, mode: EditMode) => {
-    const active = editMode === mode;
-    return (
-      <Pressable
-        key={mode}
-        onPress={() => switchMode(mode)}
-        style={[
-          styles.segment,
-          active && {
-            backgroundColor: theme.colors.buttonBrandBackground,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            typographyThemed(theme).captionPrimary,
-            styles.segmentText,
-            active ? styles.segmentTextActive : styles.segmentTextInactive,
-            {
-              color: active
-                ? theme.colors.buttonBrandText
-                : theme.colors.textSecondary,
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </Pressable>
-    );
-  };
 
   return (
     <Modal
@@ -252,7 +287,7 @@ export default function EditEntryModal() {
         >
           {/* Stop propagation: taps on the card should not dismiss. */}
           <Pressable
-            onPress={() => {}}
+            onPress={event => event.stopPropagation()}
             style={[
               styles.card,
               {
@@ -272,6 +307,7 @@ export default function EditEntryModal() {
                   <TrashIcon size={22} color={theme.colors.textPrimary} />
                 }
                 onPress={confirmDelete}
+                accessibilityLabel="Delete entry"
                 variant="transparent"
                 size="small"
                 hitSlop={12}
@@ -292,6 +328,7 @@ export default function EditEntryModal() {
                   <CloseIcon size={20} color={theme.colors.textPrimary} />
                 }
                 onPress={closeModal}
+                accessibilityLabel="Close editor"
                 variant="transparent"
                 size="small"
                 hitSlop={12}
@@ -305,6 +342,7 @@ export default function EditEntryModal() {
                 onDateChange={handleDateChange}
               />
               <TimeInput
+                ref={timeInputRef}
                 date={editDate ?? editingEntry?.date ?? Date.now()}
                 onDateChange={handleDateChange}
               />
@@ -323,33 +361,47 @@ export default function EditEntryModal() {
                   },
                 ]}
                 value={editInput}
-                onChangeText={setEditInput}
+                onChangeText={value => {
+                  setEditInput(value);
+                  setInputError(null);
+                }}
+                onFocus={selectEditInput}
+                onBlur={cancelPendingSelection}
                 keyboardType={
                   editMode === 'steps' ? 'number-pad' : 'decimal-pad'
                 }
-                selectTextOnFocus
                 disableFullscreenUI={true}
                 placeholderTextColor={theme.colors.textSecondary}
+                accessibilityLabel={
+                  editMode === 'steps' ? 'Steps' : `Distance in ${unitLabel}`
+                }
               />
               <Text style={typographyThemed(theme).bodyPrimary}>
                 {unitLabel}
               </Text>
             </View>
 
+            <Text
+              testID="edit-entry-validation"
+              nativeID="edit-entry-validation"
+              accessibilityLiveRegion="polite"
+              accessibilityRole={inputError ? 'alert' : undefined}
+              numberOfLines={1}
+              style={[
+                typographyThemed(theme).caption2Secondary,
+                styles.validationSlot,
+              ]}
+            >
+              {inputError ?? ' '}
+            </Text>
+
             {/* Bottom row: mode toggle (left) · reset + save (right) */}
             <View style={styles.actionsRow}>
-              <View
-                style={[
-                  styles.toggleRow,
-                  {
-                    backgroundColor: theme.colors.surface,
-                    borderColor: theme.colors.divider,
-                  },
-                ]}
-              >
-                {renderSegment(distanceLabel, 'distance')}
-                {renderSegment('Steps', 'steps')}
-              </View>
+              <ManualEntryModeSelector
+                value={editMode}
+                distanceLabel={distanceLabel}
+                onChange={switchMode}
+              />
               <View style={styles.actionsRight}>
                 <IconButton
                   icon={
@@ -359,6 +411,7 @@ export default function EditEntryModal() {
                     />
                   }
                   onPress={resetEdits}
+                  accessibilityLabel="Reset changes"
                   variant="outline"
                   size="medium"
                   hitSlop={8}
@@ -408,28 +461,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  toggleRow: {
-    flexDirection: 'row',
-    alignSelf: 'flex-start',
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    padding: 2,
-  },
-  segment: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    minWidth: 72,
-  },
-  segmentText: {
-    textAlign: 'center',
-  },
-  segmentTextActive: {
-    fontWeight: '600',
-  },
-  segmentTextInactive: {
-    fontWeight: '400',
-  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -442,6 +473,10 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     borderWidth: 1,
     textAlign: 'right',
+  },
+  validationSlot: {
+    marginTop: -spacing.sm,
+    marginBottom: -spacing.sm,
   },
   actionsRow: {
     flexDirection: 'row',

@@ -1,0 +1,13 @@
+{
+  "react-native": {
+    "app_check_token_auto_refresh": true
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    }
+  }
+}

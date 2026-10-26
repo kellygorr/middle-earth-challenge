@@ -1,7 +1,7 @@
 /**
  * Headless JS task registered as `PedometerSweep` in index.js and
- * invoked ~5x/day by [`PedometerBackgroundWorker`] via
- * [`PedometerHeadlessJsService`]. See docs/pedometer-mode.md § Phase 3b.
+ * invoked directly inside [`PedometerBackgroundWorker`] ~5x/day. See
+ * docs/pedometer-mode.md § Phase 3b.
  *
  * The task's job is to commit a single pedometer `DistanceEntry` for
  * the watermark window `[lastSyncTimestamp, now]`, then advance the
@@ -23,17 +23,28 @@
 import { database } from './database';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useProgressStore } from '../stores/progressStore';
-import { pedometerService } from './pedometerService';
+import {
+  pedometerService,
+  reportPedometerBackgroundTaskResult,
+} from './pedometerService';
 import { commitPedometerRange } from './pedometerCommit';
+
+interface PedometerBackgroundTaskData {
+  requestId: string;
+}
 
 /**
  * The registered task entry point. Signature matches RN's
  * `AppRegistry.registerHeadlessTask(name, () => task)` contract:
- * receives a data object (unused for us; passed via `Arguments.createMap()`
- * from the Kotlin side), returns a promise that resolves when the JS
- * work is done. The native service tears down once we resolve.
+ * receives a request ID from the Worker and reports whether WorkManager
+ * should treat the completed task as success or retry. A missing report
+ * times out on the native side and is conservatively retried.
  */
-export async function pedometerBackgroundTask(): Promise<void> {
+export async function pedometerBackgroundTask({
+  requestId,
+}: PedometerBackgroundTaskData): Promise<void> {
+  let succeeded = true;
+
   try {
     // 1. Bring SQLite up. Reusing the same singleton `database` module
     //    means our stores' `loadSettings` / `initFromDatabase` calls
@@ -49,7 +60,10 @@ export async function pedometerBackgroundTask(): Promise<void> {
     // is scheduled to be cancelled but may fire once more before the
     // cancellation propagates. Bail rather than committing a spurious
     // row against whatever mode the user has now.
-    if (settings.trackingMode !== 'pedometer') {
+    if (
+      settings.trackingMode !== 'pedometer' &&
+      settings.trackingMode !== 'dual'
+    ) {
       return;
     }
 
@@ -67,12 +81,7 @@ export async function pedometerBackgroundTask(): Promise<void> {
     //    for the window regardless — bail rather than materializing a
     //    zero-step row. The next foreground launch will surface the
     //    `pedometerStopped` error to the user.
-    let running = false;
-    try {
-      running = await pedometerService.isServiceRunning();
-    } catch {
-      running = false;
-    }
+    const running = await pedometerService.isServiceRunning();
     if (!running) {
       return;
     }
@@ -80,36 +89,21 @@ export async function pedometerBackgroundTask(): Promise<void> {
     // 5. Commit the watermark window.
     const now = Date.now();
     const watermark = settings.lastSyncTimestamp ?? now;
-    if (now <= watermark) {
+    if (now === watermark) {
       // No time has elapsed since the last commit (unusual — WorkManager
       // schedules ~4h apart), nothing to do.
       return;
     }
 
-    try {
-      await commitPedometerRange(watermark, now);
-    } catch (error) {
-      console.warn(
-        '[pedometerBackgroundTask] commitPedometerRange failed:',
-        error,
-      );
-      // Do NOT advance the watermark on read failure — next tick will
-      // retry the same window.
-      return;
-    }
-
-    // 6. Advance the watermark unconditionally on success (matches the
-    //    live-path semantics — empty windows still advance so we don't
-    //    re-scan the same range every tick).
-    useSettingsStore.getState().setLastSyncTimestamp(now);
+    await commitPedometerRange(watermark, now);
 
     // Note: milestone notifications (Phase 3c) are fired from inside
     // `commitPedometerRange` when miles crosses a checkpoint boundary.
     // No extra plumbing needed here.
   } catch (error) {
+    succeeded = false;
     console.error('[pedometerBackgroundTask] fatal error:', error);
-    // Swallow — Worker returns Result.success() regardless (see Kotlin
-    // side). A pathological failure here just means a longer-window
-    // row on the next tick.
+  } finally {
+    reportPedometerBackgroundTaskResult(requestId, succeeded);
   }
 }

@@ -24,29 +24,47 @@ import Button from './Buttons/Button';
 import { typographyThemed } from '../styles/typography';
 import { spacing } from '../styles/global';
 
-export function SyncNowRow() {
-  const theme = useTheme();
+export function useCanSyncNow() {
   const syncEnabled = useSettingsStore(state => state.syncEnabled);
   const syncProvider = useSettingsStore(state => state.syncProvider);
+  const trackingMode = useSettingsStore(state => state.trackingMode);
+
+  return syncEnabled && syncProvider !== 'none' && trackingMode !== 'dual';
+}
+
+export function SyncNowRow() {
+  const theme = useTheme();
+  const canSyncNow = useCanSyncNow();
+  const lastSyncTimestamp = useSettingsStore(state => state.lastSyncTimestamp);
   const isSyncing = useProgressStore(
     state => state.syncStatus.phase === 'syncing',
   );
-  const miles = useProgressStore(state => state.miles) || 0;
 
-  // Hide until we actually have activity to refresh. Right after connecting,
-  // an auto-sync is already in flight, and showing this button implies the
-  // user needs to tap it — but tapping wouldn't do anything meaningful yet.
-  // Once the first sync lands miles, this becomes a useful manual refresh.
-  if (!syncEnabled || syncProvider === 'none' || miles <= 0) return null;
+  if (!canSyncNow) {
+    return null;
+  }
 
   return (
     <View style={styles.row}>
-      <Text
-        style={[typographyThemed(theme).captionSecondary, styles.label]}
-        numberOfLines={2}
-      >
-        Pull the latest activity from your health app
-      </Text>
+      <View style={styles.label}>
+        <Text
+          style={typographyThemed(theme).captionSecondary}
+          numberOfLines={2}
+        >
+          Pull the latest activity from your health app
+        </Text>
+        {lastSyncTimestamp && (
+          <Text style={typographyThemed(theme).captionSecondary}>
+            {`Last synced: ${new Date(lastSyncTimestamp).toLocaleString(
+              undefined,
+              {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              },
+            )}`}
+          </Text>
+        )}
+      </View>
       <Button
         variant="brand"
         size="small"
@@ -71,5 +89,6 @@ const styles = StyleSheet.create({
   label: {
     flex: 1,
     flexShrink: 1,
+    gap: spacing.xs,
   },
 });

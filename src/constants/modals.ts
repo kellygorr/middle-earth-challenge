@@ -11,16 +11,22 @@ import {
   DistanceContent,
   InfoContent,
   DataContent,
+  FriendProgressContent,
+  TroubleshootingHistoryContent,
+  TransferDataContent,
 } from '../components/Modals/Content';
 import { MilesFooter, InfoFooter } from '../components/Modals/Footers';
 
 export type ModalType =
   | 'stats'
   | 'settings'
-  | 'miles'
+  | 'distance'
   | 'sync'
   | 'info'
-  | 'data';
+  | 'data'
+  | 'transfer-data'
+  | 'friend-progress'
+  | 'troubleshooting-history';
 
 export interface ModalConfig {
   /** Modal title (displayed above card in portrait, left side in landscape) */
@@ -54,7 +60,7 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
     leftButton: 'home',
     scrollType: 'default',
   },
-  miles: {
+  distance: {
     title: 'Distance',
     content: DistanceContent,
     footer: MilesFooter,
@@ -78,6 +84,28 @@ export const MODAL_CONFIG: Record<ModalType, ModalConfig> = {
   data: {
     title: 'Data',
     content: DataContent,
+    smallHeader: true,
+    leftButton: 'back',
+    scrollType: 'default',
+  },
+  'transfer-data': {
+    title: 'Backup data',
+    content: TransferDataContent,
+    smallHeader: true,
+    leftButton: 'back',
+    scrollType: 'default',
+  },
+  'friend-progress': {
+    title: 'Connect with friends',
+    content: FriendProgressContent,
+    smallHeader: true,
+    leftButton: 'back',
+    keyboardAvoiding: true,
+    scrollType: 'default',
+  },
+  'troubleshooting-history': {
+    title: 'Troubleshooting',
+    content: TroubleshootingHistoryContent,
     smallHeader: true,
     leftButton: 'back',
     scrollType: 'default',

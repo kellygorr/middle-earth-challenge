@@ -1,10 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
+import {
+  cancelAnimation,
+  useSharedValue,
+  withTiming,
+  SharedValue,
+} from 'react-native-reanimated';
 import PositionedPoint from './PositionedPoint';
 import Button, { labelSizeToButtonSize } from '../Buttons';
 import { mapBookMilesToPathProgress } from '../../utils/pathProgress';
 import { PointType } from '../../types';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { motion } from '../../styles/motion';
 
 // Default label height used until the hidden measurement Button reports its
 // actual height on first layout. Matches the medium size to minimize the
@@ -25,9 +33,19 @@ type Props = {
   translateY: any;
   scale: any;
   showPointLabels: boolean;
+  showActiveTrivia: boolean;
   animatedProgress: number;
   currentMiles: number;
   onItemPress: (item: PointType, type: 'checkpoint' | 'trivia') => void;
+  /**
+   * The map's raw animated progress shared value. Passed through to each
+   * Point so its activation color transition can be computed and reacted
+   * to entirely on the UI thread — see Point.tsx. `animatedProgress`
+   * (above) remains the throttled JS-bridged copy, still used here for
+   * the trivia pre-reveal hide gate and accessibility-label freshness,
+   * neither of which needs frame-perfect timing.
+   */
+  gameProgressValue?: SharedValue<number>;
 };
 
 export default function PointLayer({
@@ -42,11 +60,25 @@ export default function PointLayer({
   translateY,
   scale,
   showPointLabels,
+  showActiveTrivia,
   animatedProgress,
   currentMiles,
   onItemPress,
+  gameProgressValue,
 }: Props) {
   const labelSize = useSettingsStore(state => state.labelSize);
+  const reduceMotionEnabled = useReduceMotion();
+  const activeTriviaOpacity = useSharedValue(showActiveTrivia ? 1 : 0);
+
+  useEffect(() => {
+    cancelAnimation(activeTriviaOpacity);
+    activeTriviaOpacity.value =
+      showActiveTrivia && !reduceMotionEnabled
+        ? withTiming(1, { duration: motion.button.enterDuration })
+        : showActiveTrivia
+        ? 1
+        : 0;
+  }, [activeTriviaOpacity, reduceMotionEnabled, showActiveTrivia]);
 
   // A single hidden Button, rendered with the exact same size / textSize as
   // real point labels, reports its measured height once. Every PositionedPoint
@@ -74,12 +106,20 @@ export default function PointLayer({
     const pointMiles = item.CUMULATIVE_MILES ?? 0;
     const goingBackward = currentMiles < pointMiles;
     const buffer = Math.abs(currentMiles - pointMiles) > 20 ? 0.007 : 1e-6;
+    const forceActive = kind === 'checkpoint' && !!item.isStart;
+    // Still computed in JS from the throttled `animatedProgress` bridge —
+    // used ONLY for the trivia pre-reveal hide gate just below and for
+    // Point's accessibility label / initial-render color seed, neither of
+    // which needs per-frame accuracy. The actual visual color transition
+    // no longer depends on this value at all when gameProgressValue is
+    // supplied (see Point.tsx).
     const isActive =
-      kind === 'checkpoint' && item.isStart
-        ? true
-        : goingBackward
+      forceActive ||
+      (goingBackward
         ? animatedProgress >= activationProgress + buffer
-        : animatedProgress + buffer >= activationProgress;
+        : animatedProgress + buffer >= activationProgress);
+
+    if (kind === 'trivia' && isActive && !showActiveTrivia) return null;
 
     const enriched: PointType = { ...item, index };
 
@@ -99,6 +139,14 @@ export default function PointLayer({
         showLabel={kind === 'checkpoint' && showPointLabels}
         onPress={() => onItemPress(enriched, kind)}
         labelHeight={labelHeight}
+        opacity={
+          kind === 'trivia' && isActive ? activeTriviaOpacity : undefined
+        }
+        gameProgressValue={gameProgressValue}
+        activationProgress={activationProgress}
+        goingBackward={goingBackward}
+        buffer={buffer}
+        forceActive={forceActive}
       />
     );
   };

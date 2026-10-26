@@ -11,6 +11,7 @@ import {
   Pressable,
   ViewStyle,
   StyleProp,
+  type AccessibilityState,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -28,9 +29,9 @@ import {
 import { spacing, buttonTokens } from '../../styles/global';
 import { ButtonVariant, getButtonTextColor } from './buttonColors';
 
-interface ButtonProps {
+export interface ButtonProps {
   onPress: () => void;
-  children: string;
+  children: ReactNode;
   variant?: ButtonVariant;
   /**
    * Visual category:
@@ -60,6 +61,9 @@ interface ButtonProps {
    * to skip global Text size scaling.
    */
   isLabelButton?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  accessibilityState?: AccessibilityState;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -82,6 +86,9 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       align,
       flatSide,
       isLabelButton = false,
+      accessibilityLabel,
+      accessibilityHint,
+      accessibilityState,
     }: ButtonProps,
     ref,
   ) {
@@ -200,7 +207,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         ? typography.buttonLarge
         : textSize === 'default'
         ? typography.buttonMedium
-        : typography.button;
+        : typography.buttonSmall;
 
     // Apply global Text size scaling unless this is an on-map label button.
     const baseTextStyle = isLabelButton
@@ -268,9 +275,18 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         }}
         disabled={disabled}
         hitSlop={hitSlop}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{
+          ...accessibilityState,
+          disabled,
+          ...(hasCaret ? { expanded: isOpen } : null),
+        }}
       >
         {renderIconBefore()}
-        <Text
+        <AnimatedText
+          numberOfLines={1}
           style={[
             baseTextStyle,
             { color: textColor },
@@ -278,9 +294,10 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
           ]}
         >
           {children}
-        </Text>
+        </AnimatedText>
         {hasCaret && (
           <AnimatedText
+            numberOfLines={1}
             style={[
               baseTextStyle,
               { marginLeft: spacing.xs, color: textColor },

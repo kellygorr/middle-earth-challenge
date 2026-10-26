@@ -40,6 +40,8 @@ export type AccessItemStatus =
 
 export interface AccessItem {
   label: string;
+  /** Optional bold text rendered before the label. */
+  emphasizedPrefix?: string;
   /** Omit for a neutral bullet (no check/dot/star prefix). */
   status?: AccessItemStatus;
 }
@@ -52,6 +54,8 @@ interface AccessExpanderProps {
   items: (string | AccessItem)[];
   /** Label for the toggle. Defaults to "Required Access". */
   label?: string;
+  /** Remove the default top spacing when stacked directly after another row. */
+  flushTop?: boolean;
   /**
    * Footnotes shown below the list, one per status present in items.
    * Only statuses that actually appear in the current items render a
@@ -90,6 +94,7 @@ function normalizeItem(item: string | AccessItem): AccessItem {
 export default function AccessExpander({
   items,
   label = 'Required Access',
+  flushTop = false,
   statusFootnotes,
 }: AccessExpanderProps) {
   const theme = useTheme();
@@ -106,14 +111,13 @@ export default function AccessExpander({
     : [];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, flushTop && styles.flushTop]}>
       <Pressable
         style={styles.toggle}
         onPress={() => setExpanded(prev => !prev)}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
         accessibilityLabel={`${label}, ${expanded ? 'expanded' : 'collapsed'}`}
-        hitSlop={8}
       >
         <View
           style={[styles.chevronWrapper, expanded && styles.chevronExpanded]}
@@ -143,6 +147,11 @@ export default function AccessExpander({
                 {item.status ? PREFIX_BY_STATUS[item.status] : '•'}
               </Text>
               <Text style={typographyThemed(theme).captionSecondary}>
+                {item.emphasizedPrefix && (
+                  <Text style={typographyThemed(theme).captionSecondaryBold}>
+                    {item.emphasizedPrefix}{' '}
+                  </Text>
+                )}
                 {item.label}
               </Text>
             </View>
@@ -168,10 +177,15 @@ const styles = StyleSheet.create({
   container: {
     marginTop: spacing.xs,
   },
+  flushTop: {
+    marginTop: 0,
+  },
   toggle: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    width: '100%',
+    minHeight: 30,
   },
   chevronWrapper: {
     width: 14,

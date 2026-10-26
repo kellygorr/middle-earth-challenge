@@ -1,28 +1,27 @@
 import React, { useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  Keyboard,
-  Pressable,
-  useWindowDimensions,
-} from 'react-native';
+import { View, Text, StyleSheet, TextInput, Keyboard } from 'react-native';
 import { useTheme, useSettingsStore } from '../../../stores/settingsStore';
 import { typographyThemed } from '../../../styles/typography';
-import { spacing, borderRadius } from '../../../styles/global';
+import { spacing } from '../../../styles/global';
 import Button from '../../Buttons';
-import { useUIStore } from '../../../stores/uiStore';
+import { useProgressStore } from '../../../stores/progressStore';
 import { DistanceEntry } from '../../../types';
 import { milesToSteps, stepsToMiles } from '../../../utils/stride';
 import { kmToMiles } from '../../../utils/date';
 import { DEFAULT_SAVE_ID } from '../../../constants/gameConstants';
+import {
+  MANUAL_ENTRY_SAVE_ERROR,
+  validateManualEntryInput,
+} from '../../../utils/manualEntryValidation';
+import ManualEntryModeSelector, {
+  type ManualEntryMode,
+} from '../ManualEntryModeSelector';
 
-type AddMode = 'distance' | 'steps';
+type AddMode = ManualEntryMode;
 
 /**
  * MilesFooter - Footer content for the Miles modal.
- * Displays total and add input. Uses uiStore for pending state.
+ * Displays total and add input.
  *
  * The add input can be toggled between distance (miles or km, per the
  * user's unit setting) and steps. Defaults to distance. When steps mode
@@ -34,32 +33,35 @@ type AddMode = 'distance' | 'steps';
 export default function MilesFooter() {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
   const inputRef = useRef<TextInput>(null);
   const [addInput, setAddInput] = useState('');
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [addMode, setAddMode] = useState<AddMode>('distance');
+  const [inputError, setInputError] = useState<string | null>(null);
 
-  // Pending state from uiStore
-  const editingEntry = useUIStore(state => state.editingEntry);
-  const addPendingEntry = useUIStore(state => state.addPendingEntry);
+  const addDistanceEntry = useProgressStore(state => state.addDistanceEntry);
+  const clearTestOverride = useProgressStore(state => state.clearTestOverride);
+  const addLockRef = useRef(false);
 
-  const handleAdd = () => {
-    const delta = parseFloat(addInput);
-    if (isNaN(delta) || delta <= 0) {
+  const handleAdd = async () => {
+    const validation = validateManualEntryInput(addInput, addMode === 'steps');
+    if (validation.value === null) {
+      setInputError(validation.error);
       return;
     }
+    const delta = validation.value;
+    setInputError(null);
+    if (addLockRef.current) return;
+    addLockRef.current = true;
+
     const saveId = DEFAULT_SAVE_ID;
     const timestamp = Date.now();
 
     let entry: DistanceEntry;
     if (addMode === 'steps') {
-      // Steps are discrete; drop any decimal portion the user typed.
-      const inputSteps = Math.floor(delta);
-      if (inputSteps <= 0) return;
+      const inputSteps = delta;
       entry = {
-        id: `pending_${Date.now()}`,
+        id: `manual_${timestamp}`,
         saveId,
         date: timestamp,
         miles: stepsToMiles(inputSteps),
@@ -71,7 +73,7 @@ export default function MilesFooter() {
       // is always miles.
       const inputMiles = useMiles ? delta : kmToMiles(delta);
       entry = {
-        id: `pending_${Date.now()}`,
+        id: `manual_${timestamp}`,
         saveId,
         date: timestamp,
         miles: inputMiles,
@@ -79,10 +81,18 @@ export default function MilesFooter() {
         source: 'manual-distance',
       };
     }
-    addPendingEntry(entry);
-    setAddInput('');
-    inputRef.current?.blur();
-    Keyboard.dismiss();
+
+    try {
+      await addDistanceEntry(entry);
+      clearTestOverride();
+      setAddInput('');
+      inputRef.current?.blur();
+      Keyboard.dismiss();
+    } catch {
+      setInputError(MANUAL_ENTRY_SAVE_ERROR);
+    } finally {
+      addLockRef.current = false;
+    }
   };
 
   const switchMode = (mode: AddMode) => {
@@ -91,55 +101,22 @@ export default function MilesFooter() {
     // miles); clear whatever the user typed so they don't accidentally
     // submit the wrong unit.
     setAddInput('');
+    setInputError(null);
     setAddMode(mode);
   };
-
-  // Hide in landscape when editing
-  if (isLandscape && editingEntry) {
-    return null;
-  }
 
   const distanceLabel = useMiles ? 'Miles' : 'Km';
   const isSteps = addMode === 'steps';
   const unitLabel = isSteps ? 'steps' : useMiles ? 'miles' : 'km';
-
-  const renderSegment = (label: string, mode: AddMode) => {
-    const active = addMode === mode;
-    return (
-      <Pressable
-        key={mode}
-        onPress={() => switchMode(mode)}
-        style={[
-          styles.segment,
-          active && {
-            backgroundColor: theme.colors.buttonBrandBackground,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            typographyThemed(theme).captionPrimary,
-            styles.segmentText,
-            active ? styles.segmentTextActive : styles.segmentTextInactive,
-            {
-              color: active
-                ? theme.colors.buttonBrandText
-                : theme.colors.textSecondary,
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </Pressable>
-    );
-  };
 
   return (
     <View style={styles.container}>
       {/* Divider separating the entry list from the add controls. The
           running total lives on the map screen; per-row and per-day
           totals cover local context so it isn't repeated here. */}
-      <View style={styles.dividerLine} />
+      <View
+        style={[styles.dividerLine, { backgroundColor: theme.colors.divider }]}
+      />
 
       {/* Top row: input + unit label */}
       <View style={styles.inputRow}>
@@ -155,31 +132,42 @@ export default function MilesFooter() {
             },
           ]}
           value={addInput}
-          onChangeText={setAddInput}
+          onChangeText={value => {
+            setAddInput(value);
+            setInputError(null);
+          }}
           keyboardType={isSteps ? 'number-pad' : 'decimal-pad'}
           disableFullscreenUI={true}
           placeholder={isInputFocused ? '' : '0'}
           onFocus={() => setIsInputFocused(true)}
           onBlur={() => setIsInputFocused(false)}
           placeholderTextColor={theme.colors.textSecondary}
+          accessibilityLabel={isSteps ? 'Steps' : `Distance in ${unitLabel}`}
         />
         <Text style={typographyThemed(theme).bodyPrimary}>{unitLabel}</Text>
       </View>
 
+      <Text
+        testID="add-entry-validation"
+        nativeID="add-entry-validation"
+        accessibilityLiveRegion="polite"
+        accessibilityRole={inputError ? 'alert' : undefined}
+        numberOfLines={1}
+        style={[
+          typographyThemed(theme).caption2Secondary,
+          styles.validationSlot,
+        ]}
+      >
+        {inputError ?? ' '}
+      </Text>
+
       {/* Bottom row: mode toggle (left) · add button (right) */}
       <View style={styles.controlsRow}>
-        <View
-          style={[
-            styles.toggleRow,
-            {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.divider,
-            },
-          ]}
-        >
-          {renderSegment(distanceLabel, 'distance')}
-          {renderSegment('Steps', 'steps')}
-        </View>
+        <ManualEntryModeSelector
+          value={addMode}
+          distanceLabel={distanceLabel}
+          onChange={switchMode}
+        />
         <Button onPress={handleAdd} variant="brand" size="default">
           Add
         </Button>
@@ -195,29 +183,7 @@ const styles = StyleSheet.create({
   },
   dividerLine: {
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.08)',
     marginBottom: spacing.md,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    padding: 2,
-  },
-  segment: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    minWidth: 72,
-  },
-  segmentText: {
-    textAlign: 'center',
-  },
-  segmentTextActive: {
-    fontWeight: '600',
-  },
-  segmentTextInactive: {
-    fontWeight: '400',
   },
   inputRow: {
     flexDirection: 'row',
@@ -230,6 +196,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  validationSlot: {
+    marginTop: -spacing.xs,
+    marginBottom: spacing.xs,
   },
   input: {
     paddingHorizontal: spacing.md,
