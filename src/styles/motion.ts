@@ -14,7 +14,10 @@ export const motion = {
     duration: 280,
   },
 
-  // Path reveal animation (initial journey path drawing)
+  // Path reveal animation (no longer used for the grey/base path, which is
+  // always instantly drawn — see useInitialAnimation's completePathReveal.
+  // Kept only as a speed reference the active/colored catch-up animation
+  // scales its own duration against — see useGameProgressAnimation.ts.
   pathReveal: {
     delay: 1000,
     duration: 4000,

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   useSharedValue,
   withTiming,
+  withDelay,
   useAnimatedReaction,
   runOnJS,
   cancelAnimation,
@@ -9,6 +10,11 @@ import {
 import { mapBookMilesToPathProgress } from '../utils/pathProgress';
 import { motion } from '../styles/motion';
 import { useReduceMotion } from './useReduceMotion';
+
+// Brief pause before the active (colored) path starts animating, so it
+// doesn't begin moving the instant the screen appears — gives the user a
+// beat to actually see the starting position before it starts moving.
+const ACTIVE_PATH_START_DELAY_MS = 500;
 
 export function useGameProgressAnimation(
   miles: number | undefined,
@@ -69,6 +75,29 @@ export function useGameProgressAnimation(
     }
 
     const isFirstActivation = !hasActivatedRef.current;
+
+    // Guard against this whole effect re-running for a reason unrelated
+    // to an actual change in `miles` — e.g. `extraDeps` changing (see
+    // MapScreen's onStartupReady, which flips `observeMilesChanges` to
+    // true ~1s after welcome dismisses, well within the first-activation
+    // catch-up animation's own multi-second duration). Without this,
+    // that rerun would see `isFirstActivation` already false and
+    // `prevAnimMilesRef.current` already updated to `currentMiles` by the
+    // first run (both already written below, synchronously, before the
+    // animation itself visually finishes), computing a delta of 0 and
+    // firing a brand-new, un-delayed, ~instant `withTiming` that
+    // overwrites/cancels the real still-in-flight first-activation
+    // animation — which is exactly what caused the catch-up animation to
+    // look like it was skipping straight to the end instead of playing
+    // out over its intended duration. Confirmed via on-device debug
+    // logging: the real computed duration (e.g. 3000ms+500ms delay) WAS
+    // correct, but a second effect run moments later clobbered it. Only
+    // the very first activation, or a run where miles has genuinely
+    // moved since the last one this effect actually acted on, should
+    // touch `gameProgressValue` at all.
+    if (!isFirstActivation && currentMiles === prevAnimMilesRef.current) {
+      return;
+    }
     hasActivatedRef.current = true;
 
     if (isFirstActivation && revealStartProgress > 0) {
@@ -103,22 +132,25 @@ export function useGameProgressAnimation(
       );
 
       gameProgressValue.value = revealStartProgress;
-      gameProgressValue.value = withTiming(
-        target,
-        {
-          duration: scaledDuration,
-        },
-        finished => {
-          'worklet';
-          // Guarantee JS sees the exact final value even if the
-          // time-based throttle below swallowed the very last frame's
-          // update — otherwise checkpoint activation (which reads
-          // `animatedProgress` on the JS thread) could visibly lag a
-          // hair behind the line's true resting position.
-          if (finished) {
-            runOnJS(setAnimatedProgress)(target);
-          }
-        },
+      gameProgressValue.value = withDelay(
+        ACTIVE_PATH_START_DELAY_MS,
+        withTiming(
+          target,
+          {
+            duration: scaledDuration,
+          },
+          finished => {
+            'worklet';
+            // Guarantee JS sees the exact final value even if the
+            // time-based throttle below swallowed the very last frame's
+            // update — otherwise checkpoint activation (which reads
+            // `animatedProgress` on the JS thread) could visibly lag a
+            // hair behind the line's true resting position.
+            if (finished) {
+              runOnJS(setAnimatedProgress)(target);
+            }
+          },
+        ),
       );
       prevAnimMilesRef.current = currentMiles;
       return;
@@ -131,19 +163,24 @@ export function useGameProgressAnimation(
     const durationMs = Math.max(500, Math.round(delta * msPerMile));
 
     // Same reasoning as above: no explicit easing, so this matches the
-    // grey path's default curve instead of a constant linear rate.
-    gameProgressValue.value = withTiming(
-      target,
-      {
-        duration: durationMs,
-      },
-      finished => {
-        'worklet';
-        if (finished) {
-          runOnJS(setAnimatedProgress)(target);
-        }
-      },
-    );
+    // grey path's default curve instead of a constant linear rate. The
+    // start delay only applies on first activation (e.g. right after
+    // welcome dismisses, when revealStartProgress happened to be exactly
+    // 0 so the branch above was skipped) — not on every later live mile
+    // update, which should react immediately rather than feel laggy.
+    const timingConfig = { duration: durationMs };
+    const onTimingFinished = (finished?: boolean) => {
+      'worklet';
+      if (finished) {
+        runOnJS(setAnimatedProgress)(target);
+      }
+    };
+    gameProgressValue.value = isFirstActivation
+      ? withDelay(
+          ACTIVE_PATH_START_DELAY_MS,
+          withTiming(target, timingConfig, onTimingFinished),
+        )
+      : withTiming(target, timingConfig, onTimingFinished);
     prevAnimMilesRef.current = currentMiles;
   }, [
     miles,
