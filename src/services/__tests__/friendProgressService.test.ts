@@ -45,6 +45,10 @@ const mockSetParticipant = jest.fn();
 const mockUpdateParticipant = jest.fn();
 const mockFetchParticipantPage = jest.fn();
 const mockDeleteParticipant = jest.fn();
+const mockFindParticipantIdsByShareIdentityId = jest.fn<
+  Promise<string[]>,
+  [string, string]
+>();
 const mockFlushPendingWrites = jest.fn<Promise<void>, []>();
 
 const createService = () =>
@@ -57,6 +61,8 @@ const createService = () =>
     updateParticipant: mockUpdateParticipant,
     fetchParticipantPage: mockFetchParticipantPage,
     deleteParticipant: mockDeleteParticipant,
+    findParticipantIdsByShareIdentityId:
+      mockFindParticipantIdsByShareIdentityId,
     flushPendingWrites: mockFlushPendingWrites,
   });
 
@@ -113,7 +119,12 @@ describe('friendProgressService', () => {
     mockGetCurrentUserId.mockReturnValue(null);
     mockSignInAnonymously.mockResolvedValue('anonymous-user');
 
-    await createService().enableFriendProgress('  Kelly  ', 12.5, 'river');
+    await createService().enableFriendProgress(
+      '  Kelly  ',
+      12.5,
+      'river',
+      'share-id-1',
+    );
 
     expect(mockWaitForAuthState).toHaveBeenCalledTimes(1);
     expect(mockSignInAnonymously).toHaveBeenCalledTimes(1);
@@ -121,31 +132,44 @@ describe('friendProgressService', () => {
       displayName: 'Kelly',
       distanceMiles: 12.5,
       affinity: 'river',
+    shareIdentityId: 'share-id-1',
     });
   });
 
   it('reuses an existing anonymous session when enabling sharing', async () => {
-    await createService().enableFriendProgress('Kelly', 15, 'hills');
+    await createService().enableFriendProgress(
+      'Kelly',
+      15,
+      'hills',
+      'share-id-1',
+    );
 
     expect(mockSignInAnonymously).not.toHaveBeenCalled();
     expect(mockSetParticipant).toHaveBeenCalledWith('user-1', {
       displayName: 'Kelly',
       distanceMiles: 15,
       affinity: 'hills',
-    });
+    shareIdentityId: 'share-id-1',
+      });
   });
 
   it('waits for persisted auth before choosing the participant owner', async () => {
     mockGetCurrentUserId.mockReturnValue('restored-user');
 
-    await createService().enableFriendProgress('Kelly', 15, 'hills');
+    await createService().enableFriendProgress(
+      'Kelly',
+      15,
+      'hills',
+      'share-id-1',
+    );
 
     expect(mockWaitForAuthState).toHaveBeenCalledTimes(1);
     expect(mockSetParticipant).toHaveBeenCalledWith('restored-user', {
       displayName: 'Kelly',
       distanceMiles: 15,
       affinity: 'hills',
-    });
+    shareIdentityId: 'share-id-1',
+      });
   });
 
   it('shares one anonymous session across concurrent enable attempts', async () => {
@@ -154,8 +178,8 @@ describe('friendProgressService', () => {
     const service = createService();
 
     await Promise.all([
-      service.enableFriendProgress('Kelly', 15, 'hills'),
-      service.enableFriendProgress('Kelly', 15, 'hills'),
+      service.enableFriendProgress('Kelly', 15, 'hills', 'share-id-1'),
+      service.enableFriendProgress('Kelly', 15, 'hills', 'share-id-1'),
     ]);
 
     expect(mockSignInAnonymously).toHaveBeenCalledTimes(1);
@@ -166,6 +190,7 @@ describe('friendProgressService', () => {
         displayName: 'Kelly',
         distanceMiles: 15,
         affinity: 'hills',
+      shareIdentityId: 'share-id-1',
       },
     );
     expect(mockSetParticipant).toHaveBeenNthCalledWith(
@@ -175,6 +200,7 @@ describe('friendProgressService', () => {
         displayName: 'Kelly',
         distanceMiles: 15,
         affinity: 'hills',
+      shareIdentityId: 'share-id-1',
       },
     );
   });
@@ -183,11 +209,14 @@ describe('friendProgressService', () => {
     const service = createService();
 
     await expect(
-      service.enableFriendProgress('   ', 1, 'coast'),
+      service.enableFriendProgress('   ', 1, 'coast', 'share-id-1'),
     ).rejects.toThrow('Display name is required');
     await expect(
-      service.enableFriendProgress('Kelly', -1, 'coast'),
+      service.enableFriendProgress('Kelly', -1, 'coast', 'share-id-1'),
     ).rejects.toThrow('Distance must be a nonnegative number');
+    await expect(
+      service.enableFriendProgress('Kelly', 1, 'coast', ''),
+    ).rejects.toThrow('Shared progress identity is required');
 
     expect(mockGetCurrentUserId).not.toHaveBeenCalled();
     expect(mockSetParticipant).not.toHaveBeenCalled();
@@ -415,6 +444,7 @@ describe('friendProgressService', () => {
         'Kelly',
         15,
         'hills',
+        'share-id-1',
       );
       await Promise.all([
         expect(enabling).rejects.toThrow('friend-progress-network-timeout'),
@@ -463,6 +493,51 @@ describe('friendProgressService', () => {
       expect(mockSignInAnonymously).toHaveBeenCalledTimes(1);
       expect(mockDeleteParticipant).toHaveBeenCalledWith('exported-user');
       expect(mockFlushPendingWrites).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('pruneSiblingIdentities', () => {
+    it('deletes every other document sharing the same shareIdentityId', async () => {
+      mockGetCurrentUserId.mockReturnValue('current-user');
+      mockFindParticipantIdsByShareIdentityId.mockResolvedValue([
+        'stale-install-1',
+        'stale-install-2',
+      ]);
+
+      await createService().pruneSiblingIdentities('share-id-123');
+
+      expect(mockFindParticipantIdsByShareIdentityId).toHaveBeenCalledWith(
+        'share-id-123',
+        'current-user',
+      );
+      expect(mockDeleteParticipant).toHaveBeenCalledWith('stale-install-1');
+      expect(mockDeleteParticipant).toHaveBeenCalledWith('stale-install-2');
+      expect(mockDeleteParticipant).toHaveBeenCalledTimes(2);
+      expect(mockFlushPendingWrites).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when no sibling documents are found', async () => {
+      mockGetCurrentUserId.mockReturnValue('current-user');
+      mockFindParticipantIdsByShareIdentityId.mockResolvedValue([]);
+
+      await createService().pruneSiblingIdentities('share-id-123');
+
+      expect(mockDeleteParticipant).not.toHaveBeenCalled();
+      expect(mockFlushPendingWrites).not.toHaveBeenCalled();
+    });
+
+    it('creates a destination session before searching when none exists yet', async () => {
+      mockGetCurrentUserId.mockReturnValue(null);
+      mockSignInAnonymously.mockResolvedValue('new-destination-user');
+      mockFindParticipantIdsByShareIdentityId.mockResolvedValue([]);
+
+      await createService().pruneSiblingIdentities('share-id-123');
+
+      expect(mockSignInAnonymously).toHaveBeenCalledTimes(1);
+      expect(mockFindParticipantIdsByShareIdentityId).toHaveBeenCalledWith(
+        'share-id-123',
+        'new-destination-user',
+      );
     });
   });
 });

@@ -8,6 +8,7 @@ const createSettings = () => {
     sharingProvisioningPending: false,
     sharingDeletionPending: false,
     sharingMigrationSourceUserId: null as string | null,
+    sharingIdentityId: null as string | null,
     lastPublishedMiles: null as number | null,
     updateSharingSettings: jest.fn(),
   };
@@ -23,7 +24,11 @@ const createService = () => ({
   updateFriendDistance: jest.fn().mockResolvedValue(undefined),
   deleteFriendProgress: jest.fn().mockResolvedValue(undefined),
   deleteFriendProgressByUserId: jest.fn().mockResolvedValue(undefined),
+  pruneSiblingIdentities: jest.fn().mockResolvedValue(undefined),
 });
+
+const GENERATED_IDENTITY_ID = 'generated-share-id';
+const generateIdentityId = () => GENERATED_IDENTITY_ID;
 
 describe('friendProgressWorkflow', () => {
   it('persists provisioning intent before creating the cloud row', async () => {
@@ -33,6 +38,7 @@ describe('friendProgressWorkflow', () => {
       service,
       getSettings: () => settings,
       now: () => 1234,
+      generateIdentityId,
     });
 
     await workflow.enableSharing('  Penny Greycloak  ', 12.5, 'woodland');
@@ -50,8 +56,12 @@ describe('friendProgressWorkflow', () => {
       'Penny Greycloak',
       12.5,
       'woodland',
+      GENERATED_IDENTITY_ID,
     );
     expect(settings.updateSharingSettings).toHaveBeenNthCalledWith(2, {
+      sharingIdentityId: GENERATED_IDENTITY_ID,
+    });
+    expect(settings.updateSharingSettings).toHaveBeenNthCalledWith(3, {
       sharingEnabled: true,
       sharingProvisioningPending: false,
       lastPublishedMiles: 12.5,
@@ -98,7 +108,9 @@ describe('friendProgressWorkflow', () => {
   });
 
   it('retries provisioning after cloud success but local finalization failure', async () => {
-    const settings = createSettings();
+    const settings = Object.assign(createSettings(), {
+      sharingIdentityId: 'existing-share-id',
+    });
     const service = createService();
     settings.updateSharingSettings
       .mockImplementationOnce(async updates => Object.assign(settings, updates))
@@ -130,6 +142,7 @@ describe('friendProgressWorkflow', () => {
       sharingEnabled: true,
       sharingDisplayName: 'Penny Oldname',
       sharingAffinity: 'river' as const,
+      sharingIdentityId: 'existing-share-id',
       lastPublishedMiles: 12.5,
     });
     const service = createService();
@@ -137,6 +150,7 @@ describe('friendProgressWorkflow', () => {
       service,
       getSettings: () => settings,
       now: () => 5678,
+      generateIdentityId,
     });
 
     await workflow.updateProfile('  Penny Hilltop  ', 'hills');
@@ -150,6 +164,7 @@ describe('friendProgressWorkflow', () => {
       'Penny Hilltop',
       12.5,
       'hills',
+      'existing-share-id',
     );
     expect(settings.sharingProvisioningPending).toBe(false);
   });
@@ -269,6 +284,7 @@ describe('friendProgressWorkflow', () => {
       sharingEnabled: true,
       sharingDisplayName: 'Penny',
       sharingAffinity: 'river' as const,
+      sharingIdentityId: 'existing-share-id',
       lastPublishedMiles: 10,
     });
     const service = createService();
@@ -289,6 +305,7 @@ describe('friendProgressWorkflow', () => {
       'Penny',
       12.5,
       'river',
+      'existing-share-id',
     );
     expect(fetchParticipants).toHaveBeenCalledTimes(1);
     expect(settings.lastPublishedMiles).toBe(12.5);
@@ -300,6 +317,7 @@ describe('friendProgressWorkflow', () => {
       sharingEnabled: true,
       sharingDisplayName: 'Penny',
       sharingAffinity: 'river' as const,
+      sharingIdentityId: 'existing-share-id',
       lastPublishedMiles: 10,
     });
     let finishPublish: (() => void) | undefined;
@@ -318,7 +336,13 @@ describe('friendProgressWorkflow', () => {
 
     const firstCycle = workflow.synchronize(15, fetchParticipants);
     const secondCycle = workflow.synchronize(15, fetchParticipants);
-    await Promise.resolve();
+    // Flush microtasks until the pending enableFriendProgress promise has
+    // actually been created (finishPublish assigned) rather than assuming a
+    // fixed number of ticks — robust against the exact await chain length
+    // inside synchronize()/finishProvisioning() changing over time.
+    for (let i = 0; i < 10 && !finishPublish; i += 1) {
+      await Promise.resolve();
+    }
     finishPublish?.();
     await Promise.all([firstCycle, secondCycle]);
 
@@ -332,6 +356,7 @@ describe('friendProgressWorkflow', () => {
         sharingMigrationSourceUserId: 'exported-user',
         sharingDisplayName: 'Penny Greycloak',
         sharingAffinity: 'woodland' as const,
+        sharingIdentityId: 'imported-share-id',
         sharingProvisioningPending: true,
         lastPublishedMiles: null,
       });
@@ -345,8 +370,8 @@ describe('friendProgressWorkflow', () => {
 
       await workflow.synchronize(12.5, fetchParticipants);
 
-      expect(service.deleteFriendProgressByUserId).toHaveBeenCalledWith(
-        'exported-user',
+      expect(service.pruneSiblingIdentities).toHaveBeenCalledWith(
+        'imported-share-id',
       );
       // Regression guard: a stale settings snapshot taken before migration
       // finished provisioning previously caused a second, redundant
@@ -356,6 +381,7 @@ describe('friendProgressWorkflow', () => {
         'Penny Greycloak',
         12.5,
         'woodland',
+        'imported-share-id',
       );
       expect(settings).toMatchObject({
         sharingEnabled: true,
@@ -366,12 +392,13 @@ describe('friendProgressWorkflow', () => {
       expect(fetchParticipants).toHaveBeenCalledTimes(1);
     });
 
-    it('only deletes the stale participant when the destination already has sharing configured', async () => {
+    it('only prunes sibling identities when the destination already has sharing configured', async () => {
       const settings = Object.assign(createSettings(), {
         sharingMigrationSourceUserId: 'exported-user',
         sharingEnabled: true,
         sharingDisplayName: 'Destination Name',
         sharingAffinity: 'river' as const,
+        sharingIdentityId: 'destination-share-id',
         lastPublishedMiles: 10,
       });
       const service = createService();
@@ -383,8 +410,8 @@ describe('friendProgressWorkflow', () => {
 
       await workflow.synchronize(10, fetchParticipants);
 
-      expect(service.deleteFriendProgressByUserId).toHaveBeenCalledWith(
-        'exported-user',
+      expect(service.pruneSiblingIdentities).toHaveBeenCalledWith(
+        'destination-share-id',
       );
       expect(service.enableFriendProgress).not.toHaveBeenCalled();
       expect(settings).toMatchObject({
@@ -394,16 +421,17 @@ describe('friendProgressWorkflow', () => {
       });
     });
 
-    it('retries pending cleanup and leaves the marker set when deletion fails', async () => {
+    it('retries pending cleanup and leaves the marker set when pruning fails', async () => {
       const settings = Object.assign(createSettings(), {
         sharingMigrationSourceUserId: 'exported-user',
         sharingEnabled: true,
         sharingDisplayName: 'Destination Name',
         sharingAffinity: 'river' as const,
+        sharingIdentityId: 'destination-share-id',
         lastPublishedMiles: 10,
       });
       const service = createService();
-      service.deleteFriendProgressByUserId.mockRejectedValueOnce(
+      service.pruneSiblingIdentities.mockRejectedValueOnce(
         new Error('offline'),
       );
       const workflow = createFriendProgressWorkflow({
@@ -416,9 +444,30 @@ describe('friendProgressWorkflow', () => {
       ).rejects.toThrow('offline');
       expect(settings.sharingMigrationSourceUserId).toBe('exported-user');
 
-      service.deleteFriendProgressByUserId.mockResolvedValueOnce(undefined);
+      service.pruneSiblingIdentities.mockResolvedValueOnce(undefined);
       await workflow.synchronize(10, jest.fn());
       expect(settings.sharingMigrationSourceUserId).toBeNull();
+    });
+
+    it('rejects migration cleanup when the imported identity is missing', async () => {
+      const settings = Object.assign(createSettings(), {
+        sharingMigrationSourceUserId: 'exported-user',
+        sharingDisplayName: 'Penny Greycloak',
+        sharingAffinity: 'woodland' as const,
+        sharingIdentityId: null,
+        sharingProvisioningPending: true,
+        lastPublishedMiles: null,
+      });
+      const service = createService();
+      const workflow = createFriendProgressWorkflow({
+        service,
+        getSettings: () => settings,
+      });
+
+      await expect(
+        workflow.synchronize(12.5, jest.fn()),
+      ).rejects.toThrow('Imported shared progress profile is incomplete');
+      expect(service.pruneSiblingIdentities).not.toHaveBeenCalled();
     });
   });
 });

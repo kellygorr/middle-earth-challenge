@@ -154,6 +154,15 @@ export interface UserSettings {
   sharingProvisioningPending: boolean;
   sharingDeletionPending: boolean;
   sharingMigrationSourceUserId: string | null;
+  /**
+   * Stable identifier for "this person's" shared-progress identity,
+   * generated once on first opt-in and carried through every backup
+   * export/import thereafter (unlike the Firebase anonymous UID, which
+   * changes on every fresh install). Lets a device recognize and clean up
+   * every orphaned Firestore row left behind by prior installs that
+   * imported the same backup, not just the single most-recent one.
+   */
+  sharingIdentityId: string | null;
   lastPublishedMiles: number | null;
   lastSharedProgressSyncAt: number | null;
   lastJourneyBackupFileName: string | null;

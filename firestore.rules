@@ -5,13 +5,17 @@ service cloud.firestore {
     match /friend_progress/{userId} {
       allow read: if request.auth != null;
       allow create, update: if isOwner(userId) && validParticipant(request.resource.data);
-      allow delete: if isOwner(userId) || canDeleteStaleParticipant(resource.data);
+      allow delete: if isOwner(userId)
+        || canDeleteStaleParticipant(resource.data)
+        || sameShareIdentity(resource.data);
     }
 
     match /friend_progress_debug/{userId} {
       allow read: if request.auth != null;
       allow create, update: if isOwner(userId) && validParticipant(request.resource.data);
-      allow delete: if isOwner(userId) || canDeleteStaleParticipant(resource.data);
+      allow delete: if isOwner(userId)
+        || canDeleteStaleParticipant(resource.data)
+        || sameShareIdentity(resource.data);
     }
 
     function isOwner(userId) {
@@ -45,17 +49,35 @@ service cloud.firestore {
         && request.time > data.updatedAt + duration.value(15, 'm');
     }
 
+    // Lets a device clean up every orphaned document published under its
+    // own shareIdentityId — the stable cross-install identity carried
+    // through backup export/import (see UserSettings.sharingIdentityId in
+    // the app and pruneSiblingIdentities in friendProgressService.ts).
+    // Unlike canDeleteStaleParticipant, this needs no time-based staleness
+    // check: a device can only know another document's shareIdentityId by
+    // reading its own matching value first (reads already require
+    // request.auth != null above), so this never lets a stranger delete an
+    // unrelated, still-active participant's row — only ones proven to
+    // share the same underlying identity.
+    function sameShareIdentity(data) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/friend_progress/$(request.auth.uid))
+        && get(/databases/$(database)/documents/friend_progress/$(request.auth.uid)).data.shareIdentityId == data.shareIdentityId;
+    }
+
     function validParticipant(data) {
       return data.keys().hasOnly([
           'displayName',
           'affinity',
           'distanceMiles',
+          'shareIdentityId',
           'updatedAt'
         ])
         && data.keys().hasAll([
           'displayName',
           'affinity',
           'distanceMiles',
+          'shareIdentityId',
           'updatedAt'
         ])
         && data.displayName is string
@@ -70,6 +92,8 @@ service cloud.firestore {
         ]
         && data.distanceMiles is number
         && data.distanceMiles >= 0
+        && data.shareIdentityId is string
+        && data.shareIdentityId.size() > 0
         && data.updatedAt is timestamp
         && data.updatedAt == request.time;
     }

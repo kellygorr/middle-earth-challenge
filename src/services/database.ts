@@ -116,6 +116,12 @@ export interface JourneyBackup {
     userId: string | null;
     displayName: string | null;
     affinity: FriendAffinity | null;
+    /**
+     * Stable cross-install identity (see UserSettings.sharingIdentityId).
+     * Null when sharing is disabled (same pattern as userId/displayName/
+     * affinity above); otherwise always present.
+     */
+    shareIdentityId: string | null;
   };
 }
 
@@ -461,6 +467,7 @@ class Database {
         sharing_provisioning_pending INTEGER NOT NULL DEFAULT 0,
         sharing_deletion_pending INTEGER NOT NULL DEFAULT 0,
         sharing_migration_source_user_id TEXT,
+        sharing_identity_id TEXT,
         last_published_miles REAL,
         last_shared_progress_sync_at INTEGER,
         last_journey_backup_file_name TEXT
@@ -583,6 +590,7 @@ class Database {
       `ALTER TABLE user_settings ADD COLUMN sharing_provisioning_pending INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE user_settings ADD COLUMN sharing_deletion_pending INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE user_settings ADD COLUMN sharing_migration_source_user_id TEXT`,
+      `ALTER TABLE user_settings ADD COLUMN sharing_identity_id TEXT`,
       `ALTER TABLE user_settings ADD COLUMN last_published_miles REAL`,
       `ALTER TABLE user_settings ADD COLUMN last_shared_progress_sync_at INTEGER`,
       `ALTER TABLE user_settings ADD COLUMN last_journey_backup_file_name TEXT`,
@@ -771,6 +779,7 @@ class Database {
       sharingDeletionPending: (row as any).sharing_deletion_pending === 1,
       sharingMigrationSourceUserId:
         (row as any).sharing_migration_source_user_id ?? null,
+      sharingIdentityId: (row as any).sharing_identity_id ?? null,
       lastPublishedMiles: (row as any).last_published_miles ?? null,
       lastSharedProgressSyncAt:
         (row as any).last_shared_progress_sync_at ?? null,
@@ -902,6 +911,10 @@ class Database {
     if (updates.sharingMigrationSourceUserId !== undefined) {
       fields.push('sharing_migration_source_user_id = ?');
       values.push(updates.sharingMigrationSourceUserId);
+    }
+    if (updates.sharingIdentityId !== undefined) {
+      fields.push('sharing_identity_id = ?');
+      values.push(updates.sharingIdentityId);
     }
     if (updates.lastPublishedMiles !== undefined) {
       fields.push('last_published_miles = ?');
@@ -1154,6 +1167,9 @@ class Database {
           ? settings.sharingDisplayName
           : null,
         affinity: settings.sharingEnabled ? settings.sharingAffinity : null,
+        shareIdentityId: settings.sharingEnabled
+          ? settings.sharingIdentityId
+          : null,
       },
     };
   }
@@ -1222,6 +1238,17 @@ class Database {
                      THEN sharing_affinity_selection
                    ELSE ?
                  END,
+                 -- Deliberately NOT gated by the "destination already
+                 -- configured" guard above, unlike displayName/affinity.
+                 -- This column exists purely to link installs for stale
+                 -- cleanup (see pruneSiblingIdentities), not as a
+                 -- user-chosen preference — a device that enabled sharing
+                 -- on its own before importing (very plausible: a new
+                 -- phone invites you to opt in long before you think to
+                 -- restore your old data) must still adopt the imported
+                 -- identity, or the real old-install orphan this backup
+                 -- was meant to help clean up can never be found.
+                 sharing_identity_id = ?,
                  sharing_provisioning_pending = CASE
                    WHEN sharing_enabled = 1 OR sharing_provisioning_pending = 1 OR sharing_deletion_pending = 1
                      THEN sharing_provisioning_pending
@@ -1242,6 +1269,7 @@ class Database {
             [
               backup.sharing.displayName,
               backup.sharing.affinity,
+              backup.sharing.shareIdentityId ?? null,
               backup.sharing.userId,
               DEFAULT_SAVE_ID,
             ],

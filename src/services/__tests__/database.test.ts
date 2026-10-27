@@ -853,6 +853,7 @@ describe('database initialization', () => {
       userId: string | null;
       displayName: string | null;
       affinity: 'river' | 'woodland' | 'hills' | null;
+      shareIdentityId: string | null;
     } | null,
   ) => ({
     app: 'MiddleEarthChallenge' as const,
@@ -892,6 +893,7 @@ describe('database initialization', () => {
         userId: 'exported-user-id',
         displayName: 'Penny Greycloak',
         affinity: 'woodland',
+        shareIdentityId: 'share-penny-123',
       }),
     );
 
@@ -902,6 +904,7 @@ describe('database initialization', () => {
     expect(sharingUpdate?.[1]).toEqual([
       'Penny Greycloak',
       'woodland',
+      'share-penny-123',
       'exported-user-id',
       'default',
     ]);
@@ -925,6 +928,7 @@ describe('database initialization', () => {
         userId: null,
         displayName: null,
         affinity: null,
+        shareIdentityId: null,
       }),
     );
 
@@ -952,6 +956,7 @@ describe('database initialization', () => {
         userId: 'exported-user-id',
         displayName: 'Penny Greycloak',
         affinity: 'woodland',
+        shareIdentityId: 'share-penny-123',
       }),
     );
 
@@ -959,13 +964,21 @@ describe('database initialization', () => {
       String(sql).includes('sharing_migration_source_user_id = ?'),
     )?.[0] as string;
     // The destination-preservation guard must gate every mutable sharing
-    // column, not just display name/affinity, or a partially-configured
-    // destination could be silently clobbered by the imported profile.
+    // *profile* column, not just display name/affinity, or a
+    // partially-configured destination could be silently clobbered by the
+    // imported profile. sharing_identity_id is intentionally NOT part of
+    // this guard (see the import SQL's own comment) — it's identity
+    // linkage, not a profile preference, so it must always adopt the
+    // backup's value even when the destination already has sharing
+    // configured. That unconditional-assignment behavior is covered by
+    // 'always adopts the imported shareIdentityId...' below.
     expect(sharingUpdateSql).toContain(
       'WHEN sharing_enabled = 1 OR sharing_provisioning_pending = 1 OR sharing_deletion_pending = 1',
     );
     expect(sharingUpdateSql).toContain('sharing_display_name = CASE');
     expect(sharingUpdateSql).toContain('sharing_affinity_selection = CASE');
+    expect(sharingUpdateSql).not.toContain('sharing_identity_id = CASE');
+    expect(sharingUpdateSql).toContain('sharing_identity_id = ?');
     expect(sharingUpdateSql).toContain('sharing_provisioning_pending = CASE');
     expect(sharingUpdateSql).toContain('last_published_miles = CASE');
     expect(sharingUpdateSql).toContain('last_shared_progress_sync_at = CASE');
