@@ -449,7 +449,11 @@ describe('friendProgressWorkflow', () => {
       expect(settings.sharingMigrationSourceUserId).toBeNull();
     });
 
-    it('rejects migration cleanup when the imported identity is missing', async () => {
+    it('generates a fallback identity when migrating an old backup with no shareIdentityId at all', async () => {
+      // Backward-compat case: a real backup exported before shareIdentityId
+      // existed can still have sharing enabled with no identity field.
+      // Rather than failing every sync indefinitely, this generates one
+      // now (the same lazy fallback a fresh opt-in uses).
       const settings = Object.assign(createSettings(), {
         sharingMigrationSourceUserId: 'exported-user',
         sharingDisplayName: 'Penny Greycloak',
@@ -462,12 +466,16 @@ describe('friendProgressWorkflow', () => {
       const workflow = createFriendProgressWorkflow({
         service,
         getSettings: () => settings,
+        generateIdentityId,
       });
 
-      await expect(
-        workflow.synchronize(12.5, jest.fn()),
-      ).rejects.toThrow('Imported shared progress profile is incomplete');
-      expect(service.pruneSiblingIdentities).not.toHaveBeenCalled();
+      await workflow.synchronize(12.5, jest.fn());
+
+      expect(service.pruneSiblingIdentities).toHaveBeenCalledWith(
+        GENERATED_IDENTITY_ID,
+      );
+      expect(settings.sharingIdentityId).toBe(GENERATED_IDENTITY_ID);
+      expect(settings.sharingMigrationSourceUserId).toBeNull();
     });
   });
 });
