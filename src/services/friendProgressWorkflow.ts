@@ -184,17 +184,18 @@ export const createFriendProgressWorkflow = ({
       }
       if (settings.sharingMigrationSourceUserId) {
         // The import that set sharingMigrationSourceUserId only does so
-        // when the backup's sharing was enabled, and that same import path
-        // requires shareIdentityId whenever sharing is enabled (see
-        // parseBackup in journeyDataTransfer.ts) — so sharingIdentityId is
-        // guaranteed to be set here too. Pruning by identity (rather than
-        // deleting only the single UID recorded in this one backup file)
-        // catches every orphaned sibling left behind by any number of past
-        // reimports of the same backup, not just the most recent install.
-        if (!settings.sharingIdentityId) {
-          throw new Error('Imported shared progress profile is incomplete');
-        }
-        await service.pruneSiblingIdentities(settings.sharingIdentityId);
+        // when the backup's sharing was enabled. Newer backups always
+        // carry a real shareIdentityId whenever sharing is enabled, but
+        // an old backup exported before this field existed can still
+        // reach here with sharing enabled and no identity at all — in
+        // that case generate one now (same lazy fallback as a fresh
+        // opt-in) rather than failing every sync indefinitely.
+        const shareIdentityId = await ensureShareIdentityId(settings);
+        // Pruning by identity (rather than deleting only the single UID
+        // recorded in this one backup file) catches every orphaned
+        // sibling left behind by any number of past reimports of the
+        // same backup, not just the most recent install.
+        await service.pruneSiblingIdentities(shareIdentityId);
 
         const importedProfilePending =
           !settings.sharingEnabled &&

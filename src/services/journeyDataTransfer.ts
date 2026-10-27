@@ -176,13 +176,18 @@ function parseBackup(content: string): JourneyBackup {
     if (enabled && (!userId || !displayName || !affinity)) {
       throw new Error('Invalid backup: active sharing profile is incomplete');
     }
-    const shareIdentityId = requireNullableString(
-      parsed.sharing.shareIdentityId,
-      'sharing identity',
-    );
-    if (enabled && !shareIdentityId) {
-      throw new Error('Invalid backup: active sharing profile is incomplete');
-    }
+    // Absent entirely in backups exported before this field existed
+    // (treated the same as an explicit null) — not a validation failure.
+    // Only an active sharing profile from a NEW backup, which always
+    // writes a real string here, is required to have one; see
+    // enableSharing()/updateProfile() in friendProgressWorkflow.ts.
+    const shareIdentityId =
+      parsed.sharing.shareIdentityId === undefined
+        ? null
+        : requireNullableString(
+            parsed.sharing.shareIdentityId,
+            'sharing identity',
+          );
     sharing = { enabled, userId, displayName, affinity, shareIdentityId };
   }
 
