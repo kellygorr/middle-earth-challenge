@@ -1,5 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Skia } from '@shopify/react-native-skia';
 import Animated, {
   SharedValue,
@@ -19,6 +25,14 @@ import { borderRadius, shadows, spacing } from '../styles/global';
 import { typographyThemed } from '../styles/typography';
 import { formatDistance } from '../utils/date';
 import { mapBookMilesToPathProgress } from '../utils/pathProgress';
+
+// Gap between the marker pin's anchor point and the top of the info
+// tooltip rendered below it.
+const TOOLTIP_GAP = 8;
+// Matches the tooltip's own `minWidth` — used as the centering guess for
+// the single frame before its real width is measured via onLayout, so the
+// initial position is already close instead of visibly snapping over.
+const TOOLTIP_DEFAULT_WIDTH = 120;
 
 interface ParticipantPosition extends FriendProgressMapParticipant {
   x: number;
@@ -52,6 +66,7 @@ function PositionedParticipantMarker({
 }: PositionedParticipantMarkerProps) {
   const theme = useTheme();
   const useMiles = useSettingsStore(state => state.useMiles);
+  const [tooltipWidth, setTooltipWidth] = useState(TOOLTIP_DEFAULT_WIDTH);
   const journeyPercentage = Math.round(
     Math.min(1, Math.max(0, participant.distanceMiles / TOTAL_JOURNEY_MILES)) *
       100,
@@ -68,6 +83,11 @@ function PositionedParticipantMarker({
       },
     ],
   }));
+
+  const handleTooltipLayout = (event: LayoutChangeEvent) => {
+    const width = event.nativeEvent.layout.width;
+    if (width > 0 && width !== tooltipWidth) setTooltipWidth(width);
+  };
 
   return (
     <Animated.View
@@ -86,17 +106,43 @@ function PositionedParticipantMarker({
         accessibilityState={{ expanded }}
         onPress={onPress}
         style={[
-          expanded ? styles.bubble : styles.locationPin,
-          !expanded && { borderColor: theme.colors.iconInverted },
-          expanded
-            ? {
-                backgroundColor: theme.colors.surface,
-                borderColor: markerColor,
-              }
-            : { backgroundColor: markerColor },
+          styles.locationPin,
+          { borderColor: theme.colors.iconInverted, backgroundColor: markerColor },
         ]}
       >
-        {expanded ? (
+        {isLeader ? (
+          <StarIcon size={16} color={theme.colors.iconInverted} />
+        ) : (
+          <View
+            style={[
+              styles.locationPinCenter,
+              { backgroundColor: theme.colors.iconInverted },
+            ]}
+          />
+        )}
+      </Pressable>
+
+      {expanded && (
+        // Positioned independently of the pin above (not swapped in for
+        // it) so the pin stays visible while this tooltip shows beneath
+        // it. Centered under the pin's anchor point via onLayout — the
+        // tooltip's width varies with its content (display name length),
+        // so a fixed offset can't center it; only a measured one can.
+        <Pressable
+          onPress={onPress}
+          onLayout={handleTooltipLayout}
+          style={[
+            styles.bubble,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: markerColor,
+              transform: [
+                { translateX: -tooltipWidth / 2 },
+                { translateY: TOOLTIP_GAP },
+              ],
+            },
+          ]}
+        >
           <View style={styles.bubbleContent}>
             {participant.markerMessage ? (
               <Text style={typographyThemed(theme).captionPrimaryBold}>
@@ -125,17 +171,8 @@ function PositionedParticipantMarker({
               </>
             )}
           </View>
-        ) : isLeader ? (
-          <StarIcon size={16} color={theme.colors.iconInverted} />
-        ) : (
-          <View
-            style={[
-              styles.locationPinCenter,
-              { backgroundColor: theme.colors.iconInverted },
-            ]}
-          />
-        )}
-      </Pressable>
+        </Pressable>
+      )}
     </Animated.View>
   );
 }
@@ -242,6 +279,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     height: 24,
     justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    top: 0,
     transform: [{ translateX: -12 }, { translateY: -28 }, { rotate: '-45deg' }],
     width: 24,
     ...shadows.small,
@@ -254,11 +294,13 @@ const styles = StyleSheet.create({
   bubble: {
     borderWidth: 2,
     borderRadius: borderRadius.md,
+    left: 0,
     maxWidth: 190,
     minWidth: 120,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    transform: [{ translateX: -12 }, { translateY: -44 }],
+    position: 'absolute',
+    top: 0,
     ...shadows.medium,
   },
   bubbleContent: {

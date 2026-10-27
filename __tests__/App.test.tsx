@@ -67,13 +67,11 @@ test('renders the map controls', async () => {
   // By design, Welcome always reappears after the splash finishes,
   // regardless of showWelcome's prior value (see the matching App.tsx
   // comment) — so bootstrap now always lands on 'ready' first, and the
-  // welcome flow must be dismissed to proceed. Reaching the final
-  // 'active' phase additionally requires MapScreen's own path-reveal
-  // animation to finish (onPathRevealComplete) — a separate concern this
-  // lightweight bootstrap suite doesn't drive, so 'revealing' (not
-  // 'active') is the correct boundary to assert here: it proves
-  // WelcomeModal's onDismiss correctly advances phase and nothing gets
-  // stuck, without over-claiming to also cover MapScreen's animation.
+  // welcome flow must be dismissed to proceed. The base/grey path is now
+  // set fully drawn immediately on dismiss (no animation to wait on — see
+  // useInitialAnimation's completePathReveal), so dismissing welcome
+  // reaches 'active' directly without needing to drive any further
+  // animation.
   await waitFor(() =>
     expect(useInitializationStore.getState().phase).toBe('ready'),
   );
@@ -81,7 +79,7 @@ test('renders the map controls', async () => {
     fireEvent.press(screen.getByText(/journey/i));
   });
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('revealing'),
+    expect(useInitializationStore.getState().phase).toBe('active'),
   );
   expect(screen.getByText('Labels')).toBeOnTheScreen();
   expect(screen.getByLabelText('View statistics')).toBeOnTheScreen();
@@ -287,7 +285,7 @@ test('bootstrap lands on ready (welcome flow runs) before any onDismiss', async 
   expect(consoleError).not.toHaveBeenCalled();
 });
 
-test('regression: bootstrap rerunning after a resume reaches ready (not stuck) and advances toward active once dismissed', async () => {
+test('regression: bootstrap rerunning after a resume reaches ready (not stuck) and advances to active once dismissed', async () => {
   // Reproduces the exact blank-UI-on-resume bug: confirmed via on-device
   // logcat that swiping the app away in Recents and reopening it does
   // NOT kill the process, but DOES recreate the whole React root and
@@ -309,11 +307,9 @@ test('regression: bootstrap rerunning after a resume reaches ready (not stuck) a
   // on every bootstrap run (by design, Welcome always reappears after the
   // splash — see the matching App.tsx comment), so WelcomeModal always
   // remounts here and its onDismiss always fires again, meaning phase can
-  // never get stuck at 'ready' the way it used to. Reaching the final
-  // 'active' phase additionally requires MapScreen's own path-reveal
-  // animation to finish — a separate concern this lightweight bootstrap
-  // suite doesn't drive, so 'revealing' (not 'active') is the correct
-  // boundary to assert: it's as far as dismissing Welcome alone can prove.
+  // never get stuck at 'ready' the way it used to. The base/grey path is
+  // now set fully drawn immediately on dismiss (no animation to wait on),
+  // so dismissing welcome reaches 'active' directly.
   useInitializationStore.setState({ phase: 'active' });
   const consoleError = jest
     .spyOn(console, 'error')
@@ -328,7 +324,7 @@ test('regression: bootstrap rerunning after a resume reaches ready (not stuck) a
     fireEvent.press(screen.getByText(/journey/i));
   });
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('revealing'),
+    expect(useInitializationStore.getState().phase).toBe('active'),
   );
   expect(consoleError).not.toHaveBeenCalled();
 });

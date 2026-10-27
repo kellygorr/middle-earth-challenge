@@ -339,8 +339,6 @@ export default function MapScreen({
   const { initialBasePathProgress, settingsEnterStyle, infoEnterStyle } =
     useInitialAnimation({
       showWelcome: startupShowWelcome,
-      pathRevealStart,
-      isSyncing,
       recenterOpacity,
       originMonitorEnabled,
       resetToOrigin,
