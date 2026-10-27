@@ -17,8 +17,10 @@ export function useGameProgressAnimation(
   /**
    * Progress fraction (0..1) to jump to instantly on the *first* activation,
    * before animating up to the current-miles target. Should be the same
-   * off-screen "reveal start" point the base/grey path already animates
-   * from (see `findPathRevealStart` in MapScreen) — without this, the
+   * off-screen "reveal start" point the base/grey path is instantly drawn
+   * to (see `findPathRevealStart` in MapScreen, and `completePathReveal`
+   * in `useInitialAnimation`, which sets it fully drawn immediately on
+   * welcome dismiss rather than animating it in) — without this, the
    * animation always started from progress 0 (Hobbiton), so for a
    * well-traveled save almost the entire catch-up animation played out
    * off-screen and only the last sliver was ever visible, flashing by
@@ -70,28 +72,27 @@ export function useGameProgressAnimation(
     hasActivatedRef.current = true;
 
     if (isFirstActivation && revealStartProgress > 0) {
-      // Instantly skip to the same off-screen point the grey path's reveal
-      // already starts from, then only animate the (mostly on-screen)
-      // remaining distance up to the current position. No explicit
-      // `easing` here — omitting it uses Reanimated's default
-      // (Easing.inOut(Easing.quad)), matching the grey path's own
-      // withTiming call in useInitialAnimation exactly, so both lines
-      // share the same accelerate/decelerate feel instead of this one
-      // moving at a robotic constant rate.
+      // Instantly skip to the same off-screen point the grey path is
+      // instantly drawn to (see useInitialAnimation's completePathReveal),
+      // then only animate the (mostly on-screen) remaining distance up to
+      // the current position. No explicit `easing` here — omitting it
+      // uses Reanimated's default (Easing.inOut(Easing.quad)).
       //
-      // Duration is scaled to match the grey path's own average speed,
-      // not a flat `motion.pathReveal.duration`. The grey reveal always
-      // covers (1 - revealStartProgress) of the path in that fixed
-      // duration, so its average progress-per-ms rate varies run to run.
-      // This animation only needs to cover (target - revealStartProgress)
-      // — a fraction of what grey covered in the same window — so using
-      // the same flat duration made it crawl at a fraction of grey's
-      // speed. Measured directly on-device: mean screen speed dropped to
-      // ~0.069 px/ms here vs ~0.165 px/ms for grey over comparable path
+      // Duration is scaled against `motion.pathReveal.duration` (the grey
+      // path's old reveal-animation duration, kept only as a speed
+      // reference now that the grey path itself no longer animates) as if
+      // that duration still covered (1 - revealStartProgress) of the path
+      // at some average progress-per-ms rate. This animation only needs
+      // to cover (target - revealStartProgress) — a fraction of that
+      // reference distance — so using the flat duration directly made it
+      // crawl at a fraction of the intended speed. Measured on-device
+      // (while the grey path still animated) at ~0.069 px/ms here vs
+      // ~0.165 px/ms for the flat-duration reference over comparable path
       // geometry — moving noticeably slower makes the same underlying
       // path-curvature speed variation far more visually obvious (small
       // stalls read as "stopping" instead of blending into faster
-      // continuous motion). Matching grey's speed removes that mismatch.
+      // continuous motion). Scaling the duration against the reference
+      // speed removes that mismatch.
       const revealDistance = Math.max(1e-6, 1 - revealStartProgress);
       const catchUpDistance = Math.max(0, target - revealStartProgress);
       const scaledDuration = Math.max(
@@ -178,11 +179,12 @@ export function useGameProgressAnimation(
   // scheduled on every single frame the animated value changed — up to
   // ~60/sec for a multi-second animation — even on frames the gate would
   // immediately discard. The base/grey path (`initialBasePathProgress` in
-  // useInitialAnimation.ts) has no JS bridge at all during its animation
-  // and reads visibly smooth; this path is the only one with a per-frame
-  // cross-thread dispatch competing with the UI thread for the same
-  // animation's frame budget. Gating before the dispatch, not just before
-  // the resulting state write, removes that competition on every
+  // useInitialAnimation.ts) is set fully drawn immediately on welcome
+  // dismiss rather than animated, so it has no JS bridge and no frame
+  // budget to compete for at all; this path is the only one with a
+  // per-frame cross-thread dispatch competing with the UI thread for its
+  // own animation's frame budget. Gating before the dispatch, not just
+  // before the resulting state write, removes that competition on every
   // discarded frame instead of only on the ~90% of frames whose JS-side
   // write was already a no-op.
   useAnimatedReaction(

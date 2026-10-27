@@ -1,9 +1,7 @@
-import { AccessibilityInfo } from 'react-native';
-import { act, renderHook } from '@testing-library/react-native';
-import { withTiming, type SharedValue } from 'react-native-reanimated';
+import { renderHook } from '@testing-library/react-native';
+import { type SharedValue } from 'react-native-reanimated';
 
 import { useInitialAnimation } from '../useInitialAnimation';
-import { motion } from '../../styles/motion';
 
 const sharedValue = <T>(value: T) => ({ value } as SharedValue<T>);
 type HookResult = ReturnType<typeof useInitialAnimation>;
@@ -16,14 +14,25 @@ describe('useInitialAnimation path reveal', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
-    (withTiming as jest.Mock).mockImplementation(toValue => toValue);
     jest.useRealTimers();
   });
 
-  it('forces the full path visible when the animation callback never fires', async () => {
+  it('is always fully drawn while welcome is showing — no reveal animation, no partial-draw state', async () => {
+    const { result } = await renderHook(() =>
+      useInitialAnimation({
+        showWelcome: true,
+        recenterOpacity: sharedValue(0),
+        originMonitorEnabled: sharedValue(true),
+        resetToOrigin: jest.fn(),
+      }),
+    );
+
+    expect(result.current.initialBasePathProgress.value).toBe(1);
+  });
+
+  it('fires the completion callback exactly once when welcome dismisses', async () => {
     const onPathRevealComplete = jest.fn();
     const options = {
-      isSyncing: false,
       recenterOpacity: sharedValue(0),
       originMonitorEnabled: sharedValue(true),
       resetToOrigin: jest.fn(),
@@ -34,39 +43,17 @@ describe('useInitialAnimation path reveal', () => {
       { initialProps: { showWelcome: true } },
     );
 
-    await rerender({ showWelcome: false });
     expect(onPathRevealComplete).not.toHaveBeenCalled();
 
     await rerender({ showWelcome: false });
-    expect(onPathRevealComplete).not.toHaveBeenCalled();
-
-    await act(() => {
-      jest.advanceTimersByTime(
-        motion.pathReveal.delay + motion.pathReveal.duration + 1000,
-      );
-    });
 
     expect(result.current.initialBasePathProgress.value).toBe(1);
     expect(onPathRevealComplete).toHaveBeenCalledTimes(1);
   });
 
-  it('starts the path at the supplied off-screen edge point', async () => {
-    const { result } = await renderHook(() =>
-      useInitialAnimation({
-        showWelcome: true,
-        pathRevealStart: 0.25,
-        recenterOpacity: sharedValue(0),
-        originMonitorEnabled: sharedValue(true),
-        resetToOrigin: jest.fn(),
-      }),
-    );
-
-    expect(result.current.initialBasePathProgress.value).toBe(0.25);
-  });
-
-  it('cancels the fallback when onboarding is shown again', async () => {
+  it('stays fully drawn and fires completion again each time welcome is dismissed', async () => {
     const onPathRevealComplete = jest.fn();
-    const { rerender } = await renderHook<HookResult, HookProps>(
+    const { result, rerender } = await renderHook<HookResult, HookProps>(
       ({ showWelcome }) =>
         useInitialAnimation({
           showWelcome,
@@ -79,12 +66,19 @@ describe('useInitialAnimation path reveal', () => {
     );
 
     await rerender({ showWelcome: false });
-    await rerender({ showWelcome: true });
-    await act(() => {
-      jest.runAllTimers();
-    });
+    expect(onPathRevealComplete).toHaveBeenCalledTimes(1);
 
-    expect(onPathRevealComplete).not.toHaveBeenCalled();
+    await rerender({ showWelcome: true });
+
+    // Re-showing welcome never hides the base path again — it stays
+    // fully drawn the whole time — and does not re-fire the completion
+    // callback just from being shown again.
+    expect(result.current.initialBasePathProgress.value).toBe(1);
+    expect(onPathRevealComplete).toHaveBeenCalledTimes(1);
+
+    await rerender({ showWelcome: false });
+    expect(result.current.initialBasePathProgress.value).toBe(1);
+    expect(onPathRevealComplete).toHaveBeenCalledTimes(2);
   });
 
   it('does not replay the path when the map mounts without welcome', async () => {
@@ -92,65 +86,12 @@ describe('useInitialAnimation path reveal', () => {
     const { result } = await renderHook(() =>
       useInitialAnimation({
         showWelcome: false,
-        pathRevealStart: 0.25,
         recenterOpacity: sharedValue(0),
         originMonitorEnabled: sharedValue(true),
         resetToOrigin: jest.fn(),
         onPathRevealComplete,
       }),
     );
-
-    expect(result.current.initialBasePathProgress.value).toBe(1);
-    expect(onPathRevealComplete).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not run the fallback after normal animation completion', async () => {
-    (withTiming as jest.Mock).mockImplementation(
-      (toValue, _config, callback) => {
-        callback?.(true);
-        return toValue;
-      },
-    );
-    const onPathRevealComplete = jest.fn();
-    const { rerender } = await renderHook<HookResult, HookProps>(
-      ({ showWelcome }) =>
-        useInitialAnimation({
-          showWelcome,
-          recenterOpacity: sharedValue(0),
-          originMonitorEnabled: sharedValue(true),
-          resetToOrigin: jest.fn(),
-          onPathRevealComplete,
-        }),
-      { initialProps: { showWelcome: true } },
-    );
-
-    await rerender({ showWelcome: false });
-    await act(() => {
-      jest.runAllTimers();
-    });
-
-    expect(onPathRevealComplete).toHaveBeenCalledTimes(1);
-  });
-
-  it('reveals the full path immediately when Reduce Motion is enabled', async () => {
-    jest
-      .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
-      .mockResolvedValue(true);
-    const onPathRevealComplete = jest.fn();
-    const { result, rerender } = await renderHook<HookResult, HookProps>(
-      ({ showWelcome }) =>
-        useInitialAnimation({
-          showWelcome,
-          pathRevealStart: 0.25,
-          recenterOpacity: sharedValue(0),
-          originMonitorEnabled: sharedValue(true),
-          resetToOrigin: jest.fn(),
-          onPathRevealComplete,
-        }),
-      { initialProps: { showWelcome: true } },
-    );
-
-    await rerender({ showWelcome: false });
 
     expect(result.current.initialBasePathProgress.value).toBe(1);
     expect(onPathRevealComplete).toHaveBeenCalledTimes(1);

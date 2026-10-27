@@ -9,18 +9,9 @@ import {
   runOnJS,
 } from 'react-native-reanimated';
 import { motion } from '../styles/motion';
-import { useReduceMotion } from './useReduceMotion';
-
-const PATH_REVEAL_WATCHDOG_BUFFER_MS = 1000;
 
 interface UseInitialAnimationOptions {
   showWelcome: boolean;
-  pathRevealStart?: number;
-  // Latest sync state. When the welcome modal dismisses while a sync is in
-  // progress, the path reveal animation is skipped (set to full) because
-  // the screen already has competing motion (bg pulse, shimmer) and the
-  // reveal is visually distracting on top of those.
-  isSyncing?: boolean;
   recenterOpacity: SharedValue<number>;
   originMonitorEnabled: SharedValue<boolean>;
   resetToOrigin: () => void;
@@ -28,9 +19,9 @@ interface UseInitialAnimationOptions {
   // tooltip and begin observing miles changes — decoupled from path
   // reveal so first-run guidance shows quickly.
   onStartupReady?: () => void;
-  // Fires when the base path reveal completes (or immediately if the
-  // reveal was skipped due to in-flight sync). Used to switch the game
-  // progress marker on so it doesn't animate along a still-drawing path.
+  // Fires once the base path is marked fully drawn (immediately, on
+  // welcome dismiss — the base path no longer animates in). Used to
+  // switch the game progress marker on.
   onPathRevealComplete?: () => void;
 }
 
@@ -45,23 +36,15 @@ interface UseInitialAnimationReturn {
 
 export function useInitialAnimation({
   showWelcome,
-  pathRevealStart = 0,
-  isSyncing = false,
   recenterOpacity,
   originMonitorEnabled,
   resetToOrigin,
   onStartupReady,
   onPathRevealComplete,
 }: UseInitialAnimationOptions): UseInitialAnimationReturn {
-  const reduceMotionEnabled = useReduceMotion();
-  // Mirror `isSyncing` into a ref so changes don't retrigger the dismissal
-  // effect; we only need its value at the moment welcome dismisses.
-  const isSyncingRef = useRef(isSyncing);
-  isSyncingRef.current = isSyncing;
-  // Initial path reveal animation (0 to 1)
-  const initialBasePathProgress = useSharedValue(
-    showWelcome ? pathRevealStart : 1,
-  );
+  // Base/grey path is always fully drawn — no reveal animation and no
+  // partial-draw state while welcome is showing either.
+  const initialBasePathProgress = useSharedValue(1);
 
   // UI button opacities
   const settingsOpacity = useSharedValue(showWelcome ? 0 : 1);
@@ -79,51 +62,21 @@ export function useInitialAnimation({
   const hasStartupSignaled = useSharedValue(!showWelcome);
   const pathRevealCompletedRef = useRef(false);
   const startedWithoutWelcomeRef = useRef(!showWelcome);
-  const pathRevealWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const onPathRevealCompleteRef = useRef(onPathRevealComplete);
   onPathRevealCompleteRef.current = onPathRevealComplete;
-
-  const clearPathRevealWatchdog = useCallback(() => {
-    if (pathRevealWatchdogRef.current !== null) {
-      clearTimeout(pathRevealWatchdogRef.current);
-      pathRevealWatchdogRef.current = null;
-    }
-  }, []);
 
   const completePathReveal = useCallback(() => {
     if (pathRevealCompletedRef.current) return;
     pathRevealCompletedRef.current = true;
-    clearPathRevealWatchdog();
     initialBasePathProgress.value = 1;
     onPathRevealCompleteRef.current?.();
-  }, [clearPathRevealWatchdog, initialBasePathProgress]);
-
-  useEffect(
-    () => () => {
-      clearPathRevealWatchdog();
-    },
-    [clearPathRevealWatchdog],
-  );
+  }, [initialBasePathProgress]);
 
   useEffect(() => {
     if (startedWithoutWelcomeRef.current) {
       completePathReveal();
     }
   }, [completePathReveal]);
-
-  useEffect(() => {
-    if (reduceMotionEnabled && !showWelcome) {
-      cancelAnimation(initialBasePathProgress);
-      completePathReveal();
-    }
-  }, [
-    completePathReveal,
-    initialBasePathProgress,
-    reduceMotionEnabled,
-    showWelcome,
-  ]);
 
   // Animated styles for buttons
   const settingsEnterStyle = useAnimatedStyle(() => ({
@@ -152,36 +105,14 @@ export function useInitialAnimation({
       }
 
       // Path reveal animation (only once — re-runs of this effect during
-      // sync-driven re-renders would otherwise keep resetting the
-      // withDelay and the reveal would never start until re-renders stop).
-      // If a sync is already in progress at the moment welcome dismisses,
-      // skip the reveal (jump straight to full) to avoid stacking motion
-      // on top of the bg pulse + shimmer animations.
+      // sync-driven re-renders would otherwise keep re-triggering this
+      // block). The grey base path no longer animates in on dismiss —
+      // it jumps straight to fully drawn immediately, so only the
+      // colored "active" progress path (see useGameProgressAnimation)
+      // animates on dismiss.
       if (!hasPathRevealed.value) {
         hasPathRevealed.value = true;
-        if (isSyncingRef.current || reduceMotionEnabled) {
-          completePathReveal();
-        } else {
-          pathRevealWatchdogRef.current = setTimeout(
-            completePathReveal,
-            motion.pathReveal.delay +
-              motion.pathReveal.duration +
-              PATH_REVEAL_WATCHDOG_BUFFER_MS,
-          );
-          initialBasePathProgress.value = withDelay(
-            motion.pathReveal.delay,
-            withTiming(
-              1,
-              { duration: motion.pathReveal.duration },
-              finished => {
-                'worklet';
-                if (finished) {
-                  runOnJS(completePathReveal)();
-                }
-              },
-            ),
-          );
-        }
+        completePathReveal();
       }
 
       // Info button appears immediately alongside settings so the user
@@ -210,11 +141,9 @@ export function useInitialAnimation({
       }
     } else {
       // Reset opacities when welcome shows
-      clearPathRevealWatchdog();
       cancelAnimation(settingsOpacity);
       cancelAnimation(infoOpacity);
       cancelAnimation(startupSignal);
-      cancelAnimation(initialBasePathProgress);
       hasSettingsAnimated.value = false;
       hasInfoAnimated.value = false;
       hasPathRevealed.value = false;
@@ -237,13 +166,9 @@ export function useInitialAnimation({
 
       // Reset map position
       resetToOrigin();
-
-      // Hide path so it can re-run on next dismissal
-      initialBasePathProgress.value = pathRevealStart;
     }
   }, [
     showWelcome,
-    pathRevealStart,
     initialBasePathProgress,
     settingsOpacity,
     infoOpacity,
@@ -255,9 +180,7 @@ export function useInitialAnimation({
     hasInfoAnimated,
     hasPathRevealed,
     hasStartupSignaled,
-    clearPathRevealWatchdog,
     completePathReveal,
-    reduceMotionEnabled,
     onStartupReady,
   ]);
 
