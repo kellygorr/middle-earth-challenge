@@ -41,15 +41,18 @@ describe('StatusBadge', () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
-  it('does not start the status pulse when Reduce Motion is enabled', async () => {
+  it('stops the status pulse shortly after Reduce Motion resolves true', async () => {
     jest
       .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
       .mockResolvedValue(true);
 
     render(<StatusBadge label="Syncing" inProgress />);
 
-    await act(async () => {});
-
-    expect(Animated.loop).not.toHaveBeenCalled();
+    // useReduceMotion now defaults to false (animations on) until the
+    // real async check resolves — see its own doc comment for why — so
+    // the pulse correctly starts on the very first render, then stops
+    // once the real "Reduce Motion: true" value arrives a moment later.
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
   });
 });
