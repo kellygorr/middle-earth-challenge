@@ -385,30 +385,29 @@ function App(): React.JSX.Element {
     let cancelled = false;
 
     const initApp = async () => {
-      // Was the app already fully active (past onboarding, UI visible)
-      // before this bootstrap effect started running? `initializationStore`
-      // is Zustand/module-scope state that survives a swipe-away-in-Recents
-      // resume even though this whole component tree gets torn down and
-      // recreated (confirmed via logcat) — so this captures the TRUE prior
-      // state, not this fresh instance's initial render value. Must be read
-      // before anything below touches `phase`.
+      // By design, Welcome always reappears after the splash finishes —
+      // on a true cold start AND on a warm resume where Android tears
+      // down and recreates the React root (e.g. after being swiped away
+      // in Recents) while the underlying process survives because the
+      // pedometer foreground service keeps it alive. `showWelcome` is
+      // reset to true unconditionally below so that's true every time
+      // this effect runs, not just on a genuine fresh process start.
       //
-      // Without this check, `setPhase('loading')` a few lines down fires on
-      // every single bootstrap rerun, including a warm resume where
-      // nothing actually needs to reload — MapScreen's `startupShowWelcome`
-      // treats `phase === 'loading'`/`'ready'` as "hide the UI" (path and
-      // buttons), so every resume forced a real (if brief) hide while
-      // bootstrap re-ran, followed by a reveal once `phase` reached
-      // `'active'` again a moment later — a visible hide-then-reveal
-      // flash. Confirmed by testing: the flash appeared immediately after
-      // fixing the original permanently-stuck bug (which this same
-      // `wasAlreadyActive` check also fixes, a few lines further down),
-      // and disappeared once this skip was added. A warm resume has
-      // nothing to load — the whole point is the prior session's state
-      // (including full UI visibility) is still valid — so it should
-      // never touch `phase` at all.
-      const wasAlreadyActive =
-        useInitializationStore.getState().phase === 'active';
+      // This used to be guarded by a `wasAlreadyActive` check that
+      // skipped touching `phase`/`showWelcome` at all on that warm-resume
+      // case, specifically to dodge a previously-fixed bug: `phase` could
+      // get stuck at 'ready' forever (blank path/buttons) because
+      // WelcomeModal — the only thing that ever advances `phase` via its
+      // `onDismiss` — never remounts once `showWelcome` is false, and
+      // `showWelcome` was never being reset back to true for a warm
+      // resume. Now that `showWelcome` is reset to true on every
+      // bootstrap run, WelcomeModal always remounts and its `onDismiss`
+      // always fires again, so that stuck-phase failure mode can no
+      // longer happen — the old skip is no longer needed for safety, and
+      // removing it is what makes Welcome reliably reappear after every
+      // splash, matching user expectation that a visible splash never
+      // completes silently into "nothing happened."
+      useSettingsStore.getState().setShowWelcome(true);
       setBootstrapStatus('loading');
       setMapReady(false);
       setMapReadyTimedOut(false);
@@ -416,9 +415,7 @@ function App(): React.JSX.Element {
       setWelcomeReady(false);
       setIsUpgrading(false);
       setUpgradeMigrationFailed(false);
-      if (!wasAlreadyActive) {
-        setPhase('loading');
-      }
+      setPhase('loading');
 
       await runRecoverableBootstrapStep('Firebase App Check', () =>
         initializeFirebaseAppCheck(),
@@ -498,47 +495,17 @@ function App(): React.JSX.Element {
       );
 
       if (!cancelled) {
-        // ROOT CAUSE FIX for the blank-UI-on-resume bug: this used to
-        // unconditionally setPhase('ready') here, every single time
-        // initApp() runs — including when it reruns because Android
-        // recreated the whole React root after the app was swiped away
-        // in Recents and reopened (confirmed via logcat: same PID, but a
-        // fresh `Running "MiddleEarthChallenge"` root + full `initApp`
-        // rerun). `phase === 'ready'` is documented as "welcome screen
-        // visible", and it is ONLY ever promoted onward to 'revealing'
-        // then 'active' by WelcomeModal's `onDismiss` handler — which
-        // only ever fires while `showWelcome` is true. For a returning
-        // user `showWelcome` is already persisted false (onboarding was
-        // completed long ago, in a previous app session), so
-        // WelcomeModal never mounts again and `onDismiss` never fires
-        // again — meaning `phase` got permanently stuck at 'ready'
-        // forever after any bootstrap rerun, with no code path left to
-        // ever advance it. Confirmed directly via on-device logging:
-        // after a resume, `useInitialAnimation`'s hide-everything
-        // else-branch (gated on `phase === 'ready'`) ran on every
-        // render, forever, while its reveal branch never ran again even
-        // once — exactly matching the reported symptom (path/buttons
-        // permanently invisible, only after swipe-away-resume, never
-        // after a plain Home-button background/foreground cycle that
-        // doesn't rerun this effect at all).
-        //
-        // Guarded on `!wasAlreadyActive` for the same reason as the
-        // `setPhase('loading')` skip above: a warm resume's phase is
-        // already 'active' and was never touched, so there's nothing to
-        // restore here — doing so anyway would be a harmless no-op at
-        // best, but reading `showWelcome` fresh here could theoretically
-        // race with a real same-tick settings change; simplest and
-        // safest is to leave an already-active resume alone entirely.
-        //
-        // Reading the store directly here (not the captured `showWelcome`
-        // hook value from this closure) because `loadSettings()` above
-        // may have just hydrated it from the database — this needs the
-        // authoritative post-hydration value, not whatever was true when
-        // this effect last happened to be defined.
-        if (!wasAlreadyActive) {
-          const alreadyOnboarded = !useSettingsStore.getState().showWelcome;
-          setPhase(alreadyOnboarded ? 'active' : 'ready');
-        }
+        // `showWelcome` is reset to true unconditionally at the top of
+        // this effect (see the comment there), so WelcomeModal always
+        // mounts again here and its `onDismiss` handler always promotes
+        // `phase` onward to 'revealing' then 'active' — this can no
+        // longer get stuck the way it used to when a warm resume left
+        // `showWelcome` false with no WelcomeModal around to ever
+        // dismiss. Always transitioning through 'ready' (never
+        // skipping straight to 'active') is what makes the splash
+        // reliably hand off to Welcome every time, rather than
+        // occasionally finishing silently with no visible next step.
+        setPhase('ready');
         setBootstrapStatus('ready');
       }
     };

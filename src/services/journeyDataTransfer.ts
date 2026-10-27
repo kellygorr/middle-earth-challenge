@@ -176,7 +176,14 @@ function parseBackup(content: string): JourneyBackup {
     if (enabled && (!userId || !displayName || !affinity)) {
       throw new Error('Invalid backup: active sharing profile is incomplete');
     }
-    sharing = { enabled, userId, displayName, affinity };
+    const shareIdentityId = requireNullableString(
+      parsed.sharing.shareIdentityId,
+      'sharing identity',
+    );
+    if (enabled && !shareIdentityId) {
+      throw new Error('Invalid backup: active sharing profile is incomplete');
+    }
+    sharing = { enabled, userId, displayName, affinity, shareIdentityId };
   }
 
   return {

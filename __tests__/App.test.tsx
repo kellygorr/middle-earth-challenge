@@ -64,18 +64,24 @@ test('renders the map controls', async () => {
     .mockImplementation(() => {});
   await render(<App />);
 
-  // showWelcome is false in the default fixture (beforeEach) — an
-  // already-onboarded returning user. Bootstrap should land directly on
-  // 'active', not the transient 'ready' plateau (which is reserved for
-  // "welcome screen visible"). See the matching App.tsx comment: landing
-  // on 'ready' here used to be asserted as correct, but it was actually
-  // the exact deadlocked state that caused the blank-UI-on-resume bug —
-  // 'ready' can only ever be promoted onward by WelcomeModal's onDismiss,
-  // which never fires once showWelcome is already false, so a returning
-  // user bootstrapping straight to 'ready' had no way to ever reach
-  // 'active' again.
+  // By design, Welcome always reappears after the splash finishes,
+  // regardless of showWelcome's prior value (see the matching App.tsx
+  // comment) — so bootstrap now always lands on 'ready' first, and the
+  // welcome flow must be dismissed to proceed. Reaching the final
+  // 'active' phase additionally requires MapScreen's own path-reveal
+  // animation to finish (onPathRevealComplete) — a separate concern this
+  // lightweight bootstrap suite doesn't drive, so 'revealing' (not
+  // 'active') is the correct boundary to assert here: it proves
+  // WelcomeModal's onDismiss correctly advances phase and nothing gets
+  // stuck, without over-claiming to also cover MapScreen's animation.
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('active'),
+    expect(useInitializationStore.getState().phase).toBe('ready'),
+  );
+  await act(async () => {
+    fireEvent.press(screen.getByText(/journey/i));
+  });
+  await waitFor(() =>
+    expect(useInitializationStore.getState().phase).toBe('revealing'),
   );
   expect(screen.getByText('Labels')).toBeOnTheScreen();
   expect(screen.getByLabelText('View statistics')).toBeOnTheScreen();
@@ -163,11 +169,11 @@ test('keeps the splash until required bootstrap steps complete', async () => {
   expect(useInitializationStore.getState().phase).toBe('loading');
 
   await act(async () => trackingReady.resolve());
-  // Same reasoning as 'renders the map controls': showWelcome is false
-  // in this fixture, so bootstrap completing lands directly on 'active',
-  // not 'ready'.
+  // By design, Welcome always reappears after the splash finishes (see
+  // the matching App.tsx comment), so bootstrap completing lands on
+  // 'ready', not directly on 'active'.
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('active'),
+    expect(useInitializationStore.getState().phase).toBe('ready'),
   );
   expect(consoleError).not.toHaveBeenCalled();
 });
@@ -262,7 +268,7 @@ test('shows welcome whenever bootstrap has not failed and showWelcome is set', (
   ).toBe(false);
 });
 
-test('first-time users (showWelcome true) still land on ready, not active, so the welcome flow runs', async () => {
+test('bootstrap lands on ready (welcome flow runs) before any onDismiss', async () => {
   useSettingsStore.setState({ showWelcome: true });
   const consoleError = jest
     .spyOn(console, 'error')
@@ -270,9 +276,10 @@ test('first-time users (showWelcome true) still land on ready, not active, so th
 
   await render(<App />);
 
-  // Unlike a returning user, a first-time user must stop at 'ready' and
-  // wait for WelcomeModal's onDismiss to advance the phase — there is no
-  // prior onboarding to skip.
+  // Every bootstrap run stops at 'ready' and waits for WelcomeModal's
+  // onDismiss to advance the phase — by design, Welcome always reappears
+  // after the splash finishes (see the matching App.tsx comment), so this
+  // no longer differs between a first-time user and a returning one.
   await waitFor(() =>
     expect(useInitializationStore.getState().phase).toBe('ready'),
   );
@@ -280,7 +287,7 @@ test('first-time users (showWelcome true) still land on ready, not active, so th
   expect(consoleError).not.toHaveBeenCalled();
 });
 
-test('regression: bootstrap rerunning after a resume reaches active again instead of getting stuck at ready', async () => {
+test('regression: bootstrap rerunning after a resume reaches ready (not stuck) and advances toward active once dismissed', async () => {
   // Reproduces the exact blank-UI-on-resume bug: confirmed via on-device
   // logcat that swiping the app away in Recents and reopening it does
   // NOT kill the process, but DOES recreate the whole React root and
@@ -289,15 +296,24 @@ test('regression: bootstrap rerunning after a resume reaches active again instea
   // settingsStore) survive untouched, since they live outside React.
   // Mounting a second <App/> instance against an initializationStore
   // already sitting at 'active' (as it would be right before a resume)
-  // and an unchanged, already-onboarded settingsStore faithfully
-  // reproduces that exact situation without needing an actual Activity
-  // recreation.
+  // faithfully reproduces that exact situation without needing an actual
+  // Activity recreation.
   //
-  // Before the fix, this got permanently stuck at 'ready': bootstrap
-  // unconditionally called setPhase('ready'), and nothing ever promotes
-  // phase onward again for a returning user (showWelcome already false
-  // means WelcomeModal never mounts, so its onDismiss — the only other
-  // place that advances phase — never fires a second time).
+  // Before the original fix, this got permanently stuck at 'ready':
+  // bootstrap unconditionally called setPhase('ready'), but nothing ever
+  // promoted phase onward again for a returning user, because
+  // `showWelcome` stayed false (already dismissed earlier this session)
+  // so WelcomeModal never remounted and its onDismiss — the only other
+  // place that advances phase — never fired a second time. The current
+  // design resolves this differently: `showWelcome` is now reset to true
+  // on every bootstrap run (by design, Welcome always reappears after the
+  // splash — see the matching App.tsx comment), so WelcomeModal always
+  // remounts here and its onDismiss always fires again, meaning phase can
+  // never get stuck at 'ready' the way it used to. Reaching the final
+  // 'active' phase additionally requires MapScreen's own path-reveal
+  // animation to finish — a separate concern this lightweight bootstrap
+  // suite doesn't drive, so 'revealing' (not 'active') is the correct
+  // boundary to assert: it's as far as dismissing Welcome alone can prove.
   useInitializationStore.setState({ phase: 'active' });
   const consoleError = jest
     .spyOn(console, 'error')
@@ -306,7 +322,13 @@ test('regression: bootstrap rerunning after a resume reaches active again instea
   await render(<App />);
 
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('active'),
+    expect(useInitializationStore.getState().phase).toBe('ready'),
+  );
+  await act(async () => {
+    fireEvent.press(screen.getByText(/journey/i));
+  });
+  await waitFor(() =>
+    expect(useInitializationStore.getState().phase).toBe('revealing'),
   );
   expect(consoleError).not.toHaveBeenCalled();
 });
@@ -335,10 +357,11 @@ test('shows bootstrap failure and reaches readiness only after retry succeeds', 
   fireEvent.press(screen.getByLabelText('Retry initialization'));
 
   await waitFor(() => expect(database.init).toHaveBeenCalledTimes(2));
-  // Same reasoning as 'renders the map controls': showWelcome is false
-  // in this fixture, so retry succeeding lands directly on 'active'.
+  // By design, Welcome always reappears after the splash finishes (see
+  // the matching App.tsx comment), so retry succeeding lands on 'ready',
+  // not directly on 'active'.
   await waitFor(() =>
-    expect(useInitializationStore.getState().phase).toBe('active'),
+    expect(useInitializationStore.getState().phase).toBe('ready'),
   );
   expect(screen.queryByText('Unable to load data')).not.toBeOnTheScreen();
 });

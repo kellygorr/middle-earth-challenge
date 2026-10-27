@@ -35,6 +35,14 @@ interface FriendProgressDocument {
   affinity: FriendAffinity;
   displayName: string;
   distanceMiles: number;
+  /**
+   * Stable cross-install identity carried through backup export/import
+   * (see UserSettings.sharingIdentityId). Used to find and prune every
+   * orphaned document left behind by prior installs that published under
+   * this same identity, however many reimports deep — see
+   * pruneSiblingIdentities below.
+   */
+  shareIdentityId: string;
   updatedAt: unknown;
 }
 
@@ -69,6 +77,10 @@ interface FriendProgressClient {
     participantLimit: number,
     cursor: string | null,
   ) => Promise<FriendProgressPage>;
+  findParticipantIdsByShareIdentityId: (
+    shareIdentityId: string,
+    excludeUserId: string,
+  ) => Promise<string[]>;
   deleteParticipant: (userId: string) => Promise<void>;
   flushPendingWrites: () => Promise<void>;
 }
@@ -195,6 +207,20 @@ const firebaseFriendProgressClient: FriendProgressClient = {
   },
   deleteParticipant: userId =>
     deleteDoc(doc(getFirestore(), COLLECTION_NAME, userId)),
+  findParticipantIdsByShareIdentityId: async (
+    shareIdentityId,
+    excludeUserId,
+  ) => {
+    const snapshot = await getDocs(
+      query(
+        collection(getFirestore(), COLLECTION_NAME),
+        where('shareIdentityId', '==', shareIdentityId),
+      ),
+    );
+    return snapshot.docs
+      .map(participantSnapshot => participantSnapshot.id)
+      .filter(id => id !== excludeUserId);
+  },
   flushPendingWrites: () => waitForPendingWrites(getFirestore()),
 };
 
@@ -252,6 +278,7 @@ export const createFriendProgressService = (
     displayName: string,
     distanceMiles: number,
     affinity: FriendAffinity,
+    shareIdentityId: string,
   ): Promise<void> => {
     const normalizedName = displayName.trim();
 
@@ -261,6 +288,9 @@ export const createFriendProgressService = (
     if (!Number.isFinite(distanceMiles) || distanceMiles < 0) {
       throw new Error('Distance must be a nonnegative number');
     }
+    if (!shareIdentityId) {
+      throw new Error('Shared progress identity is required');
+    }
 
     const userId = await ensureAnonymousUserId();
     await withNetworkTimeout(
@@ -268,8 +298,38 @@ export const createFriendProgressService = (
         displayName: normalizedName,
         distanceMiles,
         affinity,
+        shareIdentityId,
       }),
     );
+  };
+
+  /**
+   * Finds and deletes every other participant document published under the
+   * same shareIdentityId as this device (orphans left behind by earlier
+   * installs that imported the same backup — see docs/shared-progress.md).
+   * Unlike deleteFriendProgressByUserId, this isn't limited to a single
+   * recorded predecessor UID: it matches on identity, so it cleans up
+   * however many stale siblings have accumulated across repeated reimports
+   * of the same backup file, not just the most recent one.
+   */
+  const pruneSiblingIdentities = async (
+    shareIdentityId: string,
+  ): Promise<void> => {
+    const currentUserId = await ensureAnonymousUserId();
+    const staleIds = await withNetworkTimeout(
+      client.findParticipantIdsByShareIdentityId(
+        shareIdentityId,
+        currentUserId,
+      ),
+    );
+    await Promise.all(
+      staleIds.map(staleId =>
+        withNetworkTimeout(client.deleteParticipant(staleId)),
+      ),
+    );
+    if (staleIds.length > 0) {
+      await withNetworkTimeout(client.flushPendingWrites());
+    }
   };
 
   const updateFriendDistance = async (distanceMiles: number): Promise<void> => {
@@ -370,6 +430,7 @@ export const createFriendProgressService = (
     fetchFriendProgress,
     deleteFriendProgress,
     deleteFriendProgressByUserId,
+    pruneSiblingIdentities,
   };
 };
 

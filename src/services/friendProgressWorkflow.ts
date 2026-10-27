@@ -1,12 +1,14 @@
 import { useSettingsStore } from '../stores/settingsStore';
 import type { FriendAffinity } from '../constants/friendAffinities';
 import { friendProgressService } from './friendProgressService';
+import { generateShareIdentityId } from '../utils/generateId';
 
 interface FriendProgressServiceActions {
   enableFriendProgress: (
     displayName: string,
     distanceMiles: number,
     affinity: FriendAffinity,
+    shareIdentityId: string,
   ) => Promise<void>;
   updateFriendProfile: (
     displayName: string,
@@ -15,6 +17,7 @@ interface FriendProgressServiceActions {
   updateFriendDistance: (distanceMiles: number) => Promise<void>;
   deleteFriendProgress: () => Promise<void>;
   deleteFriendProgressByUserId: (userId: string) => Promise<void>;
+  pruneSiblingIdentities: (shareIdentityId: string) => Promise<void>;
 }
 
 type SharingSettings = Pick<
@@ -25,6 +28,7 @@ type SharingSettings = Pick<
   | 'sharingProvisioningPending'
   | 'sharingDeletionPending'
   | 'sharingMigrationSourceUserId'
+  | 'sharingIdentityId'
   | 'lastPublishedMiles'
   | 'updateSharingSettings'
 >;
@@ -33,22 +37,46 @@ interface FriendProgressWorkflowOptions {
   service?: FriendProgressServiceActions;
   getSettings?: () => SharingSettings;
   now?: () => number;
+  generateIdentityId?: () => string;
 }
 
 export const createFriendProgressWorkflow = ({
   service = friendProgressService,
   getSettings = useSettingsStore.getState,
   now = Date.now,
+  generateIdentityId = generateShareIdentityId,
 }: FriendProgressWorkflowOptions = {}) => {
   let syncInFlight: Promise<void> | null = null;
   let deletionInFlight: Promise<void> | null = null;
+
+  // Ensures a stable shareIdentityId exists before publishing, generating
+  // one only if it's still missing (fresh opt-in, or an existing sharer
+  // who enabled sharing before this field existed — both converge through
+  // this same path, no separate one-off migration flow needed). Returns
+  // the id so callers can both publish it and persist it in one place.
+  const ensureShareIdentityId = async (
+    settings: SharingSettings,
+  ): Promise<string> => {
+    if (settings.sharingIdentityId) return settings.sharingIdentityId;
+
+    const shareIdentityId = generateIdentityId();
+    await settings.updateSharingSettings({ sharingIdentityId: shareIdentityId });
+    return shareIdentityId;
+  };
 
   const finishProvisioning = async (
     displayName: string,
     distanceMiles: number,
     affinity: FriendAffinity,
   ): Promise<void> => {
-    await service.enableFriendProgress(displayName, distanceMiles, affinity);
+    const settings = getSettings();
+    const shareIdentityId = await ensureShareIdentityId(settings);
+    await service.enableFriendProgress(
+      displayName,
+      distanceMiles,
+      affinity,
+      shareIdentityId,
+    );
     await getSettings().updateSharingSettings({
       sharingEnabled: true,
       sharingProvisioningPending: false,
@@ -155,9 +183,18 @@ export const createFriendProgressWorkflow = ({
         return;
       }
       if (settings.sharingMigrationSourceUserId) {
-        await service.deleteFriendProgressByUserId(
-          settings.sharingMigrationSourceUserId,
-        );
+        // The import that set sharingMigrationSourceUserId only does so
+        // when the backup's sharing was enabled, and that same import path
+        // requires shareIdentityId whenever sharing is enabled (see
+        // parseBackup in journeyDataTransfer.ts) — so sharingIdentityId is
+        // guaranteed to be set here too. Pruning by identity (rather than
+        // deleting only the single UID recorded in this one backup file)
+        // catches every orphaned sibling left behind by any number of past
+        // reimports of the same backup, not just the most recent install.
+        if (!settings.sharingIdentityId) {
+          throw new Error('Imported shared progress profile is incomplete');
+        }
+        await service.pruneSiblingIdentities(settings.sharingIdentityId);
 
         const importedProfilePending =
           !settings.sharingEnabled &&
