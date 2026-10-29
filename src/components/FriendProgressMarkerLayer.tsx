@@ -107,7 +107,10 @@ function PositionedParticipantMarker({
         onPress={onPress}
         style={[
           styles.locationPin,
-          { borderColor: theme.colors.iconInverted, backgroundColor: markerColor },
+          {
+            borderColor: theme.colors.iconInverted,
+            backgroundColor: markerColor,
+          },
         ]}
       >
         {isLeader ? (

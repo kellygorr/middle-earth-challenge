@@ -311,123 +311,149 @@ export function IssueCard({
       ]}
     >
       <View>
-      <View style={styles.topRow}>
-        <StatusBadge
-          label={badgeLabel}
-          tone={darkMode ? 'primary' : 'accent'}
-          size="small"
-        />
-        <Text
-          style={[
-            typographyThemed(theme).bodyPrimary,
-            styles.headline,
-            { color: headlineColor },
-          ]}
-        >
-          {headline}
-        </Text>
-        {onDismiss && (
-          <Pressable
-            onPress={onDismiss}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel={
-              darkMode ? 'Dismiss upgrade message' : 'Dismiss sync error'
-            }
-            style={styles.dismissBtn}
-          >
-            <Text
-              style={[
-              typographyThemed(theme).subtitleLarge,
-              { color: dismissColor },
-              ]}
-            >
-              ×
-            </Text>
-          </Pressable>
-        )}
-      </View>
-      <ScrollView
-        style={styles.cardContent}
-        contentContainerStyle={styles.cardContentContainer}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-      >
-        <View>
+        <View style={styles.topRow}>
+          <StatusBadge
+            label={badgeLabel}
+            tone={darkMode ? 'primary' : 'accent'}
+            size="small"
+          />
           <Text
             style={[
-            typographyThemed(theme).captionSecondary,
-            { color: bodyColor },
+              typographyThemed(theme).bodyPrimary,
+              styles.headline,
+              { color: headlineColor },
             ]}
           >
-            {body}
-            {bodyEmphasis && (
-              <Text style={styles.bodyEmphasis}>{bodyEmphasis}</Text>
-            )}
-            {bodyAfterEmphasis}
+            {headline}
           </Text>
-          {problem && (
-            <View style={styles.section}>
+          {onDismiss && (
+            <Pressable
+              onPress={onDismiss}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={
+                darkMode ? 'Dismiss upgrade message' : 'Dismiss sync error'
+              }
+              style={styles.dismissBtn}
+            >
               <Text
                 style={[
-                  typographyThemed(theme).captionPrimary,
-                  styles.sectionTitle,
-                  { color: theme.colors.textPrimary },
+                  typographyThemed(theme).subtitleLarge,
+                  { color: dismissColor },
                 ]}
               >
-                Problem
+                ×
               </Text>
-              <Text
-                style={[
-                  typographyThemed(theme).captionSecondary,
-                  { color: theme.colors.textPrimary },
-                ]}
-              >
-                {problem}
-              </Text>
-            </View>
+            </Pressable>
           )}
-          {solution && (
-            <View style={styles.section}>
-              <Text
-                style={[
-                  typographyThemed(theme).captionPrimary,
-                  styles.sectionTitle,
-                  { color: theme.colors.textPrimary },
-                ]}
-              >
-                Solution
-              </Text>
+        </View>
+        <ScrollView
+          style={styles.cardContent}
+          contentContainerStyle={styles.cardContentContainer}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+        >
+          <View>
+            <Text
+              style={[
+                typographyThemed(theme).captionSecondary,
+                { color: bodyColor },
+              ]}
+            >
+              {body}
+              {bodyEmphasis && (
+                <Text style={styles.bodyEmphasis}>{bodyEmphasis}</Text>
+              )}
+              {bodyAfterEmphasis}
+            </Text>
+            {problem && (
+              <View style={styles.section}>
+                <Text
+                  style={[
+                    typographyThemed(theme).captionPrimary,
+                    styles.sectionTitle,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  Problem
+                </Text>
+                <Text
+                  style={[
+                    typographyThemed(theme).captionSecondary,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  {problem}
+                </Text>
+              </View>
+            )}
+            {solution && (
+              <View style={styles.section}>
+                <Text
+                  style={[
+                    typographyThemed(theme).captionPrimary,
+                    styles.sectionTitle,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  Solution
+                </Text>
+                <Text
+                  style={[
+                    typographyThemed(theme).captionSecondary,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  {solution}
+                </Text>
+              </View>
+            )}
+            {showCatchUpHint && (
+              <View style={styles.section}>
+                <Text
+                  style={[
+                    typographyThemed(theme).captionPrimary,
+                    styles.sectionTitle,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  {`Add catch-up ${unitLabel.toLowerCase()}`}
+                </Text>
+                <Text
+                  style={[
+                    typographyThemed(theme).captionSecondary,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  {
+                    'You can estimate what you walked while tracking was stopped and add it with the '
+                  }
+                  <InlineIconLink
+                    icon={CirclePlusIcon}
+                    label="icon"
+                    size={12}
+                    textColor={theme.colors.textPrimary}
+                    onPress={() =>
+                      useUIStore.getState().pushModal({ type: 'distance' })
+                    }
+                    accessibilityLabel="Add catch-up miles"
+                  />
+                  {'.'}
+                </Text>
+              </View>
+            )}
+            {/* Manual-entry hint: only for kinds where the automatic path is
+              actually blocked (permission). Unit is dynamic so we don't
+              lie to km users. */}
+            {showAddHint && (
               <Text
                 style={[
                   typographyThemed(theme).captionSecondary,
+                  styles.addHint,
                   { color: theme.colors.textPrimary },
                 ]}
               >
-                {solution}
-              </Text>
-            </View>
-          )}
-          {showCatchUpHint && (
-            <View style={styles.section}>
-              <Text
-                style={[
-                  typographyThemed(theme).captionPrimary,
-                  styles.sectionTitle,
-                  { color: theme.colors.textPrimary },
-                ]}
-              >
-                {`Add catch-up ${unitLabel.toLowerCase()}`}
-              </Text>
-              <Text
-                style={[
-                  typographyThemed(theme).captionSecondary,
-                  { color: theme.colors.textPrimary },
-                ]}
-              >
-                {
-                  'You can estimate what you walked while tracking was stopped and add it with the '
-                }
+                {`${unitLabel} can also be logged with the `}
                 <InlineIconLink
                   icon={CirclePlusIcon}
                   label="icon"
@@ -436,121 +462,96 @@ export function IssueCard({
                   onPress={() =>
                     useUIStore.getState().pushModal({ type: 'distance' })
                   }
-                  accessibilityLabel="Add catch-up miles"
+                  accessibilityLabel="Add miles"
                 />
                 {'.'}
               </Text>
-            </View>
-          )}
-          {/* Manual-entry hint: only for kinds where the automatic path is
-              actually blocked (permission). Unit is dynamic so we don't
-              lie to km users. */}
-          {showAddHint && (
-            <Text
-              style={[
-                typographyThemed(theme).captionSecondary,
-                styles.addHint,
-                { color: theme.colors.textPrimary },
-              ]}
-            >
-              {`${unitLabel} can also be logged with the `}
-              <InlineIconLink
-                icon={CirclePlusIcon}
-                label="icon"
-                size={12}
-                textColor={theme.colors.textPrimary}
-                onPress={() =>
-                  useUIStore.getState().pushModal({ type: 'distance' })
-                }
-                accessibilityLabel="Add miles"
-              />
-              {'.'}
-            </Text>
-          )}
-        </View>
-      </ScrollView>
+            )}
+          </View>
+        </ScrollView>
       </View>
       <View>
-      {!hideTimestamp &&
-        lastSyncErrorAt !== null &&
-        lastSyncError.kind !== 'permission' &&
-        lastSyncError.kind !== 'pedometerServiceStopped' && (
-          <Text
-            style={[
-              typographyThemed(theme).caption,
-              styles.timestamp,
-              { color: theme.colors.textSecondary },
-            ]}
-          >
-            {formatTimestamp(lastSyncErrorAt)}
-          </Text>
-        )}
-      {/* Per-error action row. Rendered only when this kind actually has
+        {!hideTimestamp &&
+          lastSyncErrorAt !== null &&
+          lastSyncError.kind !== 'permission' &&
+          lastSyncError.kind !== 'pedometerServiceStopped' && (
+            <Text
+              style={[
+                typographyThemed(theme).caption,
+                styles.timestamp,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              {formatTimestamp(lastSyncErrorAt)}
+            </Text>
+          )}
+        {/* Per-error action row. Rendered only when this kind actually has
           a footer action — an empty wrapper View still takes up its own
           padding/border space even with no visible children, which was
           silently stealing room from the card for kinds with no footer
           (e.g. newUpgrade) instead of giving it back to the content. */}
-      {hasActionRow && (
-        <View testID="troubleshooting-issue-footer">
-          {hasRetryAction && (
-            <View style={styles.retry}>
-              <SyncNowRow />
-            </View>
-          )}
-          {lastSyncError.kind === 'unavailable' && Platform.OS === 'android' && (
-            <View style={styles.retry}>
-              <Button
-                variant="primary"
-                size="small"
-                onPress={() => {
-                  Linking.openURL(
-                    'market://details?id=com.google.android.apps.healthdata',
-                  ).catch(() => {
-                    // Play Store app missing (rare); fall back to the web URL
-                    // so the user still has a path to install/update.
-                    Linking.openURL(
-                      'https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata',
-                    ).catch(() => {
-                      // Both failed; nothing useful left to do.
-                    });
-                  });
-                }}
-              >
-                Open Play Store
-              </Button>
-            </View>
-          )}
-          {(lastSyncError.kind === 'permission' ||
-            lastSyncError.kind === 'sourceFallback') && (
-            <View style={styles.retry}>
-              <Button
-                variant="primary"
-                size="small"
-                onPress={() => pushModal({ type: 'sync' })}
-              >
-                Sync settings
-              </Button>
-            </View>
-          )}
-          {lastSyncError.kind === 'pedometerServiceStopped' && (
-            <View style={styles.stalledActions}>
-              <Button
-                variant="primary"
-                size="small"
-                onPress={() => pushModal({ type: 'sync' })}
-              >
-                Sync settings
-              </Button>
-              <IconButton
-                icon={<PlusIcon size={iconSizes.medium} />}
-                variant="primary"
-                accessibilityLabel={`Add ${unitLabel.toLowerCase()}`}
-                onPress={() => pushModal({ type: 'distance' })}
-              />
-            </View>
-          )}
-        </View>
-      )}
+        {hasActionRow && (
+          <View testID="troubleshooting-issue-footer">
+            {hasRetryAction && (
+              <View style={styles.retry}>
+                <SyncNowRow />
+              </View>
+            )}
+            {lastSyncError.kind === 'unavailable' &&
+              Platform.OS === 'android' && (
+                <View style={styles.retry}>
+                  <Button
+                    variant="primary"
+                    size="small"
+                    onPress={() => {
+                      Linking.openURL(
+                        'market://details?id=com.google.android.apps.healthdata',
+                      ).catch(() => {
+                        // Play Store app missing (rare); fall back to the web URL
+                        // so the user still has a path to install/update.
+                        Linking.openURL(
+                          'https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata',
+                        ).catch(() => {
+                          // Both failed; nothing useful left to do.
+                        });
+                      });
+                    }}
+                  >
+                    Open Play Store
+                  </Button>
+                </View>
+              )}
+            {(lastSyncError.kind === 'permission' ||
+              lastSyncError.kind === 'sourceFallback') && (
+              <View style={styles.retry}>
+                <Button
+                  variant="primary"
+                  size="small"
+                  onPress={() => pushModal({ type: 'sync' })}
+                >
+                  Sync settings
+                </Button>
+              </View>
+            )}
+            {lastSyncError.kind === 'pedometerServiceStopped' && (
+              <View style={styles.stalledActions}>
+                <Button
+                  variant="primary"
+                  size="small"
+                  onPress={() => pushModal({ type: 'sync' })}
+                >
+                  Sync settings
+                </Button>
+                <IconButton
+                  icon={<PlusIcon size={iconSizes.medium} />}
+                  variant="primary"
+                  accessibilityLabel={`Add ${unitLabel.toLowerCase()}`}
+                  onPress={() => pushModal({ type: 'distance' })}
+                />
+              </View>
+            )}
+          </View>
+        )}
       </View>
     </View>
   );

@@ -86,7 +86,9 @@ describe('SyncErrorBanner', () => {
 
       const { rerender } = await render(<SyncErrorBanner />);
 
-      expect(screen.getByTestId('troubleshooting-issue-footer')).toBeOnTheScreen();
+      expect(
+        screen.getByTestId('troubleshooting-issue-footer'),
+      ).toBeOnTheScreen();
       expect(screen.getByRole('button', { name: 'Sync' })).toBeOnTheScreen();
 
       for (const settings of [
@@ -160,7 +162,9 @@ describe('SyncErrorBanner', () => {
     await render(<SyncErrorBanner />);
 
     expect(screen.getByText('Step counting stopped')).toBeOnTheScreen();
-    expect(screen.getByTestId('troubleshooting-issue-footer')).toBeOnTheScreen();
+    expect(
+      screen.getByTestId('troubleshooting-issue-footer'),
+    ).toBeOnTheScreen();
     expect(screen.getByText('Problem')).toBeOnTheScreen();
     expect(
       screen.getByText(

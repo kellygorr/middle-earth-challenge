@@ -60,7 +60,9 @@ export const createFriendProgressWorkflow = ({
     if (settings.sharingIdentityId) return settings.sharingIdentityId;
 
     const shareIdentityId = generateIdentityId();
-    await settings.updateSharingSettings({ sharingIdentityId: shareIdentityId });
+    await settings.updateSharingSettings({
+      sharingIdentityId: shareIdentityId,
+    });
     return shareIdentityId;
   };
 

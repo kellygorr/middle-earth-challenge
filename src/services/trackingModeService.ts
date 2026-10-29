@@ -295,7 +295,8 @@ export async function ensureTrackingModeRunning(): Promise<void> {
       env.ignoresBatteryOptimizations;
 
     if (settings.trackingMode === 'dual') {
-      const healthPermission = await fitnessService.getHealthConnectPermissionState();
+      const healthPermission =
+        await fitnessService.getHealthConnectPermissionState();
       const permissionOutcome = resolveDualPermissionOutcome(
         permissionsOk,
         healthPermission,

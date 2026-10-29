@@ -134,13 +134,10 @@ export default function WelcomeModal({
       return;
     }
     if (!internalVisible || readyFiredRef.current) return;
-    const readyTimer = setTimeout(
-      () => {
-        readyFiredRef.current = true;
-        onReady?.();
-      },
-      motion.modal.entranceDelay + motion.modal.entranceDuration,
-    );
+    const readyTimer = setTimeout(() => {
+      readyFiredRef.current = true;
+      onReady?.();
+    }, motion.modal.entranceDelay + motion.modal.entranceDuration);
     return () => clearTimeout(readyTimer);
   }, [visible, internalVisible, onReady]);
 
