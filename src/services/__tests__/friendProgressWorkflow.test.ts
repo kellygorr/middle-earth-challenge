@@ -439,9 +439,9 @@ describe('friendProgressWorkflow', () => {
         getSettings: () => settings,
       });
 
-      await expect(
-        workflow.synchronize(10, jest.fn()),
-      ).rejects.toThrow('offline');
+      await expect(workflow.synchronize(10, jest.fn())).rejects.toThrow(
+        'offline',
+      );
       expect(settings.sharingMigrationSourceUserId).toBe('exported-user');
 
       service.pruneSiblingIdentities.mockResolvedValueOnce(undefined);

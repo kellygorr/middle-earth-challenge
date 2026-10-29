@@ -132,7 +132,7 @@ describe('friendProgressService', () => {
       displayName: 'Kelly',
       distanceMiles: 12.5,
       affinity: 'river',
-    shareIdentityId: 'share-id-1',
+      shareIdentityId: 'share-id-1',
     });
   });
 
@@ -149,8 +149,8 @@ describe('friendProgressService', () => {
       displayName: 'Kelly',
       distanceMiles: 15,
       affinity: 'hills',
-    shareIdentityId: 'share-id-1',
-      });
+      shareIdentityId: 'share-id-1',
+    });
   });
 
   it('waits for persisted auth before choosing the participant owner', async () => {
@@ -168,8 +168,8 @@ describe('friendProgressService', () => {
       displayName: 'Kelly',
       distanceMiles: 15,
       affinity: 'hills',
-    shareIdentityId: 'share-id-1',
-      });
+      shareIdentityId: 'share-id-1',
+    });
   });
 
   it('shares one anonymous session across concurrent enable attempts', async () => {
@@ -190,7 +190,7 @@ describe('friendProgressService', () => {
         displayName: 'Kelly',
         distanceMiles: 15,
         affinity: 'hills',
-      shareIdentityId: 'share-id-1',
+        shareIdentityId: 'share-id-1',
       },
     );
     expect(mockSetParticipant).toHaveBeenNthCalledWith(
@@ -200,7 +200,7 @@ describe('friendProgressService', () => {
         displayName: 'Kelly',
         distanceMiles: 15,
         affinity: 'hills',
-      shareIdentityId: 'share-id-1',
+        shareIdentityId: 'share-id-1',
       },
     );
   });
@@ -421,9 +421,7 @@ describe('friendProgressService', () => {
       const service = createService();
       const firstAttempt = service.deleteFriendProgress();
       await Promise.all([
-        expect(firstAttempt).rejects.toThrow(
-          'friend-progress-network-timeout',
-        ),
+        expect(firstAttempt).rejects.toThrow('friend-progress-network-timeout'),
         jest.advanceTimersByTimeAsync(15_000),
       ]);
 

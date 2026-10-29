@@ -188,7 +188,9 @@ export default function SyncContentIOS() {
             label="icon"
             size={12}
             textColor={theme.colors.textSecondary}
-            onPress={() => useUIStore.getState().pushModal({ type: 'distance' })}
+            onPress={() =>
+              useUIStore.getState().pushModal({ type: 'distance' })
+            }
             accessibilityLabel="Add miles"
           />{' '}
           from the map.

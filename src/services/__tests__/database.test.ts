@@ -498,7 +498,9 @@ describe('database initialization', () => {
       );
       const beginIndex = calls.indexOf('BEGIN TRANSACTION');
       const commitIndex = calls.indexOf('COMMIT');
-      const detachIndex = calls.indexOf('DETACH DATABASE pre_migration_snapshot');
+      const detachIndex = calls.indexOf(
+        'DETACH DATABASE pre_migration_snapshot',
+      );
 
       // ATTACH/DETACH must sit outside the transaction — SQLite rejects
       // both when a transaction is already open.

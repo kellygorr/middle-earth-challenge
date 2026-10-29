@@ -62,7 +62,13 @@ describe('friend affinity cross-layer parity', () => {
     const ruleFields = [...match[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
 
     expect(ruleFields.sort()).toEqual(
-      ['affinity', 'displayName', 'distanceMiles', 'shareIdentityId', 'updatedAt'].sort(),
+      [
+        'affinity',
+        'displayName',
+        'distanceMiles',
+        'shareIdentityId',
+        'updatedAt',
+      ].sort(),
     );
   });
 
