@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
+import { Pressable } from 'react-native';
 
 export function useTooltipPositioning(
-  ref: React.MutableRefObject<any>,
+  ref: React.MutableRefObject<React.ElementRef<typeof Pressable> | null>,
   showTooltip: boolean,
   setTooltipPosition: (pos: { top: number; left: number } | null) => void,
   spacingValue: number,
@@ -23,7 +24,7 @@ export function useTooltipPositioning(
   // twice on every dimension change.
   useEffect(() => {
     if (!showTooltip) return;
-    const node = ref.current as any;
+    const node = ref.current;
     if (!node || typeof node.measureInWindow !== 'function') return;
 
     const frame = requestAnimationFrame(() => {

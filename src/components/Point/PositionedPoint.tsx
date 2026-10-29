@@ -3,7 +3,7 @@ import Animated, {
   useAnimatedStyle,
   SharedValue,
 } from 'react-native-reanimated';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Point from './Point';
 import { PointType } from '../../types';
 
@@ -21,7 +21,7 @@ interface PositionedPointProps {
   scale: SharedValue<number>; // from useMapGestures
   showLabel: boolean;
   onPress: () => void;
-  anchorRef?: React.Ref<any>;
+  anchorRef?: React.Ref<View>;
   // Measured height of a label pill at the current labelSize setting.
   // Provided by PointLayer via a single hidden measurement Button so every
   // point uses the same accurate value without measuring per-instance.
@@ -82,10 +82,7 @@ export default function PositionedPoint({
   });
 
   return (
-    <Animated.View
-      ref={anchorRef as any}
-      style={[styles.wrapper, animatedStyle]}
-    >
+    <Animated.View ref={anchorRef} style={[styles.wrapper, animatedStyle]}>
       <Point
         x={0}
         y={0}

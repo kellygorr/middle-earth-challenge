@@ -98,7 +98,7 @@ function parseTimeInput(
  * back to the last valid value.
  */
 const TimeInput = forwardRef<TimeInputHandle, TimeInputProps>(
-  function TimeInput({ date, onDateChange }, ref) {
+  function TimeInputComponent({ date, onDateChange }, ref) {
     const theme = useTheme();
     const [text, setText] = useState(() => formatTimeInput(date));
     const textRef = useRef(text);

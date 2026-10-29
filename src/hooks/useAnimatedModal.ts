@@ -153,7 +153,9 @@ export function useAnimatedModal(
     opacity: backgroundOpacity.value,
   }));
   const animatedContentStyle = useAnimatedStyle(() => {
-    const base: any = { opacity: contentOpacity.value };
+    const base: { opacity: number; transform?: { translateY: number }[] } = {
+      opacity: contentOpacity.value,
+    };
     if (hasTranslate) {
       base.transform = [{ translateY: contentTranslateY.value }];
     }

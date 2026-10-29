@@ -1,6 +1,12 @@
 import React from 'react';
 import { Dimensions, StyleSheet } from 'react-native';
-import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import Svg, {
+  Defs,
+  LinearGradient,
+  LinearGradientProps,
+  Stop,
+  Rect,
+} from 'react-native-svg';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -77,7 +83,7 @@ export default function CelebrationBorder({
     const y1 = cy + R * Math.sin(theta);
     const x2 = cx - R * Math.cos(theta);
     const y2 = cy - R * Math.sin(theta);
-    return { x1, y1, x2, y2 } as any;
+    return { x1, y1, x2, y2 } as Partial<LinearGradientProps>;
   });
 
   // Even when hidden, keep mounted for smooth fade in/out
