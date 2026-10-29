@@ -86,6 +86,7 @@ describe('firebaseAppCheck', () => {
     // the test goes on to correctly assert it, which intermittently fails
     // the test depending on microtask timing.
     const resultPromise = initializeFirebaseAppCheck();
+    // eslint-disable-next-line jest/valid-expect -- awaited below as `rejection`, once timers have advanced (see comment above)
     const rejection = expect(resultPromise).rejects.toBe(persistentError);
     // Three total attempts, two inter-attempt delays (50ms, 150ms) to
     // advance past before the final attempt's throw settles the promise.

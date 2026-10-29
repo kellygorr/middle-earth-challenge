@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, StatusBar, Keyboard } from 'react-native';
+import { View, StyleSheet, StatusBar, Keyboard, Pressable } from 'react-native';
 import { Skia, useCanvasRef } from '@shopify/react-native-skia';
 import {
   GestureHandlerRootView,
@@ -368,7 +368,7 @@ export default function MapScreen({
   // Gate startup guidance to first map open only (no auto-open)
   const autoOpenRef = useRef(false);
   // Info button + tooltip managed in infoStore
-  const infoButtonRef = useRef<any>(null);
+  const infoButtonRef = useRef<React.ElementRef<typeof Pressable>>(null);
   const reportedMapReadyTokenRef = useRef<number | null>(null);
   // Ref to the Skia canvas backing the map. `mapReady` used to fire purely
   // off layout math (width/height non-zero), which only proves React
@@ -497,7 +497,7 @@ export default function MapScreen({
   // ------------------------------------------------------------------------
 
   // Tooltip anchor: prefer InfoButton when visible; otherwise no anchor
-  const tooltipAnchorRef = useRef<any>(null);
+  const tooltipAnchorRef = useRef<React.ElementRef<typeof Pressable>>(null);
   useEffect(() => {
     tooltipAnchorRef.current = shouldShowInfoButton
       ? infoButtonRef.current
@@ -594,7 +594,9 @@ export default function MapScreen({
     const confirmPainted = async () => {
       // One frame for the layout-triggered render to commit and the Skia
       // canvas to mount before we can snapshot it.
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      await new Promise<void>(resolve =>
+        requestAnimationFrame(() => resolve()),
+      );
       if (cancelled) return;
 
       try {

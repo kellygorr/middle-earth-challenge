@@ -69,8 +69,8 @@ export default function JourneyProgressBar({
     }).start();
   }, [barWidth, progressPercentage, fillWidth, startAnimation]);
 
-  const firstName = (checkpoints[0] as any)?.name ?? '';
-  const lastName = (checkpoints[checkpoints.length - 1] as any)?.name ?? '';
+  const firstName = checkpoints[0]?.name ?? '';
+  const lastName = checkpoints[checkpoints.length - 1]?.name ?? '';
 
   // Side / header label style: scaled `smallBold` token (12px base) with
   // dark-mode-aware color. Using a token (not a hardcoded fontSize) is what

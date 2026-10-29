@@ -70,7 +70,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedText = Animated.createAnimatedComponent(Text);
 
 const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
-  function Button(
+  function ButtonComponent(
     {
       onPress,
       children,

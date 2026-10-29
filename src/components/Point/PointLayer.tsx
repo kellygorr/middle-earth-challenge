@@ -29,9 +29,9 @@ type Props = {
   mapOffsetY: number;
   centerX: number;
   centerY: number;
-  translateX: any;
-  translateY: any;
-  scale: any;
+  translateX: SharedValue<number>;
+  translateY: SharedValue<number>;
+  scale: SharedValue<number>;
   showPointLabels: boolean;
   showActiveTrivia: boolean;
   animatedProgress: number;

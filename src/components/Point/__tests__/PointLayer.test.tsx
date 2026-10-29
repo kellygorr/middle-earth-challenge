@@ -1,10 +1,12 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
-import { withTiming } from 'react-native-reanimated';
+import { withTiming, SharedValue } from 'react-native-reanimated';
 
 import PointLayer from '../PointLayer';
 import { PointType } from '../../../types';
 import { motion } from '../../../styles/motion';
+
+const sharedValue = <T,>(value: T) => ({ value } as SharedValue<T>);
 
 const reachedTrivia = {
   name: 'Reached trivia',
@@ -38,9 +40,9 @@ const renderLayer = async (showActiveTrivia: boolean) =>
       mapOffsetY={0}
       centerX={0}
       centerY={0}
-      translateX={{ value: 0 }}
-      translateY={{ value: 0 }}
-      scale={{ value: 1 }}
+      translateX={sharedValue(0)}
+      translateY={sharedValue(0)}
+      scale={sharedValue(1)}
       showPointLabels={false}
       showActiveTrivia={showActiveTrivia}
       animatedProgress={0}
@@ -77,9 +79,9 @@ describe('PointLayer trivia reveal', () => {
         mapOffsetY={0}
         centerX={0}
         centerY={0}
-        translateX={{ value: 0 }}
-        translateY={{ value: 0 }}
-        scale={{ value: 1 }}
+        translateX={sharedValue(0)}
+        translateY={sharedValue(0)}
+        scale={sharedValue(1)}
         showPointLabels={false}
         showActiveTrivia
         animatedProgress={0}

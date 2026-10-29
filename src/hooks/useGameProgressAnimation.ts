@@ -19,7 +19,7 @@ const ACTIVE_PATH_START_DELAY_MS = 500;
 export function useGameProgressAnimation(
   miles: number | undefined,
   enabled: boolean = true,
-  extraDeps: any[] = [],
+  extraDeps: unknown[] = [],
   /**
    * Progress fraction (0..1) to jump to instantly on the *first* activation,
    * before animating up to the current-miles target. Should be the same

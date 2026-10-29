@@ -104,7 +104,14 @@ function Point({
     return goingBackward
       ? gameProgressValue.value >= activationProgress + buffer
       : gameProgressValue.value + buffer >= activationProgress;
-  }, [gameProgressValue, activationProgress, goingBackward, buffer, forceActive, isActive]);
+  }, [
+    gameProgressValue,
+    activationProgress,
+    goingBackward,
+    buffer,
+    forceActive,
+    isActive,
+  ]);
 
   useAnimatedReaction(
     () => isActiveUI.value,
@@ -163,7 +170,9 @@ function Point({
         // with alignItems: 'center', which let a taller label grow the
         // row's height and re-center the icon within it, visibly bumping
         // checkpoint markers off the path whenever label size changed.
-        labelPosition === 'top' ? styles.containerColumn : styles.containerAnchored,
+        labelPosition === 'top'
+          ? styles.containerColumn
+          : styles.containerAnchored,
       ]}
       pointerEvents="box-none"
       testID="point-icon-container"
@@ -210,7 +219,7 @@ function Point({
           importantForAccessibility="no-hide-descendants"
         >
           <Button
-            onPress={onPress as any}
+            onPress={onPress ?? (() => {})}
             variant="primary"
             type="label"
             size={
