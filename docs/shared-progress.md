@@ -8,11 +8,11 @@ presentation are implemented.
 **The invite-only group model described below was not built and is not
 planned.** The app serves a single closed friend group, so every authenticated
 user is a member of the one implicit group and any authenticated user can read
-the participant collection. That is an accepted decision, not a gap — see
-`docs/adversarial-code-review.md`, "Friends data is globally enumerable". The
-group, invite, membership, and `userGroups` sections of this document are
-retained as design notes for a future multi-group release and describe nothing
-that currently exists.
+the participant collection. That is an accepted decision, not a gap: with a
+single closed friend group there is no separate audience to restrict
+visibility from. The group, invite, membership, and `userGroups` sections of
+this document are retained as design notes for a future multi-group release
+and describe nothing that currently exists.
 
 This feature lets users opt in to sharing their total journey distance and see
 other participating users' progress. It is independent of activity tracking:
