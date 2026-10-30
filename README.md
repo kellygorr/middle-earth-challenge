@@ -4,7 +4,7 @@
 
 # Middle Earth Challenge
 
-This app maps your real-world distance onto Frodo’s journey from Bag End to Mount Doom — 1,235 miles across Middle-earth.  You can walk, run, or move however you like, every step counts towards your progress.
+This app maps the miles you walk onto Frodo’s journey from Bag End to Mount Doom.  It's a 1,235 mile trip across Middle-earth where every step counts towards your progress.
 
 <p align="center">
   <img src="screen1.jpg" width="200" alt="Screenshot 1">
