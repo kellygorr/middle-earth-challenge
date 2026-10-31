@@ -10,6 +10,7 @@ import {
   EasingFunctionFactory,
 } from 'react-native-reanimated';
 import { motion } from '../styles/motion';
+import { usePrefersReducedMotion } from './useReduceMotion';
 
 interface UseAnimatedModalConfig {
   entranceDelay?: number;
@@ -32,8 +33,15 @@ export function useAnimatedModal(
     translateDistance = motion.modal.translateDistanceDefault,
     easing = motion.easing.standard,
   } = config;
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const animateModal = prefersReducedMotion === false;
+  const effectiveEntranceDelay = animateModal ? entranceDelay : 0;
+  const effectiveEntranceDuration = animateModal ? entranceDuration : 0;
+  const effectiveExitDuration = animateModal ? exitDuration : 0;
+  const effectiveExitDelay = animateModal ? exitDelay : 0;
+  const effectiveTranslateDistance = animateModal ? translateDistance : 0;
 
-  const hasTranslate = translateDistance !== 0;
+  const hasTranslate = effectiveTranslateDistance !== 0;
 
   const [internalVisible, setInternalVisible] = useState(false);
   // Ref to store pending callback to execute after exit animation completes
@@ -44,7 +52,7 @@ export function useAnimatedModal(
   const backgroundOpacity = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
   const contentTranslateY = useSharedValue(
-    hasTranslate ? translateDistance : 0,
+    hasTranslate ? effectiveTranslateDistance : 0,
   );
 
   useEffect(() => {
@@ -91,7 +99,7 @@ export function useAnimatedModal(
       backgroundOpacity.value = 0;
       contentOpacity.value = 0;
       if (hasTranslate) {
-        contentTranslateY.value = translateDistance;
+        contentTranslateY.value = effectiveTranslateDistance;
       }
 
       setInternalVisible(true);
@@ -100,35 +108,38 @@ export function useAnimatedModal(
       entranceFrameRef.current = requestAnimationFrame(() => {
         entranceFrameRef.current = null;
         backgroundOpacity.value = withTiming(1, {
-          duration: entranceDuration,
+          duration: effectiveEntranceDuration,
         });
         contentOpacity.value = withDelay(
-          entranceDelay,
-          withTiming(1, { duration: entranceDuration, easing }),
+          effectiveEntranceDelay,
+          withTiming(1, { duration: effectiveEntranceDuration, easing }),
         );
         if (hasTranslate) {
           contentTranslateY.value = withDelay(
-            entranceDelay,
-            withTiming(0, { duration: entranceDuration, easing }),
+            effectiveEntranceDelay,
+            withTiming(0, { duration: effectiveEntranceDuration, easing }),
           );
         }
       });
     } else if (internalVisible) {
       // Exit animations
       contentOpacity.value = withDelay(
-        exitDelay,
-        withTiming(0, { duration: exitDuration, easing }),
+        effectiveExitDelay,
+        withTiming(0, { duration: effectiveExitDuration, easing }),
       );
       if (hasTranslate) {
         contentTranslateY.value = withDelay(
-          exitDelay,
-          withTiming(translateDistance, { duration: exitDuration, easing }),
+          effectiveExitDelay,
+          withTiming(effectiveTranslateDistance, {
+            duration: effectiveExitDuration,
+            easing,
+          }),
         );
       }
 
       backgroundOpacity.value = withDelay(
-        exitDelay + exitDuration,
-        withTiming(0, { duration: exitDuration }, () => {
+        effectiveExitDelay + effectiveExitDuration,
+        withTiming(0, { duration: effectiveExitDuration }, () => {
           runOnJS(handleExitComplete)();
         }),
       );
@@ -139,11 +150,11 @@ export function useAnimatedModal(
     backgroundOpacity,
     contentOpacity,
     contentTranslateY,
-    entranceDelay,
-    entranceDuration,
-    exitDuration,
-    exitDelay,
-    translateDistance,
+    effectiveEntranceDelay,
+    effectiveEntranceDuration,
+    effectiveExitDuration,
+    effectiveExitDelay,
+    effectiveTranslateDistance,
     easing,
     hasTranslate,
     handleExitComplete,

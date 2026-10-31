@@ -35,18 +35,15 @@ describe('SyncSpinner', () => {
     expect(withRepeat).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels continuous rotation shortly after Reduce Motion resolves true', async () => {
+  it('does not start continuous rotation when Reduce Motion resolves true', async () => {
     jest
       .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
       .mockResolvedValue(true);
 
     render(<SyncSpinner />);
 
-    // useReduceMotion now defaults to false (animations on) until the
-    // real async check resolves — see its own doc comment for why — so
-    // the rotation correctly starts on the very first render, then gets
-    // cancelled once the real "Reduce Motion: true" value arrives a
-    // moment later.
-    await waitFor(() => expect(withRepeat).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+
+    expect(withRepeat).not.toHaveBeenCalled();
   });
 });

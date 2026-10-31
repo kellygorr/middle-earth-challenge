@@ -5,6 +5,9 @@ import { typographyThemed } from '../styles/typography';
 import { spacing, borderRadius } from '../styles/global';
 import checkpoints from '../constants/checkpoints.json';
 import { useProgressStore } from '../stores/progressStore';
+import { usePrefersReducedMotion } from '../hooks/useReduceMotion';
+
+const JOURNEY_PROGRESS_BAR_START_DELAY_MS = 500;
 
 interface JourneyProgressBarProps {
   darkMode?: boolean;
@@ -50,24 +53,51 @@ export default function JourneyProgressBar({
   const progressPercentage = useProgressStore(
     state => state.getProgressPercentage,
   )();
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const [barWidth, setBarWidth] = React.useState(0);
   const fillWidth = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    if (barWidth <= 0 || !startAnimation) return;
+    if (barWidth <= 0 || prefersReducedMotion === null) return;
     const pct = Math.max(0, Math.min(100, progressPercentage));
     const target = (pct / 100) * barWidth;
+    if (!startAnimation) {
+      // Keep the fill hidden until the host surface explicitly allows the
+      // animation to start (e.g. after splash is gone on first-launch
+      // welcome). Rendering the real target width here would "finish"
+      // beneath an overlay and leave nothing visible to animate later.
+      fillWidth.stopAnimation();
+      fillWidth.setValue(0);
+      return;
+    }
+    if (prefersReducedMotion) {
+      fillWidth.setValue(target);
+      return;
+    }
     let duration = 2000;
     if (pct < 5) duration = 500;
     else if (pct < 30) duration = 1000;
-    Animated.timing(fillWidth, {
-      toValue: target,
-      duration,
-      easing: Easing.linear,
-      useNativeDriver: false,
-    }).start();
-  }, [barWidth, progressPercentage, fillWidth, startAnimation]);
+    const animation = Animated.sequence([
+      Animated.delay(JOURNEY_PROGRESS_BAR_START_DELAY_MS),
+      Animated.timing(fillWidth, {
+        toValue: target,
+        duration,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }),
+    ]);
+    animation.start();
+    return () => {
+      animation.stop();
+    };
+  }, [
+    barWidth,
+    progressPercentage,
+    fillWidth,
+    prefersReducedMotion,
+    startAnimation,
+  ]);
 
   const firstName = checkpoints[0]?.name ?? '';
   const lastName = checkpoints[checkpoints.length - 1]?.name ?? '';

@@ -18,7 +18,7 @@ import {
 } from '../stores/progressStore';
 import { spacing, borderRadius } from '../styles/global';
 import { typographyThemed } from '../styles/typography';
-import { useReduceMotion } from '../hooks/useReduceMotion';
+import { usePrefersReducedMotion } from '../hooks/useReduceMotion';
 
 const MIN_DISPLAY_TIME = 1000; // Hold every shown message for at least 1s.
 const FADE_DURATION = 200;
@@ -89,7 +89,7 @@ function computeMessage(
 
 export default function SyncIndicator({ style }: SyncIndicatorProps) {
   const theme = useTheme();
-  const reduceMotionEnabled = useReduceMotion();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const useMiles = useSettingsStore(state => state.useMiles);
   const syncStatus = useProgressStore(state => state.syncStatus);
 
@@ -147,7 +147,7 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
   useEffect(() => {
     cancelAnimation(syncRotation);
     syncRotation.value = 0;
-    if (displayed && !reduceMotionEnabled) {
+    if (displayed && prefersReducedMotion === false) {
       syncRotation.value = withRepeat(
         withTiming(360, { duration: 1200, easing: Easing.linear }),
         -1,
@@ -157,7 +157,7 @@ export default function SyncIndicator({ style }: SyncIndicatorProps) {
         cancelAnimation(syncRotation);
       };
     }
-  }, [displayed, reduceMotionEnabled, syncRotation]);
+  }, [displayed, prefersReducedMotion, syncRotation]);
 
   const containerStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,

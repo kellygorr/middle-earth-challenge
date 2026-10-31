@@ -32,6 +32,7 @@ import { useFriendProgressSync } from './src/hooks/useFriendProgressSync';
 import { useLivePedometerDeltaOwner } from './src/hooks/useLivePedometerDelta';
 
 import { useInitializationStore } from './src/stores/initializationStore';
+import { useAccessibilityStore } from './src/stores/accessibilityStore';
 import { database } from './src/services/database';
 import { useProgressStore } from './src/stores/progressStore';
 import {
@@ -369,6 +370,9 @@ function App(): React.JSX.Element {
   // reports (via onExited) that its exit animation has actually finished.
   const [welcomeModalMounted, setWelcomeModalMounted] = useState(false);
   const setPhase = useInitializationStore(state => state.setPhase);
+  const initializeReducedMotion = useAccessibilityStore(
+    state => state.initializeReducedMotion,
+  );
 
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const setShowWelcome = useSettingsStore(state => state.setShowWelcome);
@@ -380,6 +384,10 @@ function App(): React.JSX.Element {
   useLivePedometerDeltaOwner();
 
   const initFromDatabase = useProgressStore(state => state.initFromDatabase);
+
+  useEffect(() => {
+    initializeReducedMotion();
+  }, [initializeReducedMotion]);
 
   useEffect(() => {
     let cancelled = false;
