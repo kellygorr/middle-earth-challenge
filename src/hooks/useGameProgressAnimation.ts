@@ -16,26 +16,25 @@ import { usePrefersReducedMotion } from './useReduceMotion';
 // beat to actually see the starting position before it starts moving.
 const ACTIVE_PATH_START_DELAY_MS = 1000;
 
+interface UseGameProgressAnimationOptions {
+  enabled?: boolean;
+  extraDeps?: unknown[];
+  /**
+   * Progress fraction (0..1) to jump to instantly on the first activation
+   * before animating to current miles, so off-screen distance can be skipped.
+   */
+  revealStartProgress?: number;
+  activationCycle?: number;
+}
+
 export function useGameProgressAnimation(
   miles: number | undefined,
-  enabled: boolean = true,
-  extraDeps: unknown[] = [],
-  /**
-   * Progress fraction (0..1) to jump to instantly on the *first* activation,
-   * before animating up to the current-miles target. Should be the same
-   * off-screen "reveal start" point the base/grey path is instantly drawn
-   * to (see `findPathRevealStart` in MapScreen, and `completePathReveal`
-   * in `useInitialAnimation`, which sets it fully drawn immediately on
-   * welcome dismiss rather than animating it in) — without this, the
-   * animation always started from progress 0 (Hobbiton), so for a
-   * well-traveled save almost the entire catch-up animation played out
-   * off-screen and only the last sliver was ever visible, flashing by
-   * right as it finally entered the viewport. Defaults to 0, which
-   * preserves the original behavior exactly (no-op) for early users where
-   * there's nothing off-screen to skip.
-   */
-  revealStartProgress: number = 0,
-  activationCycle: number = 0,
+  {
+    enabled = true,
+    extraDeps = [],
+    revealStartProgress = 0,
+    activationCycle = 0,
+  }: UseGameProgressAnimationOptions = {},
 ) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const reduceMotionEnabled = prefersReducedMotion === true;
@@ -198,7 +197,6 @@ export function useGameProgressAnimation(
     prefersReducedMotion,
     reduceMotionEnabled,
     revealStartProgress,
-    activationCycle,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     ...extraDeps,
   ]);

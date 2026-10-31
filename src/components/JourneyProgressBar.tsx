@@ -125,6 +125,7 @@ export default function JourneyProgressBar({
           </View>
           <View style={styles.progressBarContainer}>
             <View
+              testID="journey-progress-bar-track"
               style={[
                 styles.progressBarBackground,
                 {
