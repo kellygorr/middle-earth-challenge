@@ -1,8 +1,11 @@
 import { Theme } from '../../styles/themes';
 
+const INACTIVE_BUTTON_COLOR = '#3f3f3f';
+
 export type ButtonVariant =
   | 'primary'
   | 'primaryInverted'
+  | 'inactive'
   | 'brand'
   | 'outline'
   | 'transparent';
@@ -21,6 +24,8 @@ export function getButtonTextColor(
     case 'outline':
     case 'primaryInverted':
       return theme.colors.buttonOutlineText;
+    case 'inactive':
+      return theme.colors.buttonPrimaryText;
     case 'transparent':
       return theme.colors.textPrimary;
     case 'primary':
@@ -43,6 +48,8 @@ export function getButtonBackgroundColor(
     case 'outline':
     case 'primaryInverted':
       return theme.colors.buttonOutlineBg;
+    case 'inactive':
+      return INACTIVE_BUTTON_COLOR;
     case 'brand':
       return theme.colors.buttonBrandBackground;
     case 'primary':
@@ -59,7 +66,7 @@ export function getButtonBorderColor(
   variant: ButtonVariant,
 ): string {
   'worklet';
-  return variant === 'outline'
-    ? theme.colors.buttonOutlineBorder
-    : 'transparent';
+  if (variant === 'outline') return theme.colors.buttonOutlineBorder;
+  if (variant === 'inactive') return INACTIVE_BUTTON_COLOR;
+  return 'transparent';
 }

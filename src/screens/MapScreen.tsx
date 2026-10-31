@@ -906,7 +906,7 @@ export default function MapScreen({
                   clearStickyInfo();
                   setShowPointLabels(!showPointLabels);
                 }}
-                variant="primary"
+                variant={showPointLabels ? 'primary' : 'inactive'}
                 type="label"
                 size="small"
                 textSize={
@@ -931,7 +931,7 @@ export default function MapScreen({
                     clearStickyInfo();
                     setShowFriendProgress(current => !current);
                   }}
-                  variant="primary"
+                  variant={showFriendProgress ? 'primary' : 'inactive'}
                   type="label"
                   size="small"
                   textSize={
