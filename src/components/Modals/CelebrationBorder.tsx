@@ -16,7 +16,7 @@ import Animated, {
   Easing,
   cancelAnimation,
 } from 'react-native-reanimated';
-import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { usePrefersReducedMotion } from '../../hooks/useReduceMotion';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -44,7 +44,7 @@ export default function CelebrationBorder({
   opacity = 0.6,
   cycleDurationMs = 8000,
 }: CelebrationBorderProps) {
-  const reduceMotionEnabled = useReduceMotion();
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const angle = useSharedValue(0);
   const alpha = useSharedValue(0);
@@ -57,7 +57,7 @@ export default function CelebrationBorder({
         duration: 240,
         easing: Easing.linear,
       });
-      if (!reduceMotionEnabled) {
+      if (prefersReducedMotion === false) {
         angle.value = withRepeat(
           withTiming(360, { duration: cycleDurationMs, easing: Easing.linear }),
           -1,
@@ -66,7 +66,7 @@ export default function CelebrationBorder({
     } else {
       alpha.value = withTiming(0, { duration: 240, easing: Easing.linear });
     }
-  }, [show, reduceMotionEnabled, cycleDurationMs, opacity, alpha, angle]);
+  }, [show, prefersReducedMotion, cycleDurationMs, opacity, alpha, angle]);
 
   const containerStyle = useAnimatedStyle(() => ({
     opacity: alpha.value,

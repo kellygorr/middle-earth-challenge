@@ -9,12 +9,12 @@ import {
 } from 'react-native-reanimated';
 import { mapBookMilesToPathProgress } from '../utils/pathProgress';
 import { motion } from '../styles/motion';
-import { useReduceMotion } from './useReduceMotion';
+import { usePrefersReducedMotion } from './useReduceMotion';
 
 // Brief pause before the active (colored) path starts animating, so it
 // doesn't begin moving the instant the screen appears — gives the user a
 // beat to actually see the starting position before it starts moving.
-const ACTIVE_PATH_START_DELAY_MS = 500;
+const ACTIVE_PATH_START_DELAY_MS = 1000;
 
 export function useGameProgressAnimation(
   miles: number | undefined,
@@ -35,8 +35,10 @@ export function useGameProgressAnimation(
    * there's nothing off-screen to skip.
    */
   revealStartProgress: number = 0,
+  activationCycle: number = 0,
 ) {
-  const reduceMotionEnabled = useReduceMotion();
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const reduceMotionEnabled = prefersReducedMotion === true;
   const initialProgress =
     enabled && miles ? mapBookMilesToPathProgress(miles) : 0;
   const gameProgressValue = useSharedValue(initialProgress);
@@ -59,7 +61,14 @@ export function useGameProgressAnimation(
   const lastSyncAtShared = useSharedValue(0);
 
   useEffect(() => {
-    if (!enabled) {
+    // Explicitly restart first-activation behavior whenever the caller
+    // advances to a new animation cycle (e.g. welcome is dismissed again).
+    hasActivatedRef.current = false;
+    prevAnimMilesRef.current = 0;
+  }, [activationCycle]);
+
+  useEffect(() => {
+    if (!enabled || prefersReducedMotion === null) {
       // Hide progress until enabled (e.g., after welcome + path reveal)
       gameProgressValue.value = 0;
       return;
@@ -186,8 +195,10 @@ export function useGameProgressAnimation(
     miles,
     enabled,
     gameProgressValue,
+    prefersReducedMotion,
     reduceMotionEnabled,
     revealStartProgress,
+    activationCycle,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     ...extraDeps,
   ]);

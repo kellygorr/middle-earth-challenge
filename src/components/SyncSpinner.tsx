@@ -9,7 +9,7 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import { SyncIcon } from '../assets/icons';
-import { useReduceMotion } from '../hooks/useReduceMotion';
+import { usePrefersReducedMotion } from '../hooks/useReduceMotion';
 import { borderRadius } from '../styles/global';
 import { useTheme } from '../stores/settingsStore';
 
@@ -38,13 +38,13 @@ export default function SyncSpinner({
   durationMs = 1200,
 }: SyncSpinnerProps) {
   const theme = useTheme();
-  const reduceMotionEnabled = useReduceMotion();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const rotation = useSharedValue(0);
 
   useEffect(() => {
     cancelAnimation(rotation);
     rotation.value = 0;
-    if (reduceMotionEnabled) return;
+    if (prefersReducedMotion !== false) return;
 
     rotation.value = withRepeat(
       withTiming(360, {
@@ -57,7 +57,7 @@ export default function SyncSpinner({
     return () => {
       cancelAnimation(rotation);
     };
-  }, [rotation, durationMs, reduceMotionEnabled]);
+  }, [rotation, durationMs, prefersReducedMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],

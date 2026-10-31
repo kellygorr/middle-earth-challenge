@@ -11,7 +11,7 @@ import Button, { labelSizeToButtonSize } from '../Buttons';
 import { mapBookMilesToPathProgress } from '../../utils/pathProgress';
 import { PointType } from '../../types';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { usePrefersReducedMotion } from '../../hooks/useReduceMotion';
 import { motion } from '../../styles/motion';
 
 // Default label height used until the hidden measurement Button reports its
@@ -67,18 +67,18 @@ export default function PointLayer({
   gameProgressValue,
 }: Props) {
   const labelSize = useSettingsStore(state => state.labelSize);
-  const reduceMotionEnabled = useReduceMotion();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const activeTriviaOpacity = useSharedValue(showActiveTrivia ? 1 : 0);
 
   useEffect(() => {
     cancelAnimation(activeTriviaOpacity);
     activeTriviaOpacity.value =
-      showActiveTrivia && !reduceMotionEnabled
+      showActiveTrivia && prefersReducedMotion === false
         ? withTiming(1, { duration: motion.button.enterDuration })
         : showActiveTrivia
         ? 1
         : 0;
-  }, [activeTriviaOpacity, reduceMotionEnabled, showActiveTrivia]);
+  }, [activeTriviaOpacity, prefersReducedMotion, showActiveTrivia]);
 
   // A single hidden Button, rendered with the exact same size / textSize as
   // real point labels, reports its measured height once. Every PositionedPoint

@@ -64,7 +64,7 @@ import { useUniformMapLayout } from '../hooks/useUniformMapLayout';
 import { useGameProgressAnimation } from '../hooks/useGameProgressAnimation';
 import { useTooltipPositioning } from '../hooks/useTooltipPositioning';
 import { useKeyboardOffset } from '../hooks/useKeyboardOffset';
-import { useReduceMotion } from '../hooks/useReduceMotion';
+import { usePrefersReducedMotion } from '../hooks/useReduceMotion';
 // InfoButton visibility derived via infoStore selector
 
 // Data sets and SVG viewBox dimensions
@@ -141,17 +141,14 @@ export default function MapScreen({
   const showWelcome = useSettingsStore(state => state.showWelcome);
   const phase = useInitializationStore(state => state.phase);
   const setPhase = useInitializationStore(state => state.setPhase);
-  // Matches initializationStore's own `gameProgressAnimEnabled` selector
-  // (phase === 'active'). Using the looser `phase !== 'loading'` here was
-  // a bug: it let the map's path-fill animation (and its per-frame JS
-  // bridge via useAnimatedReaction) start as soon as bootstrap finished —
-  // while the welcome modal was still showing, well before the user
-  // dismisses it. The animation's visual output was invisibly clamped to
-  // zero by `initialBasePathProgress` (the separate, correctly-gated path
-  // reveal value), but the wasted per-frame re-renders still ran under
-  // the hood, hammering the Skia canvas right as it was initializing and
-  // producing visible black-flash artifacts on cold launch.
-  const gameProgressAnimEnabled = phase === 'active';
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const reduceMotionEnabled = prefersReducedMotion === true;
+  // Normal motion: keep active-path animation gated on `phase === 'active'`
+  // so it doesn't run under Welcome. Reduced motion: show the active path
+  // immediately (no hidden state) by enabling progress updates right away;
+  // useGameProgressAnimation will still avoid animation and snap directly.
+  const gameProgressAnimEnabled =
+    prefersReducedMotion !== null && (phase === 'active' || reduceMotionEnabled);
   const devMode = useSettingsStore(state => state.devMode);
   const showPointLabels = useSettingsStore(state => state.showPointLabels);
   const setShowPointLabels = useSettingsStore(
@@ -169,6 +166,8 @@ export default function MapScreen({
   const [hasInitialPathRevealed, setHasInitialPathRevealed] = useState(
     !showWelcome,
   );
+  const [progressAnimationCycle, setProgressAnimationCycle] = useState(0);
+  const previousShowWelcomeRef = useRef(showWelcome);
 
   // Info store for checkpoint/trivia info
   const {
@@ -421,6 +420,7 @@ export default function MapScreen({
     gameProgressAnimEnabled,
     [observeMilesChanges],
     pathRevealStart,
+    progressAnimationCycle,
   );
 
   const shouldShowInfoButton = useInfoStore(state =>
@@ -438,7 +438,6 @@ export default function MapScreen({
   // path (the "beam running down the wire" sync indicator). Color is
   // handled by a tight gradient shader inside the map component.
   const shimmer = useSharedValue(0);
-  const reduceMotionEnabled = useReduceMotion();
   useEffect(() => {
     cancelAnimation(pulse);
     cancelAnimation(shimmer);
@@ -540,6 +539,14 @@ export default function MapScreen({
   ]);
 
   // Reset startup guidance when welcome is shown again
+  useEffect(() => {
+    const previouslyShowWelcome = previousShowWelcomeRef.current;
+    if (previouslyShowWelcome && !showWelcome) {
+      setProgressAnimationCycle(cycle => cycle + 1);
+    }
+    previousShowWelcomeRef.current = showWelcome;
+  }, [showWelcome]);
+
   useEffect(() => {
     if (showWelcome) {
       setHasInitialPathRevealed(false);

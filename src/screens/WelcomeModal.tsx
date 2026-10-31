@@ -75,8 +75,11 @@ export default function WelcomeModal({
   // pill can sit exactly above it without overlapping.
   const [progressBarHeight, setProgressBarHeight] = React.useState(0);
 
-  const { internalVisible, animatedBackgroundStyle, animatedContentStyle } =
-    useAnimatedModal(visible, {
+  const {
+    internalVisible: isVisible,
+    animatedBackgroundStyle,
+    animatedContentStyle,
+  } = useAnimatedModal(visible, {
       translateDistance: 0, // fade-only for welcome
       entranceDelay: motion.modal.entranceDelay,
       entranceDuration: motion.modal.entranceDuration,
@@ -87,7 +90,7 @@ export default function WelcomeModal({
   const handleDismiss = () => {
     onDismiss();
   };
-  const modalVisible = visible || internalVisible || startupOverlay != null;
+  const modalVisible = visible || isVisible || startupOverlay != null;
 
   // Gates JourneyProgressBar's fill animation off starting until the
   // boot-time splash has actually finished covering this screen.
@@ -114,7 +117,7 @@ export default function WelcomeModal({
   // still not asked to be visible" avoids firing this on initial mount.
   const hasBeenVisibleRef = React.useRef(false);
   React.useEffect(() => {
-    if (internalVisible) {
+    if (isVisible) {
       hasBeenVisibleRef.current = true;
       return;
     }
@@ -122,7 +125,7 @@ export default function WelcomeModal({
       hasBeenVisibleRef.current = false;
       onExited?.();
     }
-  }, [internalVisible, visible, onExited]);
+  }, [isVisible, visible, onExited]);
 
   // Reports readiness once the entrance animation finishes, so the splash
   // overlay (rendered via startupOverlay) can fade out only after the
@@ -133,13 +136,13 @@ export default function WelcomeModal({
       readyFiredRef.current = false;
       return;
     }
-    if (!internalVisible || readyFiredRef.current) return;
+    if (!isVisible || readyFiredRef.current) return;
     const readyTimer = setTimeout(() => {
       readyFiredRef.current = true;
       onReady?.();
     }, motion.modal.entranceDelay + motion.modal.entranceDuration);
     return () => clearTimeout(readyTimer);
-  }, [visible, internalVisible, onReady]);
+  }, [visible, isVisible, onReady]);
 
   return (
     <Modal
@@ -262,7 +265,7 @@ export default function WelcomeModal({
                 >
                   <JourneyProgressBar
                     darkMode
-                    startAnimation={progressBarCanAnimate}
+                    startAnimation={progressBarCanAnimate && isVisible}
                   />
                 </View>
               ) : (
