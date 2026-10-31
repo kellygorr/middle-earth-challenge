@@ -110,7 +110,7 @@ export default function WelcomeModal({
   const progressBarCanAnimate = startupOverlay == null;
 
   // Notify the parent once the exit fade has genuinely finished, so it
-  // can safely unmount this component. `internalVisible` transitions
+  // can safely unmount this component. `isVisible` transitions
   // true shortly after mount (entrance) and false again only once the
   // exit animation's fade-out chain completes — never on the very first
   // render, since it starts false. Gating on "was true, now false, and

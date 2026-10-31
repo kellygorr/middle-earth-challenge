@@ -417,10 +417,12 @@ export default function MapScreen({
   // (No extra activation guards; equality-based activation below)
   const { gameProgressValue, animatedProgress } = useGameProgressAnimation(
     miles,
-    gameProgressAnimEnabled,
-    [observeMilesChanges],
-    pathRevealStart,
-    progressAnimationCycle,
+    {
+      enabled: gameProgressAnimEnabled,
+      extraDeps: [observeMilesChanges],
+      revealStartProgress: pathRevealStart,
+      activationCycle: progressAnimationCycle,
+    },
   );
 
   const shouldShowInfoButton = useInfoStore(state =>
