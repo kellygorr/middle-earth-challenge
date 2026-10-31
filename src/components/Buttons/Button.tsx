@@ -29,6 +29,9 @@ import {
 import { spacing, buttonTokens } from '../../styles/global';
 import { ButtonVariant, getButtonTextColor } from './buttonColors';
 
+const INACTIVE_BUTTON_COLOR = '#3f3f3f';
+const INACTIVE_BUTTON_PRESSED_COLOR = '#2f2f2f';
+
 export interface ButtonProps {
   onPress: () => void;
   children: ReactNode;
@@ -126,6 +129,8 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       const filledColor =
         variant === 'brand'
           ? theme.colors.buttonBrandBackground
+          : variant === 'inactive'
+          ? INACTIVE_BUTTON_COLOR
           : variant === 'outline' || variant === 'primaryInverted'
           ? theme.colors.buttonOutlineBg
           : theme.colors.buttonPrimaryBackground;
@@ -139,7 +144,9 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
 
       // Apply pressed overrides
       const pressedColor =
-        variant === 'primaryInverted'
+        variant === 'inactive'
+          ? INACTIVE_BUTTON_PRESSED_COLOR
+          : variant === 'primaryInverted'
           ? theme.colors.buttonPressedInverted
           : theme.colors.buttonPressed;
       const backgroundColor =
