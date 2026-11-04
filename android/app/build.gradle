@@ -73,6 +73,12 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def releaseSigningProperties = new Properties()
+def releaseSigningFile = rootProject.file("keystore.properties")
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.withInputStream { releaseSigningProperties.load(it) }
+}
+
 android {
     ndkVersion = rootProject.ext.ndkVersion
     buildToolsVersion = rootProject.ext.buildToolsVersion
@@ -83,7 +89,7 @@ android {
         applicationId = "com.middleearthchallenge"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 19
+        versionCode = 20
         versionName = "1.1.4"
     }
     signingConfigs {
@@ -95,9 +101,12 @@ android {
         }
         release {
             storeFile = file('release.keystore')
-            storePassword = 'REDACTED'
-            keyAlias = 'middle-earth-challenge'
-            keyPassword = 'REDACTED'
+            storePassword = providers.environmentVariable("MEC_RELEASE_STORE_PASSWORD").orNull
+                ?: releaseSigningProperties.getProperty("storePassword")
+            keyAlias = providers.environmentVariable("MEC_RELEASE_KEY_ALIAS").orNull
+                ?: releaseSigningProperties.getProperty("keyAlias")
+            keyPassword = providers.environmentVariable("MEC_RELEASE_KEY_PASSWORD").orNull
+                ?: releaseSigningProperties.getProperty("keyPassword")
         }
     }
     buildTypes {
@@ -127,6 +136,19 @@ android {
             }
         }
     }
+}
+
+def validateReleaseSigningInputs = tasks.register("validateReleaseSigningInputs") {
+    doLast {
+        def signing = android.signingConfigs.release
+        if (!signing.storePassword || !signing.keyAlias || !signing.keyPassword) {
+            throw new GradleException("Release signing requires android/keystore.properties with storePassword, keyAlias, and keyPassword, or the MEC_RELEASE_STORE_PASSWORD, MEC_RELEASE_KEY_ALIAS, and MEC_RELEASE_KEY_PASSWORD environment variables.")
+        }
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(validateReleaseSigningInputs)
 }
 
 dependencies {

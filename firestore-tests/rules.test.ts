@@ -26,6 +26,7 @@ const validParticipant = (overrides: Record<string, unknown> = {}) => ({
   displayName: 'Frodo of the Shire',
   affinity: 'woodland',
   distanceMiles: 12,
+  shareIdentityId: 'alice-share-identity',
   updatedAt: serverTimestamp(),
   ...overrides,
 });
@@ -67,6 +68,40 @@ describe.each(['friend_progress', 'friend_progress_debug'])(
       );
     });
 
+    it('allows the owner to update their own participant document', async () => {
+      const alice = testEnv.authenticatedContext('alice');
+      const participant = doc(alice.firestore(), collectionName, 'alice');
+      await assertSucceeds(setDoc(participant, validParticipant()));
+      await assertSucceeds(
+        setDoc(participant, validParticipant({ distanceMiles: 24 })),
+      );
+    });
+
+    it('rejects participant documents without a sharing identity', async () => {
+      const alice = testEnv.authenticatedContext('alice');
+      const withoutIdentity: Record<string, unknown> = validParticipant();
+      delete withoutIdentity.shareIdentityId;
+      await assertFails(
+        setDoc(
+          doc(alice.firestore(), collectionName, 'alice'),
+          withoutIdentity,
+        ),
+      );
+    });
+
+    it.each(['', 42, null])(
+      'rejects an invalid sharing identity: %p',
+      async shareIdentityId => {
+        const alice = testEnv.authenticatedContext('alice');
+        await assertFails(
+          setDoc(
+            doc(alice.firestore(), collectionName, 'alice'),
+            validParticipant({ shareIdentityId }),
+          ),
+        );
+      },
+    );
+
     it("rejects writing another user's participant document", async () => {
       const alice = testEnv.authenticatedContext('alice');
       await assertFails(
@@ -96,7 +131,9 @@ describe.each(['friend_progress', 'friend_progress_debug'])(
       });
 
       const bob = testEnv.authenticatedContext('bob');
-      await assertSucceeds(getDoc(doc(bob.firestore(), collectionName, 'alice')));
+      await assertSucceeds(
+        getDoc(doc(bob.firestore(), collectionName, 'alice')),
+      );
     });
 
     it('rejects reads without authentication', async () => {
